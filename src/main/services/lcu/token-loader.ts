@@ -10,6 +10,7 @@ import { discoverLcuAuthFromProcess } from './process-auth-discovery.ts'
 import { TokenLoadResult } from './types.ts'
 
 const MANUAL_LEAGUE_PATH_KEY = 'lolPath'
+let manualFallbackSuccessLogged = false
 
 function getManualLeaguePath(explicitDirPath?: string | null): string | null {
   const explicitPath = String(explicitDirPath || '').trim()
@@ -44,7 +45,12 @@ export async function getLcuToken(dirPath?: string | null): Promise<TokenLoadRes
     if (manualLeaguePath) {
       const manualResult = await discoverLcuAuthFromManualDirectory(manualLeaguePath)
       if (manualResult[0] && manualResult[1]) {
-        logger.info('[getLcuToken] 已通过手动目录兜底发现 LCU 凭据')
+        if (!manualFallbackSuccessLogged) {
+          manualFallbackSuccessLogged = true
+          logger.info('[getLcuToken] 已通过手动目录兜底发现 LCU 凭据')
+        } else {
+          logger.debug('[getLcuToken] 已通过手动目录兜底发现 LCU 凭据')
+        }
         return manualResult
       }
 

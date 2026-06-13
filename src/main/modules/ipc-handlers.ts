@@ -371,7 +371,7 @@ export function registerIpcHandlers(isDev) {
 
     ipcMain.on('show-popup', async (_ev, data) => {
         const startedAt = Date.now()
-        logger.info('[popup] show-popup requested', {
+        logger.debug('[popup] show-popup requested', {
             championId: data?.championId || null,
             augmentCount: Array.isArray(data?.augments) ? data.augments.length : 0,
             dataSource: data?.dataSource || null,
@@ -403,7 +403,7 @@ export function registerIpcHandlers(isDev) {
             error: data.error,
             timestamp: data.timestamp,
         })
-        logger.info('[popup] for-popup event sent', {
+        logger.debug('[popup] for-popup event sent', {
             championId: data?.championId || null,
             durationMs: getElapsedMs(startedAt),
         })
@@ -849,7 +849,7 @@ export function registerIpcHandlers(isDev) {
             rendererToMainDelayMs: hasRendererRequestStartedAt ? startedAt - rendererRequestStartedAt : null,
         })
 
-        logger.info('[winrate] query requested', {
+        logger.debug('[winrate] query requested', {
             championId,
             augmentIds: Array.isArray(augmentIds) ? augmentIds : [],
             source: requestSource || null,
@@ -899,7 +899,7 @@ export function registerIpcHandlers(isDev) {
             }
         } finally {
             const timing = buildTiming()
-            logger.info('[winrate] query completed', {
+            logger.debug('[winrate] query completed', {
                 championId,
                 source: requestSource || null,
                 durationMs: timing.mainDurationMs,
@@ -912,7 +912,7 @@ export function registerIpcHandlers(isDev) {
         const requestKey = String(championId || '')
         const pendingRequest = championDataLoadRequests.get(requestKey)
         if (pendingRequest) {
-            logger.info('[champion-data] load joined pending request', { championId })
+            logger.debug('[champion-data] load joined pending request', { championId })
             return pendingRequest
         }
 
@@ -920,11 +920,11 @@ export function registerIpcHandlers(isDev) {
 
         const request = (async () => {
             const { getChampionDetailData } = await import('../data-loader.ts')
-            logger.info('[champion-data] load requested', { championId })
+            logger.debug('[champion-data] load requested', { championId })
 
             try {
                 const detail = await getChampionDetailData(championId)
-                logger.info('[champion-data] load completed', {
+                logger.debug('[champion-data] load completed', {
                     championId,
                     buildCount: Array.isArray(detail.builds) ? detail.builds.length : 0,
                     augmentCount: detail.augments ? Object.keys(detail.augments).length : 0,
@@ -950,7 +950,7 @@ export function registerIpcHandlers(isDev) {
                     error: error.message,
                 }
             } finally {
-                logger.info('[champion-data] load finished', {
+                logger.debug('[champion-data] load finished', {
                     championId,
                     durationMs: getElapsedMs(startedAt),
                 })
@@ -1071,7 +1071,7 @@ export function registerIpcHandlers(isDev) {
     })
 
     ipcMain.on('log-renderer-info', (_event, data = {}) => {
-        logger.info('Renderer info reported:', {
+        logger.debug('Renderer info reported:', {
             type: data.type || 'renderer-info',
             message: data.message || '',
             source: data.source || 'renderer',

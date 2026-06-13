@@ -148,6 +148,8 @@ lcu-get-aram-bench-recommendation
 3. 确认 `benchEnabled` 和 `benchChampions` 是否符合当前模式。
 4. 确认网络或缓存能加载英雄统计；缺数据时会降级展示，不应中断。
 
+选人结构排查时，查看当天主日志中的 `[LCU] champ-select raw session diagnostic`。该日志只记录顶层字段、候选数组摘要和 championId 路径，不写完整 LCU session payload；如果字段或候选结构没有变化，会自动去重。阶段切换时的 `[LCU diagnostics] read-only endpoint snapshot` 会保留默认可见，持续 heartbeat 诊断则需要 `LOG_LEVEL=DEBUG`。
+
 ## 安全边界
 
 排障时不要为了“修复推荐”接入会改变选人结果的 LCU 接口。禁止推荐链路调用：

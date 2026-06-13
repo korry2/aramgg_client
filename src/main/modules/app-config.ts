@@ -362,9 +362,10 @@ async function logReadOnlyGameApiDiagnostics(lcuService, phase, reason, force = 
     gameApiDiagnosticInFlight = true
 
     try {
+        const logSnapshot = force ? logger.info : logger.debug
         for (const endpoint of getLcuDiagnosticEndpoints(phase)) {
             const result = await lcuService.getReadOnlyJsonEndpoint(endpoint.path)
-            logger.info('[LCU diagnostics] read-only endpoint snapshot', {
+            logSnapshot('[LCU diagnostics] read-only endpoint snapshot', {
                 phase,
                 reason,
                 endpoint: endpoint.label,
@@ -376,7 +377,7 @@ async function logReadOnlyGameApiDiagnostics(lcuService, phase, reason, force = 
 
         if (phase === 'InProgress') {
             const liveClientData = await lcuService.getLiveClientAllGameData()
-            logger.info('[LCU diagnostics] live client data snapshot', {
+            logSnapshot('[LCU diagnostics] live client data snapshot', {
                 phase,
                 reason,
                 endpoint: 'liveclientdata-allgamedata',
@@ -645,7 +646,7 @@ async function preloadChampSelectItemSetData(championId, reason, generation) {
             })
         }
 
-        logger.info('[item-set] champ-select item set data preloaded', {
+        logger.debug('[item-set] champ-select item set data preloaded', {
             championId,
             reason,
             hasBuilds,
@@ -1352,7 +1353,7 @@ function registerF1Shortcut() {
                             // 从store获取缓存的英雄ID（游戏进行中时LCU可能无法获取选人会话）
                             const cachedChampionId = store.get('lastSelectedChampionId')
                             if (cachedChampionId) {
-                                logger.info(`使用缓存的英雄ID: ${cachedChampionId}`)
+                                logger.debug(`使用缓存的英雄ID: ${cachedChampionId}`)
                             }
 
                             const winrateData = {

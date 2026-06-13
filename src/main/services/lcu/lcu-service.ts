@@ -64,6 +64,274 @@ const toPositiveInteger = (value: unknown): number | null => {
   return numberValue
 }
 
+const CHAMP_SELECT_DIAGNOSTIC_MAX_VALUES = 24
+const CHAMP_SELECT_DIAGNOSTIC_MAX_ARRAYS = 60
+const CHAMP_SELECT_DIAGNOSTIC_MAX_DEPTH = 7
+const CHAMP_SELECT_DIAGNOSTIC_ARRAY_KEYWORDS = [
+  'available',
+  'bench',
+  'candidate',
+  'card',
+  'champion',
+  'eligible',
+  'hand',
+  'option',
+  'pick',
+  'reroll',
+  'roll',
+  'select',
+  'trade',
+]
+
+let lastChampSelectSessionDiagnosticSignature = ''
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const pathLooksCandidateLike = (path: string): boolean => {
+  const normalizedPath = path.toLowerCase()
+  return CHAMP_SELECT_DIAGNOSTIC_ARRAY_KEYWORDS.some((keyword) => normalizedPath.includes(keyword))
+}
+
+const getObjectKeys = (value: unknown, limit = 24): string[] => {
+  if (!isRecord(value)) {
+    return []
+  }
+
+  return Object.keys(value).sort().slice(0, limit)
+}
+
+const pushUniqueNumber = (values: number[], value: unknown): void => {
+  const championId = toPositiveInteger(value)
+  if (!championId || values.includes(championId) || values.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_VALUES) {
+    return
+  }
+
+  values.push(championId)
+}
+
+const collectChampionIdsFromValue = (
+  value: unknown,
+  path = 'session',
+  depth = 0,
+  values: number[] = [],
+  seen = new WeakSet<object>()
+): number[] => {
+  if (depth > CHAMP_SELECT_DIAGNOSTIC_MAX_DEPTH || values.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_VALUES) {
+    return values
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      return values
+    }
+    seen.add(value)
+
+    value.slice(0, 40).forEach((item, index) => {
+      if (pathLooksCandidateLike(path) && typeof item !== 'object') {
+        pushUniqueNumber(values, item)
+      }
+      collectChampionIdsFromValue(item, `${path}[${index}]`, depth + 1, values, seen)
+    })
+    return values
+  }
+
+  if (!isRecord(value)) {
+    return values
+  }
+
+  if (seen.has(value)) {
+    return values
+  }
+  seen.add(value)
+
+  for (const [key, childValue] of Object.entries(value)) {
+    const nextPath = `${path}.${key}`
+    if (/champion/i.test(key)) {
+      pushUniqueNumber(values, childValue)
+    }
+    collectChampionIdsFromValue(childValue, nextPath, depth + 1, values, seen)
+  }
+
+  return values
+}
+
+const collectChampionValuePaths = (
+  value: unknown,
+  path = 'session',
+  depth = 0,
+  results: Array<{ path: string; value: number }> = [],
+  seen = new WeakSet<object>()
+): Array<{ path: string; value: number }> => {
+  if (depth > CHAMP_SELECT_DIAGNOSTIC_MAX_DEPTH || results.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_VALUES) {
+    return results
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      return results
+    }
+    seen.add(value)
+
+    value.slice(0, 20).forEach((item, index) => {
+      collectChampionValuePaths(item, `${path}[${index}]`, depth + 1, results, seen)
+    })
+    return results
+  }
+
+  if (!isRecord(value)) {
+    return results
+  }
+
+  if (seen.has(value)) {
+    return results
+  }
+  seen.add(value)
+
+  for (const [key, childValue] of Object.entries(value)) {
+    const nextPath = `${path}.${key}`
+    const championId = /champion/i.test(key) ? toPositiveInteger(childValue) : null
+    if (championId) {
+      results.push({ path: nextPath, value: championId })
+      if (results.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_VALUES) {
+        return results
+      }
+    }
+
+    collectChampionValuePaths(childValue, nextPath, depth + 1, results, seen)
+  }
+
+  return results
+}
+
+const collectCandidateArraySummaries = (
+  value: unknown,
+  path = 'session',
+  depth = 0,
+  results: Array<{
+    path: string
+    length: number
+    championIds: number[]
+    elementKeys: string[]
+  }> = [],
+  seen = new WeakSet<object>()
+): Array<{ path: string; length: number; championIds: number[]; elementKeys: string[] }> => {
+  if (depth > CHAMP_SELECT_DIAGNOSTIC_MAX_DEPTH || results.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_ARRAYS) {
+    return results
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      return results
+    }
+    seen.add(value)
+
+    const championIds = collectChampionIdsFromValue(value, path)
+    const elementKeys = getObjectKeys(value.find(isRecord), 16)
+    if (pathLooksCandidateLike(path) || championIds.length > 0) {
+      results.push({
+        path,
+        length: value.length,
+        championIds,
+        elementKeys,
+      })
+    }
+
+    value.slice(0, 20).forEach((item, index) => {
+      collectCandidateArraySummaries(item, `${path}[${index}]`, depth + 1, results, seen)
+    })
+    return results
+  }
+
+  if (!isRecord(value)) {
+    return results
+  }
+
+  if (seen.has(value)) {
+    return results
+  }
+  seen.add(value)
+
+  for (const [key, childValue] of Object.entries(value)) {
+    collectCandidateArraySummaries(childValue, `${path}.${key}`, depth + 1, results, seen)
+    if (results.length >= CHAMP_SELECT_DIAGNOSTIC_MAX_ARRAYS) {
+      break
+    }
+  }
+
+  return results
+}
+
+const summarizeTeamMembers = (members: unknown): Array<{
+  cellId: number | null
+  championId: number | null
+  championPickIntent: number | null
+}> => {
+  if (!Array.isArray(members)) {
+    return []
+  }
+
+  return members.slice(0, 10).map((member) => {
+    const record = isRecord(member) ? member : {}
+    return {
+      cellId: Number.isInteger(record.cellId) ? Number(record.cellId) : null,
+      championId: toPositiveInteger(record.championId),
+      championPickIntent: toPositiveInteger(record.championPickIntent),
+    }
+  })
+}
+
+const logChampSelectSessionDiagnostic = (
+  session: ChampSelectSession | null,
+  snapshot: ChampSelectSnapshot
+): void => {
+  if (!session || snapshot.status !== 'ready') {
+    lastChampSelectSessionDiagnosticSignature = ''
+    return
+  }
+
+  try {
+    const candidateArrays = collectCandidateArraySummaries(session)
+    const championValuePaths = collectChampionValuePaths(session)
+    const handLikeArrays = candidateArrays.filter((summary) =>
+      /hand|card|option|available|eligible|candidate/i.test(summary.path)
+    )
+
+    const diagnostic = {
+      topLevelKeys: getObjectKeys(session, 80),
+      localPlayerCellId: snapshot.localPlayerCellId,
+      selfChampionId: snapshot.selfChampionId,
+      benchEnabled: snapshot.benchEnabled,
+      benchChampionIds: snapshot.benchChampions.map((benchChampion) => benchChampion.championId),
+      myTeam: summarizeTeamMembers(snapshot.myTeam),
+      actionChampionIds: collectChampionIdsFromValue(snapshot.actions, 'snapshot.actions'),
+      championValuePaths,
+      candidateArrays,
+      handLikeArrays,
+      note: '结构诊断只记录字段名、数组长度和 championId 摘要，不记录完整 LCU session payload',
+    }
+    const signature = JSON.stringify({
+      topLevelKeys: diagnostic.topLevelKeys,
+      selfChampionId: diagnostic.selfChampionId,
+      benchChampionIds: diagnostic.benchChampionIds,
+      myTeam: diagnostic.myTeam,
+      championValuePaths,
+      candidateArrays,
+    })
+
+    if (signature === lastChampSelectSessionDiagnosticSignature) {
+      return
+    }
+
+    lastChampSelectSessionDiagnosticSignature = signature
+    logger.info('[LCU] champ-select raw session diagnostic', diagnostic)
+  } catch (error) {
+    const err = error as Error
+    logger.debug('[LCU] champ-select raw session diagnostic failed:', err.message)
+  }
+}
+
 const normalizeBenchChampions = (
   benchChampions: ChampSelectSession['benchChampions']
 ): ChampSelectBenchChampion[] => {
@@ -404,6 +672,7 @@ export class LCUService {
       gameflowPhase,
       session,
     })
+    logChampSelectSessionDiagnostic(session, this.champSelectSnapshot)
 
     return this.champSelectSnapshot
   }

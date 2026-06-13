@@ -28,8 +28,8 @@ import {
     shouldShowAugmentTopOverlay,
 } from './modules/user-preferences.ts'
 
-const AUTO_SCREENSHOT_SUMMARY_INTERVAL_MS = 30000
-const ANALYSIS_MISS_LOG_INTERVAL_MS = 10000
+const AUTO_SCREENSHOT_SUMMARY_INTERVAL_MS = 2 * 60 * 1000
+const ANALYSIS_MISS_LOG_INTERVAL_MS = 60 * 1000
 const PARTIAL_OCR_SAVE_INTERVAL_MS = 10000
 const PARTIAL_OCR_MAX_FILES = 60
 const AUGMENT_WINRATE_INLINE_WAIT_MS = 80
@@ -37,7 +37,7 @@ const VISIBLE_AUGMENT_NO_MATCH_GRACE_MS = 1800
 const VISIBLE_AUGMENT_PARTIAL_GRACE_MS = 2500
 const VISIBLE_AUGMENT_NO_MATCH_MISSES_BEFORE_CLEAR = 2
 const VISIBLE_AUGMENT_PARTIAL_MISSES_BEFORE_CLEAR = 3
-const FULL_DETECTION_DIAGNOSTIC_REPEAT_MS = 5000
+const FULL_DETECTION_DIAGNOSTIC_REPEAT_MS = 30 * 1000
 
 function getSafeTimestampForFile() {
     return logger.toBeijingISOString().replace(/[:.]/g, '-').replace('+08-00', '+0800')
@@ -329,7 +329,7 @@ class AutoScreenshotService {
         this.lastDetectedAugmentAt = 0
         this.visibleAugmentMissCount = 0
         this.pendingAnalysisBuffer = null
-        logger.info('Augment state cleared', {
+        logger.debug('Augment state cleared', {
             reason,
             previousIds,
             ageMs,
@@ -897,7 +897,7 @@ class AutoScreenshotService {
                 }
             })
 
-            logger.info('Augment winrate enriched in main', {
+            logger.debug('Augment winrate enriched in main', {
                 championId,
                 augmentIds,
                 resultCount: statById.size,
@@ -971,7 +971,7 @@ class AutoScreenshotService {
                 })
             }
 
-            logger.info('Augment detection notification sent', {
+            logger.debug('Augment detection notification sent', {
                 championId: winrateData.championId || null,
                 augmentIds: winrateData.augments.map(augment => augment.id),
                 partialUpdate: winrateData.partialUpdate,
@@ -1001,7 +1001,7 @@ class AutoScreenshotService {
             if (!championId) {
                 logger.warn('⚠️ 未找到缓存的英雄ID，海克斯推荐可能无法显示胜率数据')
             } else {
-                logger.info(`📌 使用缓存的英雄ID: ${championId}`)
+                logger.debug(`📌 使用缓存的英雄ID: ${championId}`)
             }
 
             const baseWinrateData = {
@@ -1099,7 +1099,7 @@ class AutoScreenshotService {
             const wasFloatingWindowVisible = !!floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible()
             if (wasFloatingWindowVisible) {
                 floatingWindow.hide()
-                logger.info('Hidden augment floating window after selection disappeared')
+                logger.debug('Hidden augment floating window after selection disappeared')
             }
 
             const sidePanelWindow = windows.find(win => {
@@ -1109,7 +1109,7 @@ class AutoScreenshotService {
             const wasSidePanelWindowVisible = !!sidePanelWindow && !sidePanelWindow.isDestroyed() && sidePanelWindow.isVisible()
             if (wasSidePanelWindowVisible) {
                 sidePanelWindow.hide()
-                logger.info('Hidden augment side panel window after selection disappeared')
+                logger.debug('Hidden augment side panel window after selection disappeared')
             }
 
             const popupWindow = windows.find(win => {
@@ -1119,10 +1119,10 @@ class AutoScreenshotService {
             const wasPopupWindowVisible = !!popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()
             if (wasPopupWindowVisible && hidePopup) {
                 popupWindow.hide()
-                logger.info('Hidden augment popup window after selection disappeared')
+                logger.debug('Hidden augment popup window after selection disappeared')
             }
 
-            logger.info('Augment clear notification sent', {
+            logger.debug('Augment clear notification sent', {
                 reason,
                 windowCount: windows.length,
                 floatingWindowWasVisible: wasFloatingWindowVisible,

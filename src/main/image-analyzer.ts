@@ -1489,7 +1489,7 @@ async function recognizeAugmentsFromImage(imageBuffer) {
             const detectedSlots = result
                 .filter(augment => Number.isInteger(augment?.detectedSlot))
                 .map(augment => augment.detectedSlot)
-            logger.info('OCR augment recognition partial from ordered title slots', {
+            logger.debug('OCR augment recognition partial from ordered title slots', {
                 detectedSlots,
                 missingSlots: [0, 1, 2].filter(slot => !detectedSlots.includes(slot)),
                 augmentIds: result.map(augment => augment.id),

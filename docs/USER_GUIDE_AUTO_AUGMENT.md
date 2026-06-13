@@ -106,7 +106,16 @@ await electronAPI.autoScreenshot.setConfig({
 - 远端数据缓存：`remote-data-cache/`
 - 应用配置：`config/`
 
-排查海克斯浮窗速度时，优先看 `Augment detected`、`Augment winrate enriched in main` 和 `Augment detection notification sent`。`notifyMode=main-winrate-inline` 表示主进程已随首包补齐胜率；`main-winrate-pending` 表示先显示基础结果；`main-winrate-late` 表示随后补齐胜率。旧的 renderer 侧胜率查询仍可用 `rendererToMainDelayMs`、`mainDurationMs` 和 `mainToRendererDelayMs` 分段排查。英雄详情窗口和海克斯浮窗已关闭 Electron `backgroundThrottling`，用于减少隐藏窗口刚显示时的 IPC 延迟。
+排查海克斯浮窗时，默认日志优先看这些主线信号：
+
+- `Augment detected`：已识别到完整三卡并准备通知浮窗。
+- `Augment partial update accepted`：刷新动画或短暂漏读时，用部分结果更新已显示的完整三卡浮窗。
+- `Augment full detection diagnostics`：完整三卡识别的槽位、指纹、按钮和 gate 摘要；会限频写入。
+- `Augment analysis not accepted`：截图分析未通过通知条件的原因；会限频写入。
+- `Auto screenshot summary` 和 `Auto screenshot first augment detection latency`：自动截图运行状态和首次识别耗时。
+- `Augment overlay cleared after OCR miss`：旧浮窗因连续 miss 被清空。
+
+更细的成功流水如 `Augment winrate enriched in main`、`Augment detection notification sent`、renderer 侧胜率查询分段耗时会写入 `debug` 日志；需要深查 IPC 或胜率补齐链路时，用 `LOG_LEVEL=DEBUG` 运行后再看 `rendererToMainDelayMs`、`mainDurationMs` 和 `mainToRendererDelayMs`。`notifyMode=main-winrate-inline` 表示主进程已随首包补齐胜率；`main-winrate-pending` 表示先显示基础结果；`main-winrate-late` 表示随后补齐胜率。英雄详情窗口和海克斯浮窗已关闭 Electron `backgroundThrottling`，用于减少隐藏窗口刚显示时的 IPC 延迟。
 
 ## 常见问题
 

@@ -52,6 +52,7 @@ const CONFIG_TTL_MS = 5 * 60 * 1000
 const DATA_TTL_MS = 12 * 60 * 60 * 1000
 const DATA_FETCH_TIMEOUT_MS = 10 * 1000
 const CHAMPION_DETAIL_FETCH_TIMEOUT_MS = 5 * 1000
+const DATA_BACKGROUND_REFRESH_ERROR_LOG_INTERVAL_MS = 5 * 60 * 1000
 const DATA_CACHE_DIR_NAME = 'data'
 const BUNDLED_DATA_DIR_NAME = 'client-data'
 const CURRENT_DATA_FILE = 'current.json'
@@ -76,6 +77,8 @@ let dataRootDirPromise: Promise<string> | null = null
 let activeDataSetPromise: Promise<ActiveDataSet> | null = null
 let activeDataSetCache: { data: ActiveDataSet; createdAt: number } | null = null
 let activeDataSetRefreshPromise: Promise<ActiveDataSet | null> | null = null
+let lastBackgroundRefreshErrorSignature = ''
+let lastBackgroundRefreshErrorLogAt = 0
 
 const rarityMap: Record<string, string> = {
   0: 'kSilver',
@@ -268,7 +271,7 @@ async function readBundledCurrentDataPointers(): Promise<any[]> {
   for (const bundledDataRootDir of getBundledDataRootDirs()) {
     const bundledPointer = await readJsonFile(path.join(bundledDataRootDir, CURRENT_DATA_FILE))
     if (bundledPointer) {
-      logger.info('[data-loader] bundled data pointer found', {
+      logger.debug('[data-loader] bundled data pointer found', {
         dataVersion: bundledPointer.dataVersion || null,
       })
       pointers.push(bundledPointer)
@@ -474,7 +477,7 @@ async function fetchVersionedDataFile(
 
     try {
       const resolvedResourcePath = resolveVersionResourcePath(dataVersion, resourcePath || normalizedPath)
-      logger.info('[data-loader] remote fetch start', {
+      logger.debug('[data-loader] remote fetch start', {
         dataVersion,
         path: normalizedPath,
         resourcePath: resolvedResourcePath,
@@ -486,7 +489,7 @@ async function fetchVersionedDataFile(
       )
       await writeDataFileToDisk(dataVersion, normalizedPath, payload)
       cache.set(cacheKey, { data: payload, createdAt: Date.now() })
-      logger.info('[data-loader] remote fetch completed', {
+      logger.debug('[data-loader] remote fetch completed', {
         dataVersion,
         path: normalizedPath,
         durationMs: getElapsedMs(startedAt),
@@ -559,7 +562,7 @@ async function prepareDataVersion(config: ClientConfig): Promise<ActiveDataSet> 
   })
   await writeCurrentDataPointer(config)
 
-  logger.info('[data-loader] data version files prepared', {
+  logger.debug('[data-loader] data version files prepared', {
     dataVersion,
     fileCount: requiredDataPaths.length + 1,
   })
@@ -615,7 +618,7 @@ function refreshLatestDataVersionInBackground(currentDataSet: ActiveDataSet): vo
       return currentDataSet
     }
 
-    logger.info('[data-loader] remote data version refresh queued', {
+    logger.debug('[data-loader] remote data version refresh queued', {
       cachedDataVersion: currentDataSet.dataVersion,
       remoteDataVersion,
     })
@@ -642,7 +645,20 @@ function refreshLatestDataVersionInBackground(currentDataSet: ActiveDataSet): vo
       return dataSet
     })
     .catch((error: any) => {
-      logger.warn('[data-loader] background data refresh failed:', error.message)
+      const message = error?.message || String(error)
+      const now = Date.now()
+      const shouldLogWarning =
+        message !== lastBackgroundRefreshErrorSignature ||
+        now - lastBackgroundRefreshErrorLogAt >= DATA_BACKGROUND_REFRESH_ERROR_LOG_INTERVAL_MS
+
+      if (shouldLogWarning) {
+        lastBackgroundRefreshErrorSignature = message
+        lastBackgroundRefreshErrorLogAt = now
+        logger.warn('[data-loader] background data refresh failed:', message)
+      } else {
+        logger.debug('[data-loader] background data refresh failed (suppressed):', message)
+      }
+
       return null
     })
     .finally(() => {
@@ -657,7 +673,7 @@ async function resolveActiveDataSet(): Promise<ActiveDataSet> {
   try {
     cachedDataSet = await loadCachedActiveDataSet()
     if (cachedDataSet) {
-      logger.info('[data-loader] active data version resolved from complete local data', {
+      logger.debug('[data-loader] active data version resolved from complete local data', {
         dataVersion: cachedDataSet.dataVersion,
         durationMs: getElapsedMs(startedAt),
       })
@@ -887,7 +903,7 @@ async function loadLatestChampionDetailPayload(
       triedShardPaths.add(shardPath)
       const cachedShardDetail = await loadChampionDetailFromShard(latestDataSet, championId, shardPath, 'cached')
       if (cachedShardDetail) {
-        logger.info('[data-loader] champion detail loaded from newer local shard', {
+        logger.debug('[data-loader] champion detail loaded from newer local shard', {
           activeDataVersion: activeDataSet.dataVersion,
           dataVersion,
           championId,
@@ -923,7 +939,7 @@ async function loadLatestChampionDetailPayload(
       timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS,
     })
     if (singleChampionDetail) {
-      logger.info('[data-loader] champion detail loaded from newer single detail', {
+      logger.debug('[data-loader] champion detail loaded from newer single detail', {
         activeDataVersion: activeDataSet.dataVersion,
         dataVersion,
         championId,
@@ -940,7 +956,7 @@ async function loadLatestChampionDetailPayload(
         { timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS }
       )
       if (remoteShardDetail) {
-        logger.info('[data-loader] champion detail loaded from newer remote shard', {
+        logger.debug('[data-loader] champion detail loaded from newer remote shard', {
           activeDataVersion: activeDataSet.dataVersion,
           dataVersion,
           championId,
@@ -1000,14 +1016,14 @@ async function loadChampionDetailPayload(championId: string | number): Promise<a
 
   if (shardPath) {
     try {
-      logger.info('[data-loader] champion detail shard fallback fetch start', {
+      logger.debug('[data-loader] champion detail shard fallback fetch start', {
         dataVersion: dataSet.dataVersion,
         championId,
         shardPath,
       })
       const detail = await loadChampionDetailFromShard(dataSet, championId, shardPath, 'remote')
       if (detail) {
-        logger.info('[data-loader] champion detail shard fallback completed', {
+        logger.debug('[data-loader] champion detail shard fallback completed', {
           dataVersion: dataSet.dataVersion,
           championId,
           shardPath,

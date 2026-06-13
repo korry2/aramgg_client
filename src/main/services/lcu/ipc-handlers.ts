@@ -17,6 +17,7 @@ import {
 } from '../aram/bench-recommendation.ts'
 
 const LCU_READ_TIMEOUT_MS = 8 * 1000
+let lastAramBenchRecommendationLogSignature = ''
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
   let timeout: NodeJS.Timeout | null = null
@@ -181,14 +182,25 @@ export function registerLCUIpcHandlers(): void {
 
       const summary = {
         status: recommendation.status,
+        snapshotStatus: snapshot.status,
+        selfChampionId: snapshot.selfChampionId,
+        benchChampionIds: snapshot.benchChampions.map((champion) => champion.championId),
+        candidateChampionIds: recommendation.candidates?.map((candidate) => candidate.championId) || [],
         candidateCount: recommendation.candidates?.length || 0,
         durationMs: Date.now() - startedAt,
       }
 
-      if (recommendation.status === 'inactive') {
-        logger.debug('[LCU] ARAM bench recommendation completed', summary)
-      } else {
+      const recommendationLogSignature = [
+        summary.status,
+        summary.selfChampionId || 'none',
+        summary.benchChampionIds.join(','),
+        summary.candidateChampionIds.join(','),
+      ].join(':')
+      if (recommendationLogSignature !== lastAramBenchRecommendationLogSignature) {
+        lastAramBenchRecommendationLogSignature = recommendationLogSignature
         logger.info('[LCU] ARAM bench recommendation completed', summary)
+      } else {
+        logger.debug('[LCU] ARAM bench recommendation completed', summary)
       }
 
       return {
