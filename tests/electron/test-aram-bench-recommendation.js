@@ -20,7 +20,7 @@ function makeSnapshot(overrides = {}) {
     selfChampionId,
     benchEnabled: overrides.benchEnabled ?? benchChampions.length > 0,
     benchChampions,
-    myTeam: [{ cellId: 1, championId: selfChampionId }],
+    myTeam: overrides.myTeam ?? [{ cellId: 1, championId: selfChampionId }],
     actions: [],
     timer: null,
     status: 'ready',
@@ -51,6 +51,13 @@ const championStatsById = {
     numGames: 1200,
     tier: 2,
   },
+  103: {
+    nameCN: '阿狸',
+    winRate: 0.6,
+    pickRate: 0.09,
+    numGames: 1800,
+    tier: 1,
+  },
 }
 
 const betterBench = getAramBenchRecommendation(makeSnapshot(), championStatsById)
@@ -79,6 +86,36 @@ const duplicateBench = getAramBenchRecommendation(
   championStatsById
 )
 assert.equal(duplicateBench.candidates.filter((candidate) => candidate.championId === 99).length, 1)
+
+const teammateSnapshot = makeSnapshot({
+  myTeam: [
+    { cellId: 1, championId: 63 },
+    { cellId: 2, championId: 103 },
+    { cellId: 3, championId: 0 },
+  ],
+})
+const teammateRecommendation = getAramBenchRecommendation(teammateSnapshot, championStatsById)
+const teammateCandidate = teammateRecommendation.candidates.find((candidate) => candidate.championId === 103)
+assert.deepEqual(collectAramCandidateChampionIds(teammateSnapshot), [63, 99, 101, 103])
+assert.equal(teammateRecommendation.status, 'ready')
+assert.equal(teammateRecommendation.recommendedChampion.championId, 103)
+assert.equal(teammateCandidate.source, 'teammate')
+assert.equal(teammateCandidate.sourceLabel, '队友')
+assert.equal(teammateCandidate.isTeammate, true)
+
+const teammateOnly = getAramBenchRecommendation(
+  makeSnapshot({
+    benchEnabled: false,
+    benchChampions: [],
+    myTeam: [
+      { cellId: 1, championId: 63 },
+      { cellId: 2, championId: 103 },
+    ],
+  }),
+  championStatsById
+)
+assert.equal(teammateOnly.status, 'ready')
+assert.equal(teammateOnly.candidates.some((candidate) => candidate.source === 'teammate'), true)
 
 const inactive = getAramBenchRecommendation(
   makeSnapshot({ gameflowPhase: 'Lobby' }),

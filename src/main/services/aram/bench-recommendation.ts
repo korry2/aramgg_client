@@ -4,10 +4,24 @@ const INACTIVE_STATUS = 'inactive'
 const NO_CURRENT_STATUS = 'no-current-champion'
 const NO_BENCH_STATUS = 'no-bench'
 const NO_CANDIDATES_STATUS = 'no-candidates'
+const CANDIDATE_SOURCE_LABELS = {
+  current: '当前',
+  bench: '席位',
+  teammate: '队友',
+}
 
 function toPositiveInteger(value) {
   const numberValue = Number(value)
   return Number.isInteger(numberValue) && numberValue > 0 ? numberValue : null
+}
+
+function toInteger(value) {
+  if (value == null || value === '') {
+    return null
+  }
+
+  const numberValue = Number(value)
+  return Number.isInteger(numberValue) ? numberValue : null
 }
 
 function toNullableNumber(value) {
@@ -72,6 +86,10 @@ function getAvailableStatsFields(stats) {
   return ['winRate', 'pickRate', 'numGames', 'tier', 'iconUrl'].filter((field) => stats[field] != null)
 }
 
+function getCandidateSourceLabel(source) {
+  return CANDIDATE_SOURCE_LABELS[source] || '候选'
+}
+
 function scoreChampionStats(stats) {
   const winRate = normalizeRate(getStatsField(stats, ['winRate', 'win_rate']))
   const pickRate = normalizeRate(getStatsField(stats, ['pickRate', 'pick_rate']))
@@ -108,7 +126,7 @@ function scoreChampionStats(stats) {
 function buildCandidate(championId, source, snapshot, championStatsById) {
   const stats = getChampionStats(championStatsById, championId)
   const scoredStats = scoreChampionStats(stats)
-  const isCurrent = championId === snapshot.selfChampionId
+  const isCurrent = championId === toPositiveInteger(snapshot.selfChampionId)
   const reasons = []
 
   if (scoredStats.winRate != null) {
@@ -127,7 +145,10 @@ function buildCandidate(championId, source, snapshot, championStatsById) {
   return {
     championId,
     source,
+    sourceLabel: getCandidateSourceLabel(source),
     isCurrent,
+    isBench: source === 'bench',
+    isTeammate: source === 'teammate',
     name: getChampionDisplayName(championId, stats),
     iconUrl: stats?.iconUrl || null,
     tier: scoredStats.tier,
@@ -154,6 +175,83 @@ function sortCandidates(candidates) {
 
     return Number(a.championId) - Number(b.championId)
   })
+}
+
+function collectUniqueChampionIds(values) {
+  const championIds = []
+  const seenChampionIds = new Set()
+
+  values.forEach((value) => {
+    const championId = toPositiveInteger(value)
+    if (!championId || seenChampionIds.has(championId)) {
+      return
+    }
+
+    seenChampionIds.add(championId)
+    championIds.push(championId)
+  })
+
+  return championIds
+}
+
+function collectBenchChampionIds(snapshot) {
+  if (!Array.isArray(snapshot?.benchChampions)) {
+    return []
+  }
+
+  return collectUniqueChampionIds(snapshot.benchChampions.map((benchChampion) => benchChampion?.championId))
+}
+
+function collectTeammateChampionIds(snapshot) {
+  if (!Array.isArray(snapshot?.myTeam)) {
+    return []
+  }
+
+  const localPlayerCellId = toInteger(snapshot.localPlayerCellId)
+  const selfChampionId = toPositiveInteger(snapshot.selfChampionId)
+  const championIds = []
+  const seenChampionIds = new Set()
+
+  snapshot.myTeam.forEach((member) => {
+    const cellId = toInteger(member?.cellId)
+    if (localPlayerCellId != null && cellId === localPlayerCellId) {
+      return
+    }
+
+    const championId = toPositiveInteger(member?.championId)
+    if (!championId) {
+      return
+    }
+
+    if (localPlayerCellId == null && selfChampionId && championId === selfChampionId) {
+      return
+    }
+
+    if (seenChampionIds.has(championId)) {
+      return
+    }
+
+    seenChampionIds.add(championId)
+    championIds.push(championId)
+  })
+
+  return championIds
+}
+
+function getCandidateFocusName(candidate) {
+  if (!candidate) {
+    return '候选英雄'
+  }
+
+  if (candidate.source === 'teammate') {
+    return `队友已选英雄 ${candidate.name}`
+  }
+
+  if (candidate.source === 'bench') {
+    return `席位英雄 ${candidate.name}`
+  }
+
+  return candidate.name
 }
 
 function buildBaseRecommendation(snapshot, status, reason) {
@@ -192,9 +290,8 @@ export function collectAramCandidateChampionIds(snapshot) {
 
   addChampionId(snapshot.selfChampionId)
 
-  if (snapshot.benchEnabled && Array.isArray(snapshot.benchChampions)) {
-    snapshot.benchChampions.forEach((benchChampion) => addChampionId(benchChampion.championId))
-  }
+  collectBenchChampionIds(snapshot).forEach(addChampionId)
+  collectTeammateChampionIds(snapshot).forEach(addChampionId)
 
   return championIds
 }
@@ -213,11 +310,10 @@ export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
   }
 
   const currentChampionId = toPositiveInteger(snapshot.selfChampionId)
-  const benchChampionIds = Array.isArray(snapshot.benchChampions)
-    ? snapshot.benchChampions.map((benchChampion) => toPositiveInteger(benchChampion.championId)).filter(Boolean)
-    : []
+  const benchChampionIds = collectBenchChampionIds(snapshot)
+  const teammateChampionIds = collectTeammateChampionIds(snapshot)
 
-  if (!currentChampionId && !benchChampionIds.length) {
+  if (!currentChampionId && !benchChampionIds.length && !teammateChampionIds.length) {
     return buildBaseRecommendation(snapshot, NO_CANDIDATES_STATUS, 'no-champion-candidates')
   }
 
@@ -239,6 +335,15 @@ export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
     }
   })
 
+  teammateChampionIds.forEach((championId) => {
+    if (!candidatesById.has(championId)) {
+      candidatesById.set(
+        championId,
+        buildCandidate(championId, 'teammate', snapshot, championStatsById)
+      )
+    }
+  })
+
   const candidates = sortCandidates([...candidatesById.values()])
   const currentChampion = currentChampionId ? candidatesById.get(currentChampionId) || null : null
   const recommendedChampion = candidates[0] || null
@@ -250,22 +355,29 @@ export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
       candidates,
       confidence: recommendedChampion?.confidence || 0,
       reasons: recommendedChampion
-        ? [`当前英雄尚未稳定读取，席位中优先关注 ${recommendedChampion.name}`]
+        ? [`当前英雄尚未稳定读取，候选中优先关注 ${getCandidateFocusName(recommendedChampion)}`]
         : ['当前英雄尚未稳定读取'],
     }
   }
 
   const deltaScore = recommendedChampion ? recommendedChampion.score - currentChampion.score : 0
-  const noBenchAvailable = !snapshot.benchEnabled || benchChampionIds.length === 0
-  const status = noBenchAvailable ? NO_BENCH_STATUS : READY_STATUS
+  const alternativeCandidateCount = candidates.filter((candidate) => !candidate.isCurrent).length
+  const noAlternativeCandidates = alternativeCandidateCount === 0
+  const status = noAlternativeCandidates ? NO_BENCH_STATUS : READY_STATUS
   const reasons = []
 
-  if (noBenchAvailable) {
-    reasons.push('没有可用席位英雄，建议保留当前英雄')
+  if (noAlternativeCandidates) {
+    reasons.push('没有可用席位或队友已选英雄，建议保留当前英雄')
   } else if (!recommendedChampion || recommendedChampion.championId === currentChampion.championId || deltaScore < 0.015) {
     reasons.push(`${currentChampion.name} 当前评分最高或差距很小，建议保留`)
+  } else if (recommendedChampion.source === 'teammate') {
+    reasons.push(`${recommendedChampion.name} 是队友已选英雄，综合评分高于当前英雄，可作为只读沟通参考`)
   } else {
-    reasons.push(`${recommendedChampion.name} 综合评分高于当前英雄，建议优先关注`)
+    reasons.push(`${getCandidateFocusName(recommendedChampion)} 综合评分高于当前英雄，建议优先关注`)
+  }
+
+  if (!benchChampionIds.length && teammateChampionIds.length) {
+    reasons.push('当前没有席位英雄，队友已选英雄仅作只读参考')
   }
 
   if (!candidates.some((candidate) => candidate.dataAvailable)) {
@@ -277,7 +389,7 @@ export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
     status,
     reason: null,
     gameflowPhase: snapshot.gameflowPhase,
-    benchEnabled: snapshot.benchEnabled,
+    benchEnabled: snapshot.benchEnabled || benchChampionIds.length > 0,
     currentChampion,
     recommendedChampion: recommendedChampion || currentChampion,
     candidates,

@@ -9,8 +9,11 @@ export type AramBenchRecommendationStatus =
 
 export interface AramBenchCandidate {
   championId: number
-  source: 'current' | 'bench'
+  source: 'current' | 'bench' | 'teammate'
+  sourceLabel: string
   isCurrent: boolean
+  isBench: boolean
+  isTeammate: boolean
   name: string
   iconUrl: string | null
   tier: number | null

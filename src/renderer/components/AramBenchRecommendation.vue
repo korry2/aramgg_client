@@ -38,7 +38,11 @@
                     v-for="candidate in topCandidates"
                     :key="candidate.championId"
                     class="candidate-row"
-                    :class="{ current: candidate.isCurrent, recommended: isRecommended(candidate) }"
+                    :class="{
+                        current: candidate.isCurrent,
+                        recommended: isRecommended(candidate),
+                        teammate: candidate.source === 'teammate',
+                    }"
                 >
                     <div class="champion-mark">
                         <img
@@ -52,6 +56,9 @@
                     <div class="candidate-main">
                         <div class="candidate-title">
                             <strong>{{ candidate.name }}</strong>
+                            <span class="source-tag" :class="`source-${candidate.source || 'bench'}`">
+                                {{ candidateSourceLabel(candidate) }}
+                            </span>
                         </div>
                         <div class="stat-line">
                             <div>胜率 {{ formatPercent(candidate.winRate) }}</div>
@@ -127,6 +134,11 @@ const emptyMessage = computed(() => {
 
 const topCandidates = computed(() => recommendation.value?.candidates || [])
 const recommended = computed(() => recommendation.value?.recommendedChampion || null)
+const CANDIDATE_SOURCE_LABELS = {
+    current: '当前',
+    bench: '席位',
+    teammate: '队友',
+}
 
 const withTimeout = (promise, timeoutMs, message) => {
     let timeoutId
@@ -205,6 +217,9 @@ const refresh = async (showLoading = true) => {
 
 const isRecommended = (candidate) =>
     recommended.value && candidate.championId === recommended.value.championId
+
+const candidateSourceLabel = (candidate) =>
+    candidate?.sourceLabel || CANDIDATE_SOURCE_LABELS[candidate?.source] || '候选'
 
 const formatPercent = (value) => {
     if (value == null || Number.isNaN(Number(value))) return '--'
@@ -480,6 +495,10 @@ h3 {
     border-color: rgba(226, 192, 143, 0.28);
 }
 
+.candidate-row.teammate:not(.recommended) {
+    border-color: rgba(96, 161, 176, 0.36);
+}
+
 .champion-mark {
     width: 38px;
     height: 38px;
@@ -522,12 +541,26 @@ h3 {
     white-space: nowrap;
 }
 
-.candidate-title span {
+.source-tag {
     flex: 0 0 auto;
+    padding: 2px 5px;
+    border: 1px solid rgba(60, 74, 71, 0.42);
+    border-radius: 4px;
+    background: rgba(4, 15, 24, 0.34);
     color: #859491;
     font-size: 10px;
     font-weight: 900;
-    text-transform: uppercase;
+    line-height: 1;
+}
+
+.source-tag.source-current {
+    border-color: rgba(226, 192, 143, 0.28);
+    color: #e2c08f;
+}
+
+.source-tag.source-teammate {
+    border-color: rgba(96, 161, 176, 0.34);
+    color: #a9cbd3;
 }
 
 .stat-line {
