@@ -376,6 +376,7 @@ const props = defineProps({
   },
 })
 
+const DEFAULT_ACTIVE_TAB = 'augments'
 const visible = ref(false)
 const loading = ref(false)
 const championDataLoading = ref(false)
@@ -383,7 +384,7 @@ const error = ref(null)
 const championId = ref(null)
 const championName = ref('')
 const championNameData = ref(null)
-const activeTab = ref('augments')
+const activeTab = ref(DEFAULT_ACTIVE_TAB)
 const selectedBuildRouteIndex = ref(0)
 const selectedRarity = ref('all')
 const dataSource = ref('local')
@@ -624,8 +625,42 @@ const rarityOptions = [
 ]
 
 const setActiveTab = (key) => {
+  if (!tabs.some(tab => tab.key === key)) {
+    return
+  }
+
+  if (activeTab.value === key) {
+    return
+  }
+
   activeTab.value = key
   hideAugmentTooltip()
+  logOverlayInfo('active tab changed', {
+    tab: key,
+    sidePanel: isSidePanel.value,
+  })
+}
+
+const resetOverlaySelection = () => {
+  activeTab.value = DEFAULT_ACTIVE_TAB
+  selectedBuildRouteIndex.value = 0
+  selectedRarity.value = 'all'
+  hideAugmentTooltip()
+}
+
+const shouldResetOverlaySelection = (data, wasVisible, previousChampionId) => {
+  if (!isSidePanel.value || !wasVisible) {
+    return true
+  }
+
+  const nextChampionId = Number(data?.championId)
+  const currentChampionId = Number(previousChampionId)
+
+  if (!Number.isFinite(nextChampionId) || !Number.isFinite(currentChampionId)) {
+    return true
+  }
+
+  return nextChampionId !== currentChampionId
 }
 
 const selectRarity = (key) => {
@@ -1094,12 +1129,17 @@ const hideAugmentTooltip = () => {
 const showOverlay = async (data) => {
   const startedAt = Date.now()
   const loadSequence = ++championLoadSequence
+  const wasVisible = visible.value
+  const previousChampionId = championId.value
+  const shouldResetSelection = shouldResetOverlaySelection(data, wasVisible, previousChampionId)
   logOverlayInfo('showOverlay called', {
     pending: data?.pending === true,
     championId: data?.championId || null,
     augmentCount: Array.isArray(data?.augments) ? data.augments.length : 0,
     benchCandidateCount: data?.benchRecommendation?.candidates?.length || 0,
     dataSource: data?.dataSource || null,
+    activeTab: activeTab.value,
+    resetSelection: shouldResetSelection,
   })
 
   visible.value = true
@@ -1111,8 +1151,11 @@ const showOverlay = async (data) => {
   itemsData.value = {}
   championLinks.value = {}
   displayAugments.value = []
-  selectedBuildRouteIndex.value = 0
-  hideAugmentTooltip()
+  if (shouldResetSelection) {
+    resetOverlaySelection()
+  } else {
+    hideAugmentTooltip()
+  }
   benchPreviewRecommendation.value = data?.benchRecommendation || null
   championNameData.value = null
   itemSetToast.value = { type: '', message: '' }
@@ -1156,9 +1199,6 @@ const showOverlay = async (data) => {
       championName.value = ''
       dataSource.value = data?.dataSource || 'champ-select'
       timestamp.value = data?.timestamp || Date.now()
-      activeTab.value = 'augments'
-      selectedBuildRouteIndex.value = 0
-      selectedRarity.value = 'all'
       logOverlayInfo('champion detail shown without selected champion', {
         champSelectMode: champSelectMode.value,
         durationMs: Date.now() - startedAt,
@@ -1172,9 +1212,6 @@ const showOverlay = async (data) => {
     championNameData.value = null
     dataSource.value = data.dataSource || 'local'
     timestamp.value = data.timestamp || Date.now()
-    activeTab.value = 'augments'
-    selectedBuildRouteIndex.value = 0
-    selectedRarity.value = 'all'
     await loadItemSetAutoPreference()
     if (itemSetAutoEnabled.value) {
       showItemSetToast('loading', '自动配置已开启，检测到当前英雄后会写入游戏推荐')

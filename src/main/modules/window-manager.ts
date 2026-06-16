@@ -489,7 +489,7 @@ export const createAugmentSidePanelWindow = async (isDev, devServerUrl) => {
         resizable: isDev || false,
         fullscreenable: false,
         alwaysOnTop: true,
-        focusable: false,
+        focusable: true,
         ...bounds,
         webPreferences,
     })
