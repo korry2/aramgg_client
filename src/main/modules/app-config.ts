@@ -30,6 +30,7 @@ import logger from './logger.ts'
 import store from './app-store.ts'
 import { getAppDataDir } from './app-paths.ts'
 import { logDiagnosticSnapshot } from './diagnostic-logger.ts'
+import { createAppTray } from './tray.ts'
 import {
     shouldHideChampionInsightOnGameStart,
     shouldShowAugmentSidePanel,
@@ -138,11 +139,13 @@ export async function init() {
     const popupWindow = await createPopupWindow(isDev, devServerUrl)
     const floatingWindow = await createFloatingWindow(isDev, devServerUrl)
     const augmentSidePanelWindow = await createAugmentSidePanelWindow(isDev, devServerUrl)
+    createAppTray()
     logger.info('窗口已创建:', {
         main: !!mainWindow,
         popup: !!popupWindow,
         floating: !!floatingWindow,
-        augmentSidePanel: !!augmentSidePanelWindow
+        augmentSidePanel: !!augmentSidePanelWindow,
+        tray: true,
     })
 
     setTimeout(() => {

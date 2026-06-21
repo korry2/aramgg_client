@@ -592,12 +592,36 @@ export const allowMainWindowClose = () => {
 /**
  * 切换主窗口可见性
  */
-export const toggleMainWindow = () => {
-    if (mainWindow) {
-        if (mainWindow.isVisible()) {
-            mainWindow.hide()
-        } else {
-            mainWindow.show()
-        }
+export const showMainWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return
     }
+
+    if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+    }
+
+    mainWindow.show()
+    mainWindow.focus()
+}
+
+export const hideMainWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return
+    }
+
+    mainWindow.hide()
+}
+
+export const toggleMainWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return
+    }
+
+    if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        hideMainWindow()
+        return
+    }
+
+    showMainWindow()
 }
