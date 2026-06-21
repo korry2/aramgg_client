@@ -105,18 +105,27 @@ function getAugmentSidePanelBounds() {
 
 export function applyPopupWindowLayout() {
     if (popupWindow && !popupWindow.isDestroyed()) {
+        if (popupWindow.isVisible()) {
+            return
+        }
         popupWindow.setBounds(getPopupBounds())
     }
 }
 
 export function applyFloatingWindowLayout() {
     if (floatingWindow && !floatingWindow.isDestroyed()) {
+        if (floatingWindow.isVisible()) {
+            return
+        }
         floatingWindow.setBounds(getFloatingBounds())
     }
 }
 
 export function applyAugmentSidePanelWindowLayout() {
     if (augmentSidePanelWindow && !augmentSidePanelWindow.isDestroyed()) {
+        if (augmentSidePanelWindow.isVisible()) {
+            return
+        }
         augmentSidePanelWindow.setBounds(getAugmentSidePanelBounds())
     }
 }

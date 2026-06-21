@@ -21,7 +21,11 @@ import {
 } from './modules/window-manager.ts'
 import store from './modules/app-store.ts'
 import { getPartialOcrScreenshotDir } from './modules/app-paths.ts'
-import { getAugmentIds, mergePartialAugments } from './augment-partial-merge.ts'
+import {
+    createInitialPartialAugmentSelection,
+    getAugmentIds,
+    mergePartialAugments,
+} from './augment-partial-merge.ts'
 import {
     shouldHideChampionInsightOnGameStart,
     shouldShowAugmentSidePanel,
@@ -152,6 +156,19 @@ function getPayloadAugmentIds(augments = []) {
         .slice(0, 3)
         .map(augment => Number(augment?.id ?? augment?.augmentId))
         .filter(id => Number.isFinite(id))
+}
+
+function isConfirmedAugmentSelectionUi(analysis = {}) {
+    const gate = analysis.augmentGate || {}
+    return gate.ocrSkippedReason == null &&
+        gate.titleActivity?.likely === true &&
+        gate.rerollButtons?.visible === true
+}
+
+function isKnownSubsetOfPrevious(currentIds = [], previousIds = []) {
+    return previousIds.length > 0 &&
+        currentIds.length > 0 &&
+        currentIds.every(id => previousIds.includes(id))
 }
 
 class AutoScreenshotService {
@@ -589,13 +606,6 @@ class AutoScreenshotService {
             } else {
                 // 检测结果不满足通知条件
                 if (cardCount < 3) {
-                    this._logAnalysisMiss('insufficient-augments', {
-                        cardCount,
-                        confidence,
-                        isAugmentPhase,
-                        durationMs: analysisDuration,
-                        augments,
-                    })
                     // 切换/刷新海克斯时会有短暂动画帧，OCR 可能只读到 0-2 张。
                     // 保留上一轮已显示结果，只有连续 miss 超过宽限才清空。
                     const hadVisibleAugmentOverlay = this.lastDetectedAugmentIds.length > 0
@@ -624,6 +634,58 @@ class AutoScreenshotService {
                         })
                         return
                     }
+
+                    const initialPartial = isConfirmedAugmentSelectionUi(analysisResult.analysis)
+                        ? createInitialPartialAugmentSelection({
+                            augments,
+                            slotDiagnostics: analysisResult.analysis.slotDiagnostics || [],
+                        })
+                        : null
+
+                    if (initialPartial) {
+                        const partialAugments = initialPartial.augments
+                        const currentIds = getAugmentIds(partialAugments)
+                        const currentIdList = currentIds.join(',')
+                        const lastIds = this.lastDetectedAugmentIds.join(',')
+                        const knownSubsetOfPrevious = isKnownSubsetOfPrevious(currentIds, this.lastDetectedAugmentIds)
+
+                        if (currentIdList === lastIds) {
+                            this.lastDetectedAugmentAt = Date.now()
+                            this.visibleAugmentMissCount = 0
+                            logger.debug(`[自动分析 ${this.analysisCount}] Partial augment selection unchanged, skipping notification`)
+                            return
+                        }
+
+                        if (!knownSubsetOfPrevious) {
+                            this.detectionCount++
+                            this.lastDetectedAugments = partialAugments
+                            this.lastDetectedAugmentIds = currentIds
+                            this.lastDetectedAugmentSlotFingerprints = getSlotFingerprints(analysisResult.analysis.slotDiagnostics)
+                            this.lastDetectedAugmentAt = Date.now()
+                            this.visibleAugmentMissCount = 0
+                            logger.info(`Augment partial initial accepted: count=${cardCount}, known=${currentIds.length}, confidence=${(confidence * 100).toFixed(1)}%, duration=${analysisDuration.toFixed(1)}ms, reason=${initialPartial.reason}, missingSlots=${initialPartial.missingSlots.join(',') || 'none'}, augments=${getAugmentSummary(partialAugments)}`)
+                            this._logFirstDetectionLatency('partial', analysisDuration)
+                            this._notifyAugmentDetected({
+                                ...analysisResult,
+                                analysis: {
+                                    ...analysisResult.analysis,
+                                    augments: partialAugments,
+                                    cardCount: partialAugments.length,
+                                    partialUpdate: true,
+                                    partialReason: initialPartial.reason,
+                                },
+                            })
+                            return
+                        }
+                    }
+
+                    this._logAnalysisMiss('insufficient-augments', {
+                        cardCount,
+                        confidence,
+                        isAugmentPhase,
+                        durationMs: analysisDuration,
+                        augments,
+                    })
 
                     const shouldClearVisibleAugments = this._shouldClearVisibleAugmentsAfterMiss({
                         cardCount,

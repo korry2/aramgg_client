@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getFingerprintHammingDistance, mergePartialAugments } from '../../src/main/augment-partial-merge.ts'
+import {
+    createInitialPartialAugmentSelection,
+    getFingerprintHammingDistance,
+    mergePartialAugments,
+} from '../../src/main/augment-partial-merge.ts'
 
 const augment = (id, detectedSlot) => ({
     id,
@@ -24,6 +28,41 @@ describe('mergePartialAugments', () => {
             augments: [augment(1071, 1)],
             lastDetectedAugmentIds: [],
             lastDetectedAugments: [],
+        })
+
+        expect(result).toBeNull()
+    })
+
+    it('opens an initial partial selection when one title has no database match', () => {
+        const result = createInitialPartialAugmentSelection({
+            augments: [
+                augment(2102, 0),
+                augment(2132, 2),
+            ],
+            slotDiagnostics: [
+                { slot: 0, text: '高压锅', matchedId: 2102 },
+                { slot: 1, text: '双发快射', matchedId: null },
+                { slot: 2, text: '术士果汁盒', matchedId: 2132 },
+            ],
+        })
+
+        expect(result?.reason).toBe('unmatched-title-slot')
+        expect(result?.missingSlots).toEqual([1])
+        expect(result?.augments.map(item => item.id)).toEqual([2102, null, 2132])
+        expect(result?.augments[1].missing).toBe(true)
+    })
+
+    it('does not open an initial partial selection for an empty transient slot', () => {
+        const result = createInitialPartialAugmentSelection({
+            augments: [
+                augment(2102, 0),
+                augment(2132, 2),
+            ],
+            slotDiagnostics: [
+                { slot: 0, text: '高压锅', matchedId: 2102 },
+                { slot: 1, text: '', matchedId: null },
+                { slot: 2, text: '术士果汁盒', matchedId: 2132 },
+            ],
         })
 
         expect(result).toBeNull()

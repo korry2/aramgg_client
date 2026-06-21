@@ -36,6 +36,50 @@ export function hasMeaningfulSlotText(text) {
     return cjkCount >= 2 || normalized.length >= 4
 }
 
+function isValidDetectedSlot(slot) {
+    return Number.isInteger(slot) && slot >= 0 && slot < 3
+}
+
+function findSlotDiagnostic(slotDiagnostics = [], slot) {
+    return (slotDiagnostics || []).find(diagnostic => diagnostic?.slot === slot) || null
+}
+
+export function createInitialPartialAugmentSelection({
+    augments = [],
+    slotDiagnostics = [],
+    minimumKnownAugments = 2,
+} = {}) {
+    const knownAugments = augments.filter(augment =>
+        augment?.id != null && isValidDetectedSlot(augment.detectedSlot)
+    )
+
+    if (knownAugments.length < minimumKnownAugments || knownAugments.length >= 3) {
+        return null
+    }
+
+    const knownSlots = new Set(knownAugments.map(augment => augment.detectedSlot))
+    const missingSlots = [0, 1, 2].filter(slot => !knownSlots.has(slot))
+    const hasMeaningfulUnmatchedTitle = missingSlots.some(slot => {
+        const diagnostic = findSlotDiagnostic(slotDiagnostics, slot)
+        return diagnostic?.matchedId == null && hasMeaningfulSlotText(diagnostic?.text)
+    })
+
+    if (!hasMeaningfulUnmatchedTitle) {
+        return null
+    }
+
+    const merged = [0, 1, 2].map(createEmptyAugmentSlot)
+    for (const augment of knownAugments) {
+        merged[augment.detectedSlot] = augment
+    }
+
+    return {
+        augments: merged,
+        reason: 'unmatched-title-slot',
+        missingSlots,
+    }
+}
+
 const TITLE_FINGERPRINT_CHANGE_THRESHOLD = 18
 const HEX_BIT_COUNTS = new Map([
     ['0', 0], ['1', 1], ['2', 1], ['3', 2],
@@ -125,7 +169,7 @@ export function mergePartialAugments({
 
     const merged = [0, 1, 2].map(createEmptyAugmentSlot)
     for (const augment of augments) {
-        if (Number.isInteger(augment?.detectedSlot) && augment.detectedSlot >= 0 && augment.detectedSlot < 3) {
+        if (isValidDetectedSlot(augment?.detectedSlot)) {
             merged[augment.detectedSlot] = augment
         }
     }
