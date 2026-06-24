@@ -70,6 +70,12 @@ npm run release:major
 npm run release:push
 ```
 
+安装包发布后，更新远端客户端配置 `/api/client/v1/config`，让旧版本客户端能看到新版本和更新日志：
+
+- `client.latestVersion`：新版本号。
+- `client.downloadUrl`：新安装包或最新下载页。
+- `client.changelog` / `client.releaseNotes`：新版本更新条目。
+
 示例：当前 `0.1.0` 执行 `npm run release:patch` 会生成 `0.1.1` 的版本提交和 `v0.1.1` tag；推送后 GitHub Actions 会校验 tag 必须等于 `package.json` 版本，校验通过才发布 Release。
 
 不要手动创建轻量 tag 代替发布脚本。需要清理错误发布时，先确认要删除的本地和远端 tag，再按同一版本号重建 annotated tag。

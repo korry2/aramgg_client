@@ -1,6 +1,6 @@
 # Electron 客户端版本更新方案
 
-本文档记录 aramgg Electron 客户端的版本发布和后续自动更新方案。当前 GitHub Releases 发布链路已经验证可用；应用内 `electron-updater` 运行时代码仍未接入，应后续单独提交。
+本文档记录 aramgg Electron 客户端的版本发布和后续自动更新方案。当前 GitHub Releases 发布链路已经验证可用；主界面已接入轻量版本提示、下载入口和更新日志展示；应用内 `electron-updater` 自动下载/安装运行时代码仍未接入，应后续单独提交。
 
 ## 目标
 
@@ -63,9 +63,43 @@ GitHub Release v0.2.0/
 
 当前 GitHub Releases 已作为发布产物托管位置验证通过。EdgeOne、对象存储或自建静态目录仍可作为后续切换更新 feed 的备选。客户端只需要读取公开的更新 feed，不应该内置任何写入 token。
 
+## 已接入的轻量更新提示
+
+当前客户端通过 `get-version-info` IPC 读取远端 `/api/client/v1/config` 中的 `client` 配置，并在主界面展示：
+
+- 当前客户端版本、远端最新版本和更新提示。
+- `client.downloadUrl` 对应的“下载更新”入口。
+- 页脚“更新日志”弹窗，优先展示远端 `client.changelog` / `client.releaseNotes`，字段缺失时回退到打包内的本地兜底日志。
+
+这不是自动更新安装能力。旧客户端要看到未来版本的更新日志，必须先把未来版本条目发布到远端 `config`；打包内本地兜底日志无法覆盖尚未发布时不存在的版本。
+
 ## 配置形态
 
-后续实现时建议保持 feed URL 可配置：
+当前轻量更新提示使用 `client.latestVersion`、`minimumVersion`、`downloadUrl` 和 `changelog` / `releaseNotes`：
+
+```json
+{
+  "client": {
+    "latestVersion": "0.2.0",
+    "minimumVersion": "0.1.0",
+    "downloadUrl": "https://data.dtodo.cn/downloads/aramgg-electron/latest",
+    "changelog": [
+      {
+        "version": "0.2.0",
+        "date": "2026-06-25",
+        "title": "更新标题",
+        "summary": "简短说明。",
+        "changes": [
+          "更新点一",
+          "更新点二"
+        ]
+      }
+    ]
+  }
+}
+```
+
+后续接入 `electron-updater` 时建议额外保持 feed URL 可配置：
 
 ```json
 {
@@ -139,17 +173,18 @@ Electron 的页面更新属于应用本体更新的一部分：
 2. 修改版本号并重新发布新版本，例如 `0.1.5`。
 3. 确认 GitHub Release 包含 `.exe`、`.blockmap`、`latest.yml`。
 4. 启动旧版本，确认能发现新版本。
-5. 验证下载进度、下载完成、重启安装和版本号变化。
-6. 验证没有更新时的状态。
-7. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
-8. 验证开发模式默认不会误触发更新。
-9. 验证 renderer 页面变更能随应用更新生效。
+5. 更新远端 `/api/client/v1/config` 的 `client.latestVersion`、`client.downloadUrl` 和 `client.changelog`，确认旧版本能看到新版本更新日志。
+6. 验证下载进度、下载完成、重启安装和版本号变化。
+7. 验证没有更新时的状态。
+8. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
+9. 验证开发模式默认不会误触发更新。
+10. 验证 renderer 页面变更能随应用更新生效。
 
 ## 待定问题
 
 - 是否长期使用 GitHub Releases 作为更新 feed，或切换到 EdgeOne、对象存储、自建静态目录。
 - Windows 代码签名证书。
-- 更新 UI 放在设置页、启动提示、还是右上角状态入口。
+- `electron-updater` 的下载进度、下载完成和重启安装 UI 放在设置页、启动提示、还是右上角状态入口。
 - 自动检查频率：启动时、每天一次、用户手动检查，或组合策略。
 - 是否需要强制升级和最低可用版本。
 - macOS、Linux 是否进入首期范围。

@@ -51,7 +51,19 @@ https://data.dtodo.cn/api/client/v1/config
   "client": {
     "latestVersion": "0.1.0",
     "minimumVersion": "0.1.0",
-    "downloadUrl": "https://data.dtodo.cn/downloads/aramgg-electron/latest"
+    "downloadUrl": "https://data.dtodo.cn/downloads/aramgg-electron/latest",
+    "changelog": [
+      {
+        "version": "0.1.0",
+        "date": "2026-05-26",
+        "title": "首个公开客户端版本",
+        "summary": "发布官方 Electron 客户端基础能力。",
+        "changes": [
+          "支持远端数据版本配置",
+          "支持客户端版本提示和下载入口"
+        ]
+      }
+    ]
   },
   "analytics": {
     "enabled": true,
@@ -69,6 +81,8 @@ https://data.dtodo.cn/api/client/v1/config
   }
 }
 ```
+
+`client.changelog` 和 `client.releaseNotes` 都可作为客户端更新日志来源，推荐使用上面的数组结构。已发布的旧客户端只能通过远端 `config` 看到未来版本更新日志；打包内的本地日志只作为离线或字段缺失时的兜底。
 
 客户端启动时：
 
@@ -263,6 +277,7 @@ edge-functions/api/[[default]].js
 - 数据发布仍由 `npm run deploy:eo` 驱动。
 - 新版本数据先上传到 EdgeOne Blob 的版本化路径。
 - `config` 最后切到新的 `dataVersion`。
+- 客户端应用发布后，把 `client.latestVersion`、`client.downloadUrl` 和 `client.changelog` / `client.releaseNotes` 一起切到新版本，旧客户端才会展示新版本更新日志。
 - 回滚时只需要把 `config` 指回上一个可用 `dataVersion`。
 - 客户端缓存多个版本时，可以在启动后清理过旧版本，但至少保留当前版本和上一个版本。
 

@@ -181,6 +181,10 @@
                         GitHub
                     </a>
                     <span class="footer-separator">·</span>
+                    <button class="footer-link footer-action" type="button" @click="openChangelog">
+                        更新日志
+                    </button>
+                    <span class="footer-separator">·</span>
                     <button class="footer-link footer-action" type="button" @click="openLogDirectory">
                         打开日志目录
                     </button>
@@ -204,6 +208,51 @@
                 </section>
             </div>
 
+            <div v-if="showChangelog" class="app-modal-overlay" @click.self="closeChangelog">
+                <section class="app-modal changelog-modal" role="dialog" aria-modal="true" aria-labelledby="changelog-title">
+                    <header class="changelog-modal-header">
+                        <div class="changelog-title-group">
+                            <ScrollText class="changelog-title-icon" />
+                            <div>
+                                <p class="section-kicker">版本记录</p>
+                                <h2 id="changelog-title">更新日志</h2>
+                            </div>
+                        </div>
+                        <button class="window-control changelog-close" type="button" title="关闭" @click="closeChangelog">
+                            <X class="window-icon" />
+                        </button>
+                    </header>
+
+                    <div v-if="hasChangelog" class="changelog-list">
+                        <article
+                            v-for="(entry, index) in changelogEntries"
+                            :key="entry.version || index"
+                            class="changelog-entry"
+                            :class="{ current: isCurrentChangelogEntry(entry) }"
+                        >
+                            <header class="changelog-entry-header">
+                                <div class="changelog-entry-title">
+                                    <strong>{{ formatChangelogVersion(entry) }}</strong>
+                                    <span v-if="isCurrentChangelogEntry(entry)" class="changelog-current">当前</span>
+                                </div>
+                                <time v-if="entry.date" class="changelog-date">
+                                    {{ formatChangelogDate(entry.date) }}
+                                </time>
+                            </header>
+                            <h3 v-if="entry.title">{{ entry.title }}</h3>
+                            <p v-if="entry.summary">{{ entry.summary }}</p>
+                            <ul v-if="entry.changes?.length" class="changelog-changes">
+                                <li v-for="change in entry.changes" :key="change">
+                                    {{ change }}
+                                </li>
+                            </ul>
+                        </article>
+                    </div>
+
+                    <p v-else class="changelog-empty">暂无更新日志</p>
+                </section>
+            </div>
+
         </section>
     </div>
 </template>
@@ -222,6 +271,7 @@ import {
     FolderSearch,
     Minus,
     Save,
+    ScrollText,
     Target,
     Trash2,
     X,
@@ -230,6 +280,7 @@ import {
 const testStatus = ref(null)
 const versionInfo = ref(null)
 const showQuitConfirm = ref(false)
+const showChangelog = ref(false)
 const showAdvancedLcuConfig = ref(false)
 const manualLolPath = ref('')
 const manualPathStatus = ref(null)
@@ -270,6 +321,12 @@ const versionHint = computed(() => {
 const showUpdateLink = computed(() => {
     return Boolean(versionInfo.value?.isNewer && versionInfo.value?.downloadUrl)
 })
+
+const changelogEntries = computed(() => {
+    return Array.isArray(versionInfo.value?.changelog) ? versionInfo.value.changelog : []
+})
+
+const hasChangelog = computed(() => changelogEntries.value.length > 0)
 
 const loadVersionInfo = async () => {
     try {
@@ -457,6 +514,37 @@ const openGithub = async () => {
     } catch (error) {
         console.warn('Failed to open GitHub:', error)
     }
+}
+
+const openChangelog = () => {
+    showChangelog.value = true
+}
+
+const closeChangelog = () => {
+    showChangelog.value = false
+}
+
+const formatChangelogVersion = (entry) => {
+    const version = String(entry?.version || '').trim()
+    if (!version) {
+        return '未标记版本'
+    }
+
+    return version.startsWith('v') ? version : `v${version}`
+}
+
+const formatChangelogDate = (date) => {
+    const value = String(date || '').trim()
+    const isoDate = value.match(/^\d{4}-\d{2}-\d{2}/)
+    if (isoDate) {
+        return isoDate[0]
+    }
+
+    return value
+}
+
+const isCurrentChangelogEntry = (entry) => {
+    return String(entry?.version || '').replace(/^v/i, '') === clientVersionLabel.value
 }
 
 const openLogDirectory = async () => {
@@ -1310,6 +1398,176 @@ onBeforeUnmount(() => {
     border-color: rgba(226, 192, 143, 0.58);
     background: linear-gradient(135deg, var(--lol-primary-2), var(--lol-primary));
     color: var(--lol-bg);
+}
+
+.changelog-modal {
+    max-height: min(620px, calc(100% - 36px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.changelog-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(244, 236, 220, 0.08);
+}
+
+.changelog-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.changelog-title-icon {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    color: #e2c08f;
+}
+
+.changelog-modal-header h2 {
+    margin: 0;
+    color: var(--lol-ivory);
+    font-size: 17px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.changelog-close {
+    flex: 0 0 auto;
+}
+
+.changelog-list {
+    max-height: min(430px, 62dvh);
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.changelog-entry {
+    padding: 10px 11px;
+    border: 1px solid rgba(244, 236, 220, 0.07);
+    border-radius: 4px;
+    background: rgba(4, 15, 24, 0.42);
+}
+
+.changelog-entry.current {
+    border-color: rgba(226, 192, 143, 0.32);
+    background: rgba(194, 156, 109, 0.08);
+}
+
+.changelog-entry-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.changelog-entry-title {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.changelog-entry-title strong {
+    color: #e2c08f;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.changelog-current {
+    padding: 2px 5px;
+    border: 1px solid rgba(226, 192, 143, 0.28);
+    border-radius: 4px;
+    background: rgba(194, 156, 109, 0.12);
+    color: #e2c08f;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.changelog-date {
+    flex: 0 0 auto;
+    color: #859491;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.changelog-entry h3 {
+    margin: 8px 0 0;
+    color: #d7e4f1;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.3;
+}
+
+.changelog-entry p {
+    margin: 6px 0 0;
+    color: #bacac6;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.changelog-changes {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.changelog-changes li {
+    position: relative;
+    padding-left: 12px;
+    color: #d7e4f1;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.changelog-changes li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.6em;
+    width: 4px;
+    height: 4px;
+    border-radius: 4px;
+    background: #e2c08f;
+}
+
+.changelog-empty {
+    margin: 0;
+    padding: 16px;
+    border: 1px solid rgba(244, 236, 220, 0.07);
+    border-radius: 4px;
+    background: rgba(4, 15, 24, 0.42);
+    color: #859491;
+    font-size: 12px;
+    text-align: center;
+}
+
+.changelog-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.changelog-list::-webkit-scrollbar-track {
+    background: rgba(4, 15, 24, 0.55);
+}
+
+.changelog-list::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: rgba(226, 195, 132, 0.48);
 }
 
 .footer-link {

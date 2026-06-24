@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { app } from 'electron'
 import { loadDataApiConfig } from './data-loader.ts'
+import { getChangelogEntries } from './changelog.ts'
 import logger from './modules/logger.ts'
 
 const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/
@@ -110,6 +111,7 @@ export async function getVersionInfo() {
     isNewer: comparison.isNewer,
     isBelowMinimumVersion,
     statusText: getSeverityText(comparison.severity),
+    changelog: getChangelogEntries(config, clientConfig),
   }
 }
 

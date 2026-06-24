@@ -20,14 +20,20 @@ type ClientConfig = {
   generatedAt?: string
   publishedAt?: string
   manifest?: string
+  changelog?: unknown
+  releaseNotes?: unknown
   client?: {
     latestVersion?: string
     minimumVersion?: string
     downloadUrl?: string
+    changelog?: unknown
+    releaseNotes?: unknown
   }
   electron?: {
     latestVersion?: string
     downloadUrl?: string
+    changelog?: unknown
+    releaseNotes?: unknown
   }
   analytics?: {
     enabled?: boolean
