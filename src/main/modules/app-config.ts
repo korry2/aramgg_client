@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { app, globalShortcut, BrowserWindow } from 'electron'
-import { captureScreenshot, getLolGameStatus } from '../screenshot.ts'
-import { analyzeScreenshot } from '../image-analyzer.ts'
+import { getLolGameStatus } from '../screenshot.ts'
 import { registerIpcHandlers } from './ipc-handlers.ts'
 import {
     applyAugmentSidePanelWindowLayout,
@@ -163,9 +162,6 @@ export async function init() {
     setTimeout(() => {
         void ensureGameFlowMonitor('startup-delay')
     }, 2000)
-
-    // 注册 F1 全局快捷键
-    registerF1Shortcut()
 
     // 注册其他应用事件
     registerAppEvents()
@@ -1326,97 +1322,6 @@ async function initGameFlowMonitor() {
         )
     } catch (error) {
         logger.error('初始化游戏流程监控失败:', error)
-    }
-}
-
-/**
- * 注册 F1 快捷键
- */
-function registerF1Shortcut() {
-    const f1Ret = globalShortcut.register('F1', async () => {
-        logger.info('F1 pressed, capturing screenshot...')
-        try {
-            const result = await captureScreenshot()
-            logger.debug('Screenshot result:', result)
-
-            if (result.success) {
-                logger.info(`Screenshot captured: ${result.width}x${result.height}`)
-
-                // 异步执行分析和查询（不阻塞主线程）
-                setImmediate(async () => {
-                    try {
-                        // 分析截图（海克斯检测 + OCR）- 直接传入 buffer
-                        const analysisResult = await analyzeScreenshot(result.buffer)
-                        logger.debug('Analysis result:', analysisResult)
-
-                        if (analysisResult.success && analysisResult.analysis.augments.length > 0) {
-                            // 构建胜率查询数据（从识别的海克斯）
-                            const augments = analysisResult.analysis.augments.slice(0, 3)
-
-                            // 从store获取缓存的英雄ID（游戏进行中时LCU可能无法获取选人会话）
-                            const cachedChampionId = store.get('lastSelectedChampionId')
-                            if (cachedChampionId) {
-                                logger.debug(`使用缓存的英雄ID: ${cachedChampionId}`)
-                            }
-
-                            const winrateData = {
-                                success: true,
-                                gamePhase: 'augment-select',
-                                augments: augments.map(aug => ({
-                                    id: aug.id,
-                                    name: aug.name,
-                                    rarity: aug.rarity,
-                                    confidence: aug.confidence,
-                                })),
-                                championId: cachedChampionId || null,
-                                analysisConfidence: analysisResult.analysis.confidence,
-                                timestamp: Date.now(),
-                                dataSource: 'local-analysis',
-                            }
-
-                            logger.info('海克斯识别成功:', winrateData)
-
-                            // 通知所有渲染进程
-                            notifyAllWindows('augment-detected', winrateData)
-                        } else {
-                            logger.info('未识别到海克斯，使用兼容数据')
-                            // 发送兼容数据（以支持之前的功能）
-                            const fallbackData = {
-                                success: true,
-                                champion: {
-                                    name: 'Unknown',
-                                    position: 'Unknown',
-                                    winrate: 0,
-                                },
-                                stats: {
-                                    winrate: '-',
-                                    pickRate: '-',
-                                    banRate: '-',
-                                },
-                                runes: [],
-                                items: [],
-                                dataSource: 'fallback',
-                            }
-                            notifyAllWindows('winrate-updated', fallbackData)
-                        }
-                    } catch (error) {
-                        logger.error('Error analyzing screenshot:', error)
-                    }
-                })
-
-
-            } else {
-                logger.error('Screenshot failed:', result.error)
-            }
-        } catch (error) {
-            logger.error('F1 shortcut handler error:', error)
-        }
-    })
-
-    if (!f1Ret) {
-        logger.error('Failed to register F1 shortcut')
-    } else {
-        logger.info('F1 shortcut registered successfully')
     }
 }
 
