@@ -8,10 +8,10 @@
       <header class="insight-titlebar">
         <h1>{{ isSidePanel ? '海克斯推荐' : '英雄详情' }}</h1>
         <div class="window-controls">
-          <button class="window-control" type="button" aria-label="最小化" @click="closeOverlay">
+          <button class="window-control" type="button" aria-label="最小化" @click="closeOverlay('manual')">
             <Minus class="window-icon" />
           </button>
-          <button class="window-control danger" type="button" aria-label="关闭" @click="closeOverlay">
+          <button class="window-control danger" type="button" aria-label="关闭" @click="closeOverlay('manual')">
             <X class="window-icon" />
           </button>
         </div>
@@ -367,6 +367,7 @@ import { ExternalLink, Minus, PackageCheck, PackagePlus, X } from 'lucide-vue-ne
 import { getChampionIconUrl, getChampionSquareIconUrl, getAugmentIconUrl, getItemIconUrl as getFallbackItemIconUrl } from '../service/cdn'
 import { electronAPI } from '../native/electron-api.js'
 import { sortAugmentsByDetectedOrder } from '../service/augment-order.js'
+import { createBuildRoutes, normalizeRateValue } from '../service/champion-build-routes.js'
 import AramBenchRecommendation from './AramBenchRecommendation.vue'
 
 const props = defineProps({
@@ -745,190 +746,7 @@ const filteredAugments = computed(() => {
   return displayAugments.value.filter(a => a.rarity === selectedRarity.value)
 })
 
-const toFiniteNumber = (value, fallback = 0) => {
-  const numberValue = Number(value)
-  return Number.isFinite(numberValue) ? numberValue : fallback
-}
-
-const normalizeRateValue = (value) => {
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue) || numberValue <= 0) {
-    return null
-  }
-
-  return numberValue > 1 ? numberValue / 100 : numberValue
-}
-
-const normalizeItemIds = (itemIds) => {
-  if (Array.isArray(itemIds)) {
-    return itemIds.map(id => String(id).trim()).filter(Boolean)
-  }
-
-  if (itemIds != null && itemIds !== '') {
-    return [String(itemIds).trim()].filter(Boolean)
-  }
-
-  return []
-}
-
-const getRecordItemIds = (record = {}) => normalizeItemIds(
-  record.itemIds ?? record.items ?? record.itemId ?? record.id
-)
-
-const normalizeBuildRecord = (record = {}) => {
-  const stats = record.stats || {}
-  const items = getRecordItemIds(record)
-  const games = toFiniteNumber(record.games ?? record.num_games ?? stats.games ?? stats.num_games)
-  const wins = toFiniteNumber(record.wins ?? record.num_win_games ?? stats.wins ?? stats.num_win_games)
-  const winRate = normalizeRateValue(record.winRate ?? record.win_rate ?? stats.winRate ?? stats.win_rate)
-    ?? (games > 0 ? wins / games : null)
-
-  return {
-    ...record,
-    items,
-    itemId: items[0] || '',
-    games,
-    wins,
-    pickRate: normalizeRateValue(record.pickRate ?? record.pick_rate ?? stats.pickRate ?? stats.pick_rate) ?? 0,
-    winRate,
-    distinctiveScore: toFiniteNumber(record.distinctiveScore ?? record.distinctive_score),
-  }
-}
-
-const compareBuildRecords = (left, right) => {
-  const gamesDiff = toFiniteNumber(right.games) - toFiniteNumber(left.games)
-  if (gamesDiff !== 0) {
-    return gamesDiff
-  }
-
-  const pickDiff = toFiniteNumber(right.pickRate) - toFiniteNumber(left.pickRate)
-  if (pickDiff !== 0) {
-    return pickDiff
-  }
-
-  return toFiniteNumber(right.winRate) - toFiniteNumber(left.winRate)
-}
-
-const normalizeBuildRecords = (records = [], singleItem = false) => {
-  if (!Array.isArray(records)) {
-    return []
-  }
-
-  return records
-    .map(normalizeBuildRecord)
-    .filter(record => singleItem ? record.itemId : record.items.length > 0)
-    .sort(compareBuildRecords)
-}
-
-const getBuildTags = (build = {}) => {
-  const rawTagValues = build.tags && typeof build.tags === 'object'
-    ? Object.values(build.tags)
-    : []
-  const values = [
-    build.buildTags,
-    ...rawTagValues,
-  ]
-  const seen = new Set()
-
-  return values
-    .flatMap(value => String(value || '').split(','))
-    .map(value => value.trim())
-    .filter(value => {
-      if (!value) {
-        return false
-      }
-
-      const key = value.toLowerCase()
-      if (seen.has(key)) {
-        return false
-      }
-
-      seen.add(key)
-      return true
-    })
-}
-
-const getBuildTitle = (build, index) => {
-  const tags = getBuildTags(build)
-  if (tags.length) {
-    return tags.join(' / ')
-  }
-
-  return build?.tier || build?.role || `路线 ${index + 1}`
-}
-
-const collectBuildRoutes = (build) => {
-  if (!build || (typeof build !== 'object' && !Array.isArray(build))) {
-    return []
-  }
-
-  const builds = Array.isArray(build)
-    ? build
-    : Array.isArray(build.builds)
-      ? build.builds
-      : []
-  const seen = new Set()
-
-  return builds
-    .filter(route => route && typeof route === 'object' && !Array.isArray(route))
-    .filter((route) => {
-      const coreKey = Array.isArray(route.coreItems)
-        ? route.coreItems
-          .slice(0, 3)
-          .map(record => getRecordItemIds(record).join('-'))
-          .join('|')
-        : ''
-      const key = `${getBuildTags(route).join('|')}:${coreKey}:${route.role || ''}:${route.tier || ''}`
-      if (seen.has(key)) {
-        return false
-      }
-
-      seen.add(key)
-      return true
-    })
-}
-
-const getBuildStats = (build = {}) => {
-  const stats = build.stats || {}
-  return {
-    games: toFiniteNumber(build.games ?? stats.games ?? stats.num_games),
-    winRate: normalizeRateValue(build.winRate ?? build.win_rate ?? stats.winRate ?? stats.win_rate),
-    pickRate: normalizeRateValue(build.pickRate ?? build.pick_rate ?? stats.pickRate ?? stats.pick_rate),
-  }
-}
-
-const buildRoutes = computed(() => collectBuildRoutes(buildData.value)
-  .map((build, index) => {
-    const stats = getBuildStats(build)
-    const startingItems = normalizeBuildRecords(build.startingItems || [])
-    const coreItems = normalizeBuildRecords(build.coreItems || build.recommended || [])
-    const itemExtensions = normalizeBuildRecords(build.itemExtensions || [], true)
-    const situationalItems = normalizeBuildRecords(build.situationalItems || [], true)
-      .sort((left, right) => {
-        const scoreDiff = toFiniteNumber(right.distinctiveScore) - toFiniteNumber(left.distinctiveScore)
-        return scoreDiff !== 0 ? scoreDiff : compareBuildRecords(left, right)
-      })
-    const hasAnyItems = startingItems.length > 0 ||
-      coreItems.length > 0 ||
-      itemExtensions.length > 0 ||
-      situationalItems.length > 0
-
-    return {
-      key: `${index}-${getBuildTitle(build, index)}`,
-      rawBuild: build,
-      title: getBuildTitle(build, index),
-      subtitle: build.patch ? `版本 ${build.patch}` : '',
-      winRate: stats.winRate,
-      pickRate: stats.pickRate,
-      games: stats.games,
-      startingItems,
-      coreItems,
-      itemExtensions,
-      situationalItems,
-      hasAnyItems,
-    }
-  })
-  .filter(route => route.hasAnyItems))
+const buildRoutes = computed(() => createBuildRoutes(buildData.value))
 
 const hasBuildRecommendations = computed(() => buildRoutes.value.length > 0)
 
@@ -1353,9 +1171,10 @@ const showOverlay = async (data) => {
 /**
  * 关闭浮窗
  */
-const closeOverlay = () => {
+const closeOverlay = (reason = 'manual') => {
   logOverlayInfo('overlay closed', {
     championId: championId.value,
+    reason,
   })
   championLoadSequence += 1
   visible.value = false
@@ -1374,9 +1193,9 @@ const closeOverlay = () => {
   hideAugmentTooltip()
 
   if (isSidePanel.value) {
-    electronAPI.windows.hideAugmentSidePanel()
+    electronAPI.windows.hideAugmentSidePanel(reason)
   } else {
-    electronAPI.windows.hidePopup()
+    electronAPI.windows.hidePopup(reason)
   }
 }
 
@@ -1500,13 +1319,13 @@ onMounted(() => {
 
   unsubscribeEvents.push(electronAPI.events.on('augment-cleared', (data) => {
     console.log('🔧 收到 augment-cleared 事件:', data)
-    closeOverlay()
+    closeOverlay('augment-cleared')
   }))
 
   unsubscribeEvents.push(electronAPI.events.on('game-started', () => {
     if (hideChampionInsightOnGameStart.value || isSidePanel.value) {
       console.log('🎮 游戏开始，隐藏弹窗')
-      closeOverlay()
+      closeOverlay('game-started')
       return
     }
 
@@ -1516,7 +1335,7 @@ onMounted(() => {
   unsubscribeEvents.push(electronAPI.events.on('game-in-progress', () => {
     if (hideChampionInsightOnGameStart.value || isSidePanel.value) {
       console.log('🎮 游戏进行中，隐藏弹窗')
-      closeOverlay()
+      closeOverlay('game-in-progress')
       return
     }
 

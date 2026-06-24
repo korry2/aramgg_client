@@ -48,9 +48,9 @@ const electronAPI = {
     },
     windows: {
         showPopup: (data) => ipcRenderer.send('show-popup', data),
-        hidePopup: () => ipcRenderer.send('hide-popup'),
-        hideFloating: () => ipcRenderer.send('hide-floating'),
-        hideAugmentSidePanel: () => ipcRenderer.send('hide-augment-side-panel'),
+        hidePopup: (reason) => ipcRenderer.send('hide-popup', reason),
+        hideFloating: (reason) => ipcRenderer.send('hide-floating', reason),
+        hideAugmentSidePanel: (reason) => ipcRenderer.send('hide-augment-side-panel', reason),
         toggleMain: () => ipcRenderer.send('toggle-main-window'),
         confirmQuit: () => ipcRenderer.invoke('confirm-quit-app'),
         restart: () => ipcRenderer.send('restart-app'),

@@ -66,6 +66,18 @@ function getElapsedMs(startedAt) {
     return Date.now() - startedAt
 }
 
+function suppressManualAugmentOverlayReshow(reason, source) {
+    if (reason !== 'manual') {
+        return
+    }
+
+    try {
+        autoScreenshotService.suppressCurrentAugmentOverlay(source)
+    } catch (error) {
+        logger.warn('[overlay] failed to suppress manual augment reshow:', error.message)
+    }
+}
+
 function requestAppQuit(reason) {
     if (quitRequested) {
         return
@@ -409,27 +421,43 @@ export function registerIpcHandlers(isDev) {
         })
     })
 
-    ipcMain.on('hide-popup', async () => {
+    ipcMain.on('hide-popup', async (_event, reason = 'renderer') => {
+        suppressManualAugmentOverlayReshow(reason, 'hide-popup')
         const popupWindow = getPopupWindow()
-        if (popupWindow?.isVisible()) {
+        if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
             popupWindow.hide()
         }
+        logger.info('[popup] hide-popup processed', {
+            reason,
+            windowExists: !!popupWindow && !popupWindow.isDestroyed(),
+            visibleAfter: !!popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible(),
+        })
     })
 
-    ipcMain.on('hide-floating', async () => {
+    ipcMain.on('hide-floating', async (_event, reason = 'renderer') => {
+        suppressManualAugmentOverlayReshow(reason, 'hide-floating')
         const floatingWindow = getFloatingWindow()
         if (floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible()) {
             floatingWindow.hide()
-            logger.info('Floating window hidden')
         }
+        logger.info('Floating window hide processed', {
+            reason,
+            windowExists: !!floatingWindow && !floatingWindow.isDestroyed(),
+            visibleAfter: !!floatingWindow && !floatingWindow.isDestroyed() && floatingWindow.isVisible(),
+        })
     })
 
-    ipcMain.on('hide-augment-side-panel', async () => {
+    ipcMain.on('hide-augment-side-panel', async (_event, reason = 'renderer') => {
+        suppressManualAugmentOverlayReshow(reason, 'hide-augment-side-panel')
         const sidePanelWindow = getAugmentSidePanelWindow()
         if (sidePanelWindow && !sidePanelWindow.isDestroyed() && sidePanelWindow.isVisible()) {
             sidePanelWindow.hide()
-            logger.info('Augment side panel window hidden')
         }
+        logger.info('Augment side panel hide processed', {
+            reason,
+            windowExists: !!sidePanelWindow && !sidePanelWindow.isDestroyed(),
+            visibleAfter: !!sidePanelWindow && !sidePanelWindow.isDestroyed() && sidePanelWindow.isVisible(),
+        })
     })
 
     ipcMain.handle('test-show-floating', async (_event, data) => {

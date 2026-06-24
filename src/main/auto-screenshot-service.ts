@@ -42,6 +42,7 @@ const VISIBLE_AUGMENT_PARTIAL_GRACE_MS = 2500
 const VISIBLE_AUGMENT_NO_MATCH_MISSES_BEFORE_CLEAR = 2
 const VISIBLE_AUGMENT_PARTIAL_MISSES_BEFORE_CLEAR = 3
 const FULL_DETECTION_DIAGNOSTIC_REPEAT_MS = 30 * 1000
+const MANUAL_AUGMENT_HIDE_MIN_SUPPRESS_MS = 3000
 
 function getSafeTimestampForFile() {
     return logger.toBeijingISOString().replace(/[:.]/g, '-').replace('+08-00', '+0800')
@@ -218,6 +219,9 @@ class AutoScreenshotService {
         this.lastDetectedAugmentSlotFingerprints = []
         this.lastFullDetectionDiagnosticKey = ''
         this.lastFullDetectionDiagnosticLogAt = 0
+        this.manualHiddenAugmentIds = []
+        this.manualHiddenAugmentUntil = 0
+        this.lastManualHiddenSuppressLogAt = 0
     }
 
     /**
@@ -266,6 +270,9 @@ class AutoScreenshotService {
         this.lastDetectedAugmentSlotFingerprints = []
         this.lastFullDetectionDiagnosticKey = ''
         this.lastFullDetectionDiagnosticLogAt = 0
+        this.manualHiddenAugmentIds = []
+        this.manualHiddenAugmentUntil = 0
+        this.lastManualHiddenSuppressLogAt = 0
         this.startedAt = Date.now()
         this.firstCaptureLogged = false
         this.firstDetectionLogged = false
@@ -343,6 +350,9 @@ class AutoScreenshotService {
         this.lastDetectedAugmentSlotFingerprints = []
         this.lastFullDetectionDiagnosticKey = ''
         this.lastFullDetectionDiagnosticLogAt = 0
+        this.manualHiddenAugmentIds = []
+        this.manualHiddenAugmentUntil = 0
+        this.lastManualHiddenSuppressLogAt = 0
         this.lastDetectedAugmentAt = 0
         this.visibleAugmentMissCount = 0
         this.pendingAnalysisBuffer = null
@@ -925,6 +935,51 @@ class AutoScreenshotService {
         return payloadIds.join(',') === this.lastDetectedAugmentIds.join(',')
     }
 
+    suppressCurrentAugmentOverlay(reason = 'manual-hide') {
+        const now = Date.now()
+        this.manualHiddenAugmentIds = this.lastDetectedAugmentIds.map(String)
+        this.manualHiddenAugmentUntil = now + MANUAL_AUGMENT_HIDE_MIN_SUPPRESS_MS
+        this.lastManualHiddenSuppressLogAt = 0
+
+        logger.info('Augment overlay manually hidden; suppressing immediate reshows', {
+            reason,
+            augmentIds: this.manualHiddenAugmentIds,
+            suppressUntil: this.manualHiddenAugmentUntil,
+        })
+    }
+
+    _isManualHiddenAugmentSuppressed(winrateData) {
+        const payloadIds = getPayloadAugmentIds(winrateData?.augments).map(String)
+        if (!payloadIds.length) {
+            return false
+        }
+
+        const now = Date.now()
+        const minimumSuppressActive = now < this.manualHiddenAugmentUntil
+        const sameHiddenSelection = this.manualHiddenAugmentIds.length > 0 &&
+            payloadIds.join(',') === this.manualHiddenAugmentIds.join(',')
+
+        if (!minimumSuppressActive && !sameHiddenSelection) {
+            if (this.manualHiddenAugmentIds.length > 0) {
+                this.manualHiddenAugmentIds = []
+                this.manualHiddenAugmentUntil = 0
+            }
+            return false
+        }
+
+        if (now - this.lastManualHiddenSuppressLogAt > 5000) {
+            this.lastManualHiddenSuppressLogAt = now
+            logger.info('Augment notification suppressed after manual hide', {
+                payloadIds,
+                hiddenIds: this.manualHiddenAugmentIds,
+                minimumSuppressActive,
+                sameHiddenSelection,
+            })
+        }
+
+        return true
+    }
+
     async _loadAugmentWinratePayload(winrateData) {
         const championId = winrateData.championId
         const augmentIds = getPayloadAugmentIds(winrateData.augments)
@@ -986,6 +1041,10 @@ class AutoScreenshotService {
 
     _sendAugmentDetectedPayload(winrateData, notifyMode = 'detected') {
         try {
+            if (this._isManualHiddenAugmentSuppressed(winrateData)) {
+                return
+            }
+
             const windows = BrowserWindow.getAllWindows()
             // 查找浮动窗口并显示
             const floatingWindow = windows.find(win => {
@@ -1439,6 +1498,9 @@ class AutoScreenshotService {
         this.lastDetectedAugmentSlotFingerprints = []
         this.lastFullDetectionDiagnosticKey = ''
         this.lastFullDetectionDiagnosticLogAt = 0
+        this.manualHiddenAugmentIds = []
+        this.manualHiddenAugmentUntil = 0
+        this.lastManualHiddenSuppressLogAt = 0
         this.lastDetectedAugmentAt = 0
         this.visibleAugmentMissCount = 0
         this.startedAt = 0

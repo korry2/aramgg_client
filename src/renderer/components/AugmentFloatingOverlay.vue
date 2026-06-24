@@ -1,7 +1,7 @@
 <template>
   <transition name="float-fade">
     <div v-if="visible" class="floating-overlay">
-      <button class="close-btn" type="button" @click="closeOverlay" title="关闭" aria-label="关闭">
+      <button class="close-btn" type="button" @click="closeOverlay('manual')" title="关闭" aria-label="关闭">
         <X class="close-icon" />
       </button>
 
@@ -387,17 +387,17 @@ const showOverlay = async (data) => {
 /**
  * 关闭浮窗
  */
-const closeOverlay = () => {
+const closeOverlay = (reason = 'manual') => {
   console.log('🔧 [FloatingOverlay] 关闭浮窗')
   overlayRequestId += 1
   visible.value = false
   loading.value = false
   displayAugments.value = []
   error.value = null
-  logFloatingInfo('overlay closed')
+  logFloatingInfo('overlay closed', { reason })
 
   // 隐藏浮动窗口本身
-  electronAPI.windows.hideFloating()
+  electronAPI.windows.hideFloating(reason)
 }
 
 /**
@@ -413,30 +413,30 @@ onMounted(() => {
 
   unsubscribeEvents.push(electronAPI.events.on('augment-cleared', (data) => {
     console.log('🔧 [FloatingOverlay] 收到 augment-cleared:', data)
-    closeOverlay()
+    closeOverlay('augment-cleared')
   }))
 
   unsubscribeEvents.push(electronAPI.events.on('game-started', () => {
     console.log('🎮 [FloatingOverlay] 游戏开始，关闭浮窗')
-    closeOverlay()
+    closeOverlay('game-started')
   }))
 
   unsubscribeEvents.push(electronAPI.events.on('game-in-progress', () => {
     console.log('🎮 [FloatingOverlay] 游戏进行中，关闭浮窗')
-    closeOverlay()
+    closeOverlay('game-in-progress')
   }))
 
   unsubscribeEvents.push(electronAPI.events.on('game-phase-changed', (data) => {
     if (data && (data.phase === 'GameStart' || data.phase === 'InProgress')) {
       console.log('🎮 [FloatingOverlay] 游戏阶段变化，关闭浮窗')
-      closeOverlay()
+      closeOverlay('game-phase-changed')
     }
   }))
 })
 
 onBeforeUnmount(() => {
   unsubscribeEvents.splice(0).forEach(unsubscribe => unsubscribe())
-  closeOverlay()
+  closeOverlay('unmount')
 })
 </script>
 
