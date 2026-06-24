@@ -169,7 +169,10 @@
                     ARAMGG助手 v{{ clientVersionLabel }} -
                     <a class="footer-link" :href="ARAMGG_HOME_URL" @click.prevent="openAramggHome">
                         {{ ARAMGG_HOME_LABEL }}
-                    </a>
+                    </a><span class="footer-separator">·</span>
+                    <button class="footer-link footer-action" type="button" @click="openLogDirectory">
+                        打开日志目录
+                    </button>
                 </p>
                 <p class="footer-feedback">
                     反馈或者建议：
@@ -183,10 +186,6 @@
                     <span class="footer-separator">·</span>
                     <button class="footer-link footer-action" type="button" @click="openChangelog">
                         更新日志
-                    </button>
-                    <span class="footer-separator">·</span>
-                    <button class="footer-link footer-action" type="button" @click="openLogDirectory">
-                        打开日志目录
                     </button>
                 </p>
             </footer>
