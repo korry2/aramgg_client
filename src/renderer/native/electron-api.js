@@ -29,6 +29,12 @@ export const electronAPI = {
     getVersionInfo: (...args) => requireElectronAPI().appInfo.getVersionInfo(...args),
     openLogDirectory: (...args) => requireElectronAPI().appInfo.openLogDirectory(...args),
   },
+  appUpdate: {
+    getState: (...args) => requireElectronAPI().appUpdate.getState(...args),
+    check: (...args) => requireElectronAPI().appUpdate.check(...args),
+    download: (...args) => requireElectronAPI().appUpdate.download(...args),
+    install: (...args) => requireElectronAPI().appUpdate.install(...args),
+  },
   analytics: {
     getStatus: (...args) => requireElectronAPI().analytics.getStatus(...args),
     setEnabled: (...args) => requireElectronAPI().analytics.setEnabled(...args),

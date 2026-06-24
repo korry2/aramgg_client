@@ -100,6 +100,7 @@ export async function getVersionInfo() {
     currentVersion,
     latestVersion,
     downloadUrl: clientConfig.downloadUrl || '',
+    updateFeedUrl: clientConfig.updateFeedUrl || '',
     minimumVersion,
     dataVersion: config?.dataVersion || '',
     gamePatch: config?.gamePatch || '',

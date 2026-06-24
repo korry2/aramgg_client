@@ -30,7 +30,7 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | LCU 服务 | `src/main/services/lcu/` | LCU token、gameflow、champ-select、符文页 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
 | 数据加载 | `src/main/data-loader.ts` | 远端数据、磁盘缓存、英雄/海克斯/装备统计 |
-| 版本检查和更新日志 | `src/main/version-checker.ts`、`src/main/changelog.ts` | 客户端版本提示、下载入口和远端/本地更新日志 |
+| 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
 | 自动截图 | `src/main/auto-screenshot-service.ts` | 串行截图和 OCR 队列，受 gameflow 阶段控制 |
 | 图像分析 | `src/main/image-analyzer.ts` | 海克斯 OCR 和匹配 |
 | 运行时数据目录 | `src/main/modules/app-paths.ts` | 配置、日志、远端数据缓存、OCR 调试截图 |
@@ -85,7 +85,7 @@ LCU gameflow InProgress
 
 海克斯详情弹窗、席位推荐弹窗和游戏内浮窗是隐藏后按事件显示的 overlay 窗口，创建时关闭 `backgroundThrottling`，避免刚显示时 renderer IPC 被 Chromium 后台节流延迟。
 
-### 客户端版本提示和更新日志
+### 客户端版本提示、自动更新和更新日志
 
 ```text
 /api/client/v1/config
@@ -93,9 +93,15 @@ LCU gameflow InProgress
   -> changelog.ts
   -> get-version-info IPC
   -> Display.vue
+
+/api/client/v1/config client.updateFeedUrl
+  -> app-update-service.ts
+  -> electron-updater generic feed
+  -> app-update-* IPC / app-update-status-changed
+  -> Display.vue
 ```
 
-主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
+主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。`app-update-service.ts` 读取 `client.updateFeedUrl` 配置 `electron-updater` generic feed，生产环境启动后自动检查更新，发现新版本后自动下载，下载完成后由用户点击重启安装。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
 
 ## IPC 速查
 
@@ -104,6 +110,10 @@ LCU gameflow InProgress
 | API | IPC channel | 用途 |
 |-----|-------------|------|
 | `electronAPI.appInfo.getVersionInfo()` | `get-version-info` | 读取客户端版本、远端最新版本、下载地址和更新日志 |
+| `electronAPI.appUpdate.getState()` | `app-update-get-state` | 读取自动更新 feed、状态、进度和可用操作 |
+| `electronAPI.appUpdate.check()` | `app-update-check` | 手动检查自动更新 |
+| `electronAPI.appUpdate.download()` | `app-update-download` | 手动触发更新下载兜底 |
+| `electronAPI.appUpdate.install()` | `app-update-install` | 下载完成后重启并安装更新 |
 | `electronAPI.lcu.getStatus()` | `lcu-get-status` | LCU 连接状态 |
 | `electronAPI.lcu.getCurrentSession()` | `lcu-get-current-session` | 原始选人 session |
 | `electronAPI.lcu.getChampSelectSnapshot()` | `lcu-get-champ-select-snapshot` | 标准化只读选人快照 |
@@ -124,6 +134,7 @@ LCU gameflow InProgress
 | `augment-detected` | 识别到海克斯选择 |
 | `augment-cleared` | 清空过期海克斯显示 |
 | `game-ended` / `end-of-game` | 对局结束 |
+| `app-update-status-changed` | 自动更新状态、下载进度或错误变化 |
 
 ## 安全模型
 

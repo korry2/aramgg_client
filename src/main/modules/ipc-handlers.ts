@@ -29,6 +29,12 @@ import {
     trackAnalyticsEvent,
 } from '../services/analytics-service.ts'
 import {
+    checkForAppUpdate,
+    downloadAppUpdate,
+    getAppUpdateState,
+    installDownloadedAppUpdate,
+} from '../app-update-service.ts'
+import {
     shouldShowAugmentSidePanel,
     shouldShowAugmentTopOverlay,
 } from './user-preferences.ts'
@@ -669,6 +675,25 @@ export function registerIpcHandlers(isDev) {
                 error: error.message,
             }
         }
+    })
+
+    ipcMain.handle('app-update-get-state', async () => {
+        return {
+            success: true,
+            data: getAppUpdateState(),
+        }
+    })
+
+    ipcMain.handle('app-update-check', async () => {
+        return checkForAppUpdate('manual')
+    })
+
+    ipcMain.handle('app-update-download', async () => {
+        return downloadAppUpdate()
+    })
+
+    ipcMain.handle('app-update-install', async () => {
+        return installDownloadedAppUpdate()
     })
 
     ipcMain.handle('open-log-directory', async () => {

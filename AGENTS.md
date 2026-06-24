@@ -50,7 +50,7 @@ The GitHub release workflow runs on Node `22.18.0` with npm 10, installs with `n
 
 After dependency or lockfile changes, verify the lockfile with `npx -p npm@10 npm ci --ignore-scripts` before publishing. Use the existing `npm run release:*` scripts so `npm version` creates the version commit and annotated tag; avoid ad hoc lightweight release tags. If a bad release tag must be cleaned up, delete the intended local and remote tags explicitly and recreate only the confirmed version tag.
 
-Older clients see future app release notes through the remote `/api/client/v1/config` response. After publishing a new installer, update `client.latestVersion`, `client.downloadUrl`, and `client.changelog` or `client.releaseNotes`; do not rely on the packaged local changelog fallback for future versions.
+Older clients see future app release notes and app update feeds through the remote `/api/client/v1/config` response. After publishing a new installer, update `client.latestVersion`, `client.downloadUrl`, `client.updateFeedUrl`, and `client.changelog` or `client.releaseNotes`; do not rely on the packaged local changelog fallback for future versions.
 
 ## Security & Configuration Tips
 

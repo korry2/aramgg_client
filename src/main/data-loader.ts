@@ -26,12 +26,14 @@ type ClientConfig = {
     latestVersion?: string
     minimumVersion?: string
     downloadUrl?: string
+    updateFeedUrl?: string
     changelog?: unknown
     releaseNotes?: unknown
   }
   electron?: {
     latestVersion?: string
     downloadUrl?: string
+    updateFeedUrl?: string
     changelog?: unknown
     releaseNotes?: unknown
   }

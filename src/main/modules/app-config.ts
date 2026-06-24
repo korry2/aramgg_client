@@ -20,6 +20,13 @@ import {
 import autoScreenshotService from '../auto-screenshot-service.ts'
 import { getLCUServiceInstance } from '../services/lcu/lcu-service.ts'
 import { checkForClientUpdate } from '../version-checker.ts'
+import {
+    checkForAppUpdate,
+    initializeAppUpdateService,
+    isAppUpdateInstallInProgress,
+    refreshAppUpdateConfig,
+    setAppUpdateInstallCleanup,
+} from '../app-update-service.ts'
 import { initAnalyticsService, markAnalyticsAppCleanExit } from '../services/analytics-service.ts'
 import {
     collectAramCandidateChampionIds,
@@ -147,11 +154,23 @@ export async function init() {
         tray: true,
     })
 
+    initializeAppUpdateService({ isDev })
+    setAppUpdateInstallCleanup(() => ensureQuitCleanup('app update install'))
+    refreshAppUpdateConfig({ reason: 'startup' }).catch((error) => {
+        logger.warn('[update] startup config refresh failed:', error.message)
+    })
+
     setTimeout(() => {
         checkForClientUpdate(mainWindow).catch((error) => {
             logger.warn('Client update check failed:', error.message)
         })
     }, 1000)
+
+    setTimeout(() => {
+        checkForAppUpdate('startup').catch((error) => {
+            logger.warn('[update] startup app update check failed:', error.message)
+        })
+    }, 2500)
 
     initAnalyticsService().catch((error) => {
         logger.debug('[analytics] initialization skipped:', error.message)
@@ -1328,8 +1347,8 @@ async function initGameFlowMonitor() {
 /**
  * 注册应用事件
  */
-async function runQuitCleanup() {
-    logger.info('App is quitting, cleaning up...')
+async function runQuitCleanup(reason = 'app quit') {
+    logger.info('App is quitting, cleaning up...', { reason })
     markAnalyticsAppCleanExit()
 
     stopGameflowMonitorRuntime('app will quit')
@@ -1342,24 +1361,39 @@ async function runQuitCleanup() {
     await logger.cleanupOldLogs(7)
 }
 
+function ensureQuitCleanup(reason = 'app quit') {
+    if (quitCleanupCompleted) {
+        return Promise.resolve()
+    }
+
+    if (!quitCleanupPromise) {
+        quitCleanupPromise = runQuitCleanup(reason)
+            .catch((error) => {
+                logger.warn('App quit cleanup failed:', error.message)
+            })
+            .finally(() => {
+                quitCleanupCompleted = true
+            })
+    }
+
+    return quitCleanupPromise
+}
+
 function registerAppEvents() {
     app.on('before-quit', (event) => {
+        if (isAppUpdateInstallInProgress()) {
+            logger.info('[app] before-quit allowed for app update install')
+            return
+        }
+
         if (quitCleanupCompleted) {
             return
         }
 
         event.preventDefault()
-
-        if (!quitCleanupPromise) {
-            quitCleanupPromise = runQuitCleanup()
-                .catch((error) => {
-                    logger.warn('App quit cleanup failed:', error.message)
-                })
-                .finally(() => {
-                    quitCleanupCompleted = true
-                    app.quit()
-                })
-        }
+        ensureQuitCleanup('before-quit').finally(() => {
+            app.quit()
+        })
     })
 
     // 应用退出时的清理

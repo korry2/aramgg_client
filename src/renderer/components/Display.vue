@@ -32,14 +32,6 @@
                             <span>客户端版本</span>
                             <strong>{{ clientVersionLabel }}</strong>
                             <small v-if="versionHint">{{ versionHint }}</small>
-                            <button
-                                v-if="showUpdateLink"
-                                class="version-download"
-                                type="button"
-                                @click="openDownloadUrl"
-                            >
-                                下载更新
-                            </button>
                         </div>
                         <div>
                             <span>数据版本</span>
@@ -52,6 +44,51 @@
                             <small>{{ manualLolPath ? '运行中客户端 + 手动兜底' : '运行中客户端' }}</small>
                         </div>
                     </div>
+
+                    <section class="update-panel" :class="updatePanelClass">
+                        <div class="update-main">
+                            <div class="update-copy">
+                                <span>应用更新</span>
+                                <strong>{{ updateTitle }}</strong>
+                                <small>{{ updateMessage }}</small>
+                            </div>
+                            <div class="update-actions">
+                                <button
+                                    class="update-action"
+                                    type="button"
+                                    title="检查更新"
+                                    :disabled="!canCheckUpdate"
+                                    @click="checkAppUpdate"
+                                >
+                                    <RefreshCw class="update-action-icon" :class="{ spinning: updateIsChecking }" />
+                                </button>
+                                <button
+                                    v-if="canInstallUpdate"
+                                    class="update-action accent"
+                                    type="button"
+                                    title="重启安装"
+                                    @click="installAppUpdate"
+                                >
+                                    <RotateCw class="update-action-icon" />
+                                </button>
+                                <button
+                                    v-else-if="showManualDownloadLink"
+                                    class="update-action accent"
+                                    type="button"
+                                    title="打开下载页"
+                                    @click="openDownloadUrl"
+                                >
+                                    <Download class="update-action-icon" />
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="showUpdateProgress" class="update-progress">
+                            <div class="update-progress-track" aria-hidden="true">
+                                <span :style="{ width: updateProgressWidth }"></span>
+                            </div>
+                            <span class="update-progress-text">{{ updateProgressText }}</span>
+                        </div>
+                    </section>
 
                     <button
                         class="game-directory-toggle"
@@ -169,10 +206,15 @@
                     ARAMGG助手 v{{ clientVersionLabel }} -
                     <a class="footer-link" :href="ARAMGG_HOME_URL" @click.prevent="openAramggHome">
                         {{ ARAMGG_HOME_LABEL }}
-                    </a><span class="footer-separator">·</span>
+                    </a>
+                    <span class="footer-separator">·</span>
                     <button class="footer-link footer-action" type="button" @click="openLogDirectory">
-                        打开日志目录
+                        日志目录
                     </button>
+                    <span class="footer-separator">·</span>
+                    <a class="footer-link" :href="DATA_API_URL" @click.prevent="openDataApi">
+                        {{ DATA_API_LABEL }}
+                    </a>
                 </p>
                 <p class="footer-feedback">
                     反馈或者建议：
@@ -267,8 +309,11 @@ import {
     ClipboardList,
     Cpu,
     Database,
+    Download,
     FolderSearch,
     Minus,
+    RefreshCw,
+    RotateCw,
     Save,
     ScrollText,
     Target,
@@ -278,6 +323,8 @@ import {
 
 const testStatus = ref(null)
 const versionInfo = ref(null)
+const appUpdateState = ref(null)
+const updateActionPending = ref(false)
 const showQuitConfirm = ref(false)
 const showChangelog = ref(false)
 const showAdvancedLcuConfig = ref(false)
@@ -286,10 +333,13 @@ const manualPathStatus = ref(null)
 const manualPathLoading = ref(false)
 const ARAMGG_HOME_URL = 'https://aramgg.com'
 const ARAMGG_HOME_LABEL = 'aramgg.com'
+const DATA_API_URL = 'https://data.dtodo.cn'
+const DATA_API_LABEL = '开放api'
 const FEEDBACK_EMAIL = 'djlinguge@gmail.com'
 const FEEDBACK_URL = `mailto:${FEEDBACK_EMAIL}`
 const GITHUB_URL = 'https://github.com/valkia/aramgg_client'
 let removeQuitConfirmListener = null
+let removeAppUpdateListener = null
 
 const clientVersionLabel = computed(() => {
     if (!versionInfo.value) {
@@ -317,8 +367,110 @@ const versionHint = computed(() => {
     return versionInfo.value.statusText + ' ' + versionInfo.value.latestVersion
 })
 
-const showUpdateLink = computed(() => {
-    return Boolean(versionInfo.value?.isNewer && versionInfo.value?.downloadUrl)
+const manualUpdateDownloadUrl = computed(() => {
+    return appUpdateState.value?.manualDownloadUrl || versionInfo.value?.downloadUrl || ''
+})
+
+const updatePhase = computed(() => appUpdateState.value?.phase || 'uninitialized')
+
+const updatePanelClass = computed(() => `phase-${updatePhase.value}`)
+
+const updateLatestVersion = computed(() => {
+    return appUpdateState.value?.latestVersion || versionInfo.value?.latestVersion || ''
+})
+
+const updateTitle = computed(() => {
+    const latestVersion = updateLatestVersion.value
+    const versionSuffix = latestVersion ? ` v${String(latestVersion).replace(/^v/i, '')}` : ''
+
+    if (updatePhase.value === 'checking') {
+        return '正在检查'
+    }
+
+    if (updatePhase.value === 'available' || updatePhase.value === 'downloading') {
+        return `下载中${versionSuffix}`
+    }
+
+    if (updatePhase.value === 'downloaded') {
+        return `已下载${versionSuffix}`
+    }
+
+    if (updatePhase.value === 'installing') {
+        return '正在安装'
+    }
+
+    if (updatePhase.value === 'not-available') {
+        return '已是最新'
+    }
+
+    if (updatePhase.value === 'no-feed') {
+        return manualUpdateDownloadUrl.value ? '手动下载' : '未配置更新源'
+    }
+
+    if (updatePhase.value === 'disabled') {
+        return '自动更新未启用'
+    }
+
+    if (updatePhase.value === 'error') {
+        return '更新异常'
+    }
+
+    return versionInfo.value?.isNewer && latestVersion ? `可更新${versionSuffix}` : '自动更新'
+})
+
+const updateMessage = computed(() => {
+    if (appUpdateState.value?.error) {
+        return appUpdateState.value.error
+    }
+
+    if (appUpdateState.value?.message) {
+        return appUpdateState.value.message
+    }
+
+    return versionHint.value || '自动更新待命'
+})
+
+const updateIsChecking = computed(() => updatePhase.value === 'checking')
+
+const canCheckUpdate = computed(() => {
+    return Boolean(appUpdateState.value?.canCheck) && !updateActionPending.value
+})
+
+const canInstallUpdate = computed(() => {
+    return Boolean(appUpdateState.value?.canInstall) && !updateActionPending.value
+})
+
+const showManualDownloadLink = computed(() => {
+    return Boolean(manualUpdateDownloadUrl.value) && !canInstallUpdate.value
+})
+
+const updateProgressPercent = computed(() => {
+    const percent = Number(appUpdateState.value?.progress?.percent)
+    return Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) : 0
+})
+
+const updateProgressWidth = computed(() => `${updateProgressPercent.value}%`)
+
+const showUpdateProgress = computed(() => {
+    return updatePhase.value === 'downloading' || updatePhase.value === 'downloaded'
+})
+
+const formatBytesPerSecond = (value) => {
+    const bytesPerSecond = Number(value)
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+        return ''
+    }
+
+    if (bytesPerSecond >= 1024 * 1024) {
+        return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`
+    }
+
+    return `${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`
+}
+
+const updateProgressText = computed(() => {
+    const speed = formatBytesPerSecond(appUpdateState.value?.progress?.bytesPerSecond)
+    return speed ? `${updateProgressPercent.value}% · ${speed}` : `${updateProgressPercent.value}%`
 })
 
 const changelogEntries = computed(() => {
@@ -335,6 +487,55 @@ const loadVersionInfo = async () => {
         }
     } catch (error) {
         console.warn('Failed to load version info:', error)
+    }
+}
+
+const loadAppUpdateState = async () => {
+    try {
+        const result = await electronAPI.appUpdate.getState()
+        if (result?.success) {
+            appUpdateState.value = result.data
+        }
+    } catch (error) {
+        console.warn('Failed to load app update state:', error)
+    }
+}
+
+const checkAppUpdate = async () => {
+    if (!canCheckUpdate.value) {
+        return
+    }
+
+    updateActionPending.value = true
+    try {
+        const result = await electronAPI.appUpdate.check()
+        if (result?.data) {
+            appUpdateState.value = result.data
+        }
+    } catch (error) {
+        console.warn('Failed to check app update:', error)
+    } finally {
+        updateActionPending.value = false
+    }
+}
+
+const installAppUpdate = async () => {
+    if (!canInstallUpdate.value) {
+        return
+    }
+
+    updateActionPending.value = true
+    try {
+        const result = await electronAPI.appUpdate.install()
+        if (result?.data) {
+            appUpdateState.value = result.data
+        }
+        if (!result?.success) {
+            throw new Error(result?.error || '重启安装失败')
+        }
+    } catch (error) {
+        updateActionPending.value = false
+        console.warn('Failed to install app update:', error)
     }
 }
 
@@ -479,7 +680,7 @@ const applyManualPathSuggestion = async () => {
 }
 
 const openDownloadUrl = async () => {
-    const url = versionInfo.value?.downloadUrl
+    const url = manualUpdateDownloadUrl.value
     if (!url) {
         return
     }
@@ -496,6 +697,14 @@ const openAramggHome = async () => {
         await electronAPI.shell.openExternal(ARAMGG_HOME_URL)
     } catch (error) {
         console.warn('Failed to open ARAMGG home:', error)
+    }
+}
+
+const openDataApi = async () => {
+    try {
+        await electronAPI.shell.openExternal(DATA_API_URL)
+    } catch (error) {
+        console.warn('Failed to open data API:', error)
     }
 }
 
@@ -625,7 +834,7 @@ const testDatabaseLoad = async () => {
         if (result.success) {
             testStatus.value = {
                 type: 'success',
-                message: '数据加载成功：' + result.dataCount + ' 条记录 | 路径：' + result.successPath,
+                message: '数据加载成功：' + result.dataCount + ' 条记录 | 路径：https://data.dtodo.cn',
             }
         } else {
             let errorMsg = result.error || '未知错误'
@@ -669,13 +878,19 @@ const quitApp = async () => {
 
 onMounted(() => {
     loadVersionInfo()
+    loadAppUpdateState()
     loadManualLolPath()
     removeQuitConfirmListener = electronAPI.events.on('quit-confirm-requested', confirmQuitApp)
+    removeAppUpdateListener = electronAPI.events.on('app-update-status-changed', (state) => {
+        appUpdateState.value = state
+    })
 })
 
 onBeforeUnmount(() => {
     removeQuitConfirmListener?.()
     removeQuitConfirmListener = null
+    removeAppUpdateListener?.()
+    removeAppUpdateListener = null
 })
 </script>
 
@@ -952,6 +1167,172 @@ onBeforeUnmount(() => {
 .version-download:hover {
     border-color: rgba(226, 192, 143, 0.58);
     background: rgba(194, 156, 109, 0.2);
+}
+
+.update-panel {
+    margin-top: 8px;
+    padding: 9px 10px;
+    border: 1px solid rgba(226, 192, 143, 0.18);
+    border-radius: 4px;
+    background: rgba(4, 15, 24, 0.42);
+    box-shadow: inset 0 1px 0 rgba(244, 236, 220, 0.04);
+}
+
+.update-panel.phase-downloading,
+.update-panel.phase-downloaded,
+.update-panel.phase-available {
+    border-color: rgba(226, 192, 143, 0.34);
+    background: rgba(194, 156, 109, 0.08);
+}
+
+.update-panel.phase-error {
+    border-color: rgba(255, 180, 171, 0.26);
+    background: rgba(68, 14, 20, 0.2);
+}
+
+.update-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.update-copy {
+    min-width: 0;
+}
+
+.update-copy span,
+.update-copy strong,
+.update-copy small {
+    display: block;
+}
+
+.update-copy span {
+    color: #bacac6;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.update-copy strong {
+    margin-top: 2px;
+    color: #e2c08f;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.update-copy small {
+    margin-top: 3px;
+    color: #859491;
+    font-size: 10px;
+    line-height: 1.35;
+    overflow: hidden;
+    text-wrap: pretty;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.update-panel.phase-error .update-copy small {
+    color: #ffb4ab;
+}
+
+.update-actions {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+
+.update-action {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(244, 236, 220, 0.1);
+    border-radius: 4px;
+    background: rgba(17, 29, 38, 0.72);
+    color: #d7e4f1;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.update-action:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(226, 192, 143, 0.4);
+    color: #e2c08f;
+}
+
+.update-action:active:not(:disabled) {
+    transform: scale(0.96);
+}
+
+.update-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.update-action.accent {
+    border-color: rgba(226, 192, 143, 0.34);
+    background: rgba(194, 156, 109, 0.14);
+    color: #e2c08f;
+}
+
+.update-action-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.update-action-icon.spinning {
+    animation: update-spin 0.9s linear infinite;
+}
+
+.update-progress {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 70px;
+    align-items: center;
+    gap: 8px;
+}
+
+.update-progress-track {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(7, 10, 13, 0.58);
+    box-shadow: inset 0 0 0 1px rgba(244, 236, 220, 0.06);
+}
+
+.update-progress-track span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(194, 156, 109, 0.72), #e2c08f);
+    transition: width 0.18s ease;
+}
+
+.update-progress-text {
+    color: #e2c08f;
+    font-size: 10px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+@keyframes update-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .lcu-status-card {

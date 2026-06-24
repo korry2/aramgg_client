@@ -1,6 +1,6 @@
 # Electron 客户端版本更新方案
 
-本文档记录 aramgg Electron 客户端的版本发布和后续自动更新方案。当前 GitHub Releases 发布链路已经验证可用；主界面已接入轻量版本提示、下载入口和更新日志展示；应用内 `electron-updater` 自动下载/安装运行时代码仍未接入，应后续单独提交。
+本文档记录 aramgg Electron 客户端的版本发布和自动更新方案。当前 GitHub Releases 发布链路已经验证可用；主界面已接入版本提示、下载入口、更新日志展示和 `electron-updater` 自动下载/重启安装流程。更新 feed 通过远端 `client.updateFeedUrl` 配置，首期按腾讯 OSS/COS HTTPS 静态目录发布。
 
 ## 目标
 
@@ -61,17 +61,18 @@ GitHub Release v0.2.0/
 - `.exe` 是完整安装包。
 - `.blockmap` 用于差分更新。
 
-当前 GitHub Releases 已作为发布产物托管位置验证通过。EdgeOne、对象存储或自建静态目录仍可作为后续切换更新 feed 的备选。客户端只需要读取公开的更新 feed，不应该内置任何写入 token。
+当前 GitHub Releases 已作为发布产物托管位置验证通过。首期自动更新 feed 准备放到腾讯 OSS/COS 或同类 HTTPS 静态目录。客户端只需要读取公开的更新 feed，不应该内置任何写入 token。
 
-## 已接入的轻量更新提示
+## 已接入的更新能力
 
 当前客户端通过 `get-version-info` IPC 读取远端 `/api/client/v1/config` 中的 `client` 配置，并在主界面展示：
 
 - 当前客户端版本、远端最新版本和更新提示。
 - `client.downloadUrl` 对应的“下载更新”入口。
 - 页脚“更新日志”弹窗，优先展示远端 `client.changelog` / `client.releaseNotes`，字段缺失时回退到打包内的本地兜底日志。
+- `client.updateFeedUrl` 对应的应用内自动更新源，主进程使用 `electron-updater` 检查、下载，并在下载完成后由用户点击重启安装。
 
-这不是自动更新安装能力。旧客户端要看到未来版本的更新日志，必须先把未来版本条目发布到远端 `config`；打包内本地兜底日志无法覆盖尚未发布时不存在的版本。
+旧客户端要看到未来版本的更新日志，必须先把未来版本条目发布到远端 `config`；打包内本地兜底日志无法覆盖尚未发布时不存在的版本。
 
 ## 配置形态
 
@@ -83,6 +84,7 @@ GitHub Release v0.2.0/
     "latestVersion": "0.2.0",
     "minimumVersion": "0.1.0",
     "downloadUrl": "https://data.dtodo.cn/downloads/aramgg-electron/latest",
+    "updateFeedUrl": "https://your-bucket.cos.ap-shanghai.myqcloud.com/aramgg-electron/windows/",
     "changelog": [
       {
         "version": "0.2.0",
@@ -99,15 +101,7 @@ GitHub Release v0.2.0/
 }
 ```
 
-后续接入 `electron-updater` 时建议额外保持 feed URL 可配置：
-
-```json
-{
-  "client": {
-    "updateFeedUrl": "https://data.dtodo.cn/downloads/aramgg-electron/windows"
-  }
-}
-```
+`updateFeedUrl` 指向目录，不是单个安装包。该目录需要能直接读取 `latest.yml`、安装包 `.exe` 和 `.blockmap`。如果误配置到 `latest.yml`，客户端会归一化到所在目录。
 
 本地开发和 CI 也可以用环境变量覆盖：
 
@@ -122,16 +116,17 @@ ARAMGG_ALLOW_DEV_UPDATE_CHECK=1
 - 未配置 feed URL 时不检查更新。
 - 打包后生产环境才自动检查。
 - 用户主动点击检查更新时，可以触发一次显式检查。
+- 下载完成后不会静默安装，需要用户点击主界面里的重启安装按钮。
 
 ## 客户端运行流程
 
-计划实现的运行时流程：
+当前运行时流程：
 
 1. 应用启动。
 2. 读取远程客户端配置或环境变量中的 `updateFeedUrl`。
-3. 生产环境配置 `autoUpdater.setFeedURL(...)`。
+3. 生产环境配置 `autoUpdater.setFeedURL({ provider: "generic", url })`。
 4. 注册更新事件：检查中、发现新版本、未发现更新、下载进度、下载完成、错误。
-5. renderer 通过 preload 暴露的 IPC API 显示更新状态。
+5. renderer 通过 preload 暴露的 IPC API 显示更新状态，用户可主动检查。
 6. 下载完成后由用户确认重启安装，调用 `quitAndInstall()`。
 
 Renderer 只接收受控状态和触发受控命令，不直接访问 Node 或更新库。
@@ -167,36 +162,37 @@ Electron 的页面更新属于应用本体更新的一部分：
 
 ## 测试清单
 
-发布链路已验证，接入应用内自动更新前仍需要完成端到端更新测试：
+发布链路已验证。切到腾讯 OSS/COS feed 后，每次正式发布前需要完成端到端更新测试：
 
 1. 安装旧版本，例如 `0.1.4`。
 2. 修改版本号并重新发布新版本，例如 `0.1.5`。
 3. 确认 GitHub Release 包含 `.exe`、`.blockmap`、`latest.yml`。
 4. 启动旧版本，确认能发现新版本。
-5. 更新远端 `/api/client/v1/config` 的 `client.latestVersion`、`client.downloadUrl` 和 `client.changelog`，确认旧版本能看到新版本更新日志。
-6. 验证下载进度、下载完成、重启安装和版本号变化。
-7. 验证没有更新时的状态。
-8. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
-9. 验证开发模式默认不会误触发更新。
-10. 验证 renderer 页面变更能随应用更新生效。
+5. 上传 `latest.yml`、安装包 `.exe` 和 `.blockmap` 到腾讯 OSS/COS 的 `client.updateFeedUrl` 目录。
+6. 更新远端 `/api/client/v1/config` 的 `client.latestVersion`、`client.downloadUrl`、`client.updateFeedUrl` 和 `client.changelog`，确认旧版本能看到新版本更新日志。
+7. 验证下载进度、下载完成、重启安装和版本号变化。
+8. 验证没有更新时的状态。
+9. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
+10. 验证开发模式默认不会误触发更新。
+11. 验证 renderer 页面变更能随应用更新生效。
 
 ## 待定问题
 
-- 是否长期使用 GitHub Releases 作为更新 feed，或切换到 EdgeOne、对象存储、自建静态目录。
+- 是否长期使用腾讯 OSS/COS 作为更新 feed，或切换到 EdgeOne、GitHub Releases、自建静态目录。
 - Windows 代码签名证书。
-- `electron-updater` 的下载进度、下载完成和重启安装 UI 放在设置页、启动提示、还是右上角状态入口。
+- 是否补发布 workflow 自动同步腾讯 OSS/COS，避免手动上传 release 产物。
 - 自动检查频率：启动时、每天一次、用户手动检查，或组合策略。
 - 是否需要强制升级和最低可用版本。
 - macOS、Linux 是否进入首期范围。
 
 ## 后续实现建议
 
-建议更新功能单独提交，不和 Firebase、数据热更新或 UI 改动混在一起。
+建议自动更新后续工作不要和 Firebase、数据热更新或大型 UI 改动混在一起。
 
 推荐拆分：
 
-1. `chore: configure electron update artifacts`
-2. `feat: add electron app update service`
-3. `feat: expose update status in settings`
+1. `chore: publish electron update feed to tencent oss`
+2. `chore: add windows code signing`
+3. `feat: add forced minimum client version prompt`
 
 每个提交都先跑 `npm run type-check`、`npm run lint`、`npm run build`。涉及依赖或 lockfile 的提交额外跑 `npx -p npm@10 npm ci --ignore-scripts`。

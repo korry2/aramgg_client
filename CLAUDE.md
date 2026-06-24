@@ -44,7 +44,7 @@ node tests/electron/test-augment-ocr-fixtures.js
 - 改动依赖或 lockfile 后，发布前用 `npx -p npm@10 npm ci --ignore-scripts` 校验，避免本地 npm 版本差异漏掉锁文件问题。
 - 正式发布使用 `npm run release:patch|minor|major` 和 `npm run release:push`，让 `npm version` 创建版本提交和 annotated `v*` tag。
 - `v*` tag 必须和 `package.json` 版本一致；清理错误 release 时只删除确认范围内的本地和远端 tag。
-- 旧客户端看到未来版本更新日志依赖远端 `/api/client/v1/config`；发布新安装包后同步 `client.latestVersion`、`client.downloadUrl` 和 `client.changelog` / `client.releaseNotes`，不要指望打包内的本地兜底日志展示未来版本。
+- 旧客户端看到未来版本更新日志和应用更新 feed 依赖远端 `/api/client/v1/config`；发布新安装包后同步 `client.latestVersion`、`client.downloadUrl`、`client.updateFeedUrl` 和 `client.changelog` / `client.releaseNotes`，不要指望打包内的本地兜底日志展示未来版本。
 
 ## 安全红线
 

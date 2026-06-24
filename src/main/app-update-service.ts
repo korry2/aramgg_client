@@ -1,0 +1,601 @@
+import { app, BrowserWindow } from 'electron'
+import electronUpdater from 'electron-updater'
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
+import { loadDataApiConfig } from './data-loader.ts'
+import logger from './modules/logger.ts'
+import { allowMainWindowClose } from './modules/window-manager.ts'
+
+const { autoUpdater } = electronUpdater
+
+type UpdatePhase =
+  | 'uninitialized'
+  | 'disabled'
+  | 'no-feed'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+  | 'installing'
+
+type UpdateProgress = {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+type UpdateState = {
+  phase: UpdatePhase
+  currentVersion: string
+  latestVersion: string
+  feedUrl: string
+  feedConfigured: boolean
+  manualDownloadUrl: string
+  available: boolean
+  downloaded: boolean
+  progress: UpdateProgress | null
+  error: string
+  message: string
+  lastCheckedAt: string
+  canCheck: boolean
+  canInstall: boolean
+}
+
+type InitializeOptions = {
+  isDev: boolean
+}
+
+type RefreshOptions = {
+  force?: boolean
+  reason?: string
+}
+
+type UpdateActionResult = {
+  success: boolean
+  data: UpdateState
+  error?: string
+}
+
+const UPDATE_STATUS_CHANNEL = 'app-update-status-changed'
+const DEV_UPDATE_CHECK_ENABLED = /^(1|true|yes)$/i.test(
+  String(process.env.ARAMGG_ALLOW_DEV_UPDATE_CHECK || '')
+)
+
+let initialized = false
+let isDevRuntime = false
+let configuredFeedUrl = ''
+let installCleanup: (() => Promise<void> | void) | null = null
+let checkForUpdatesPromise: Promise<UpdateActionResult> | null = null
+let installingDownloadedUpdate = false
+
+let updateState: UpdateState = {
+  phase: 'uninitialized',
+  currentVersion: app.getVersion(),
+  latestVersion: '',
+  feedUrl: '',
+  feedConfigured: false,
+  manualDownloadUrl: '',
+  available: false,
+  downloaded: false,
+  progress: null,
+  error: '',
+  message: '自动更新初始化中',
+  lastCheckedAt: '',
+  canCheck: false,
+  canInstall: false,
+}
+
+function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
+  const phase = patch.phase || updateState?.phase || 'uninitialized'
+  const feedUrl = patch.feedUrl ?? updateState?.feedUrl ?? ''
+  const feedConfigured = patch.feedConfigured ?? Boolean(feedUrl)
+  const currentVersion = app.getVersion()
+  const busy = phase === 'checking' || phase === 'available' || phase === 'downloading' || phase === 'installing'
+
+  return {
+    phase,
+    currentVersion,
+    latestVersion: patch.latestVersion ?? updateState?.latestVersion ?? '',
+    feedUrl,
+    feedConfigured,
+    manualDownloadUrl: patch.manualDownloadUrl ?? updateState?.manualDownloadUrl ?? '',
+    available: patch.available ?? updateState?.available ?? false,
+    downloaded: patch.downloaded ?? updateState?.downloaded ?? false,
+    progress: patch.progress ?? updateState?.progress ?? null,
+    error: patch.error ?? updateState?.error ?? '',
+    message: patch.message ?? updateState?.message ?? '',
+    lastCheckedAt: patch.lastCheckedAt ?? updateState?.lastCheckedAt ?? '',
+    canCheck: patch.canCheck ?? (isRuntimeUpdateAllowed() && feedConfigured && !busy && phase !== 'downloaded'),
+    canInstall: patch.canInstall ?? phase === 'downloaded',
+  }
+}
+
+function setUpdateState(patch: Partial<UpdateState>): UpdateState {
+  updateState = createUpdateState(patch)
+  broadcastUpdateState()
+  return updateState
+}
+
+function broadcastUpdateState(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(UPDATE_STATUS_CHANNEL, updateState)
+    }
+  }
+}
+
+function isRuntimeUpdateAllowed(): boolean {
+  return app.isPackaged || DEV_UPDATE_CHECK_ENABLED
+}
+
+function isLocalhost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+}
+
+function normalizeFeedUrl(value: unknown): string {
+  if (typeof value !== 'string') {
+    return ''
+  }
+
+  const rawUrl = value.trim()
+  if (!rawUrl) {
+    return ''
+  }
+
+  const url = new URL(rawUrl)
+  if (url.protocol !== 'https:') {
+    const isAllowedDevHttp = DEV_UPDATE_CHECK_ENABLED && url.protocol === 'http:' && isLocalhost(url.hostname)
+    if (!isAllowedDevHttp) {
+      throw new Error('自动更新源必须使用 HTTPS')
+    }
+  }
+
+  if (/\/latest\.ya?ml$/i.test(url.pathname)) {
+    url.pathname = url.pathname.replace(/\/latest\.ya?ml$/i, '/')
+  } else if (!url.pathname.endsWith('/')) {
+    url.pathname = `${url.pathname}/`
+  }
+
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+function getClientConfig(config: any): any {
+  return config?.client || config?.electron || {}
+}
+
+function getUpdateFeedCandidate(config: any): string {
+  return (
+    process.env.ARAMGG_UPDATE_FEED_URL ||
+    getClientConfig(config).updateFeedUrl ||
+    config?.electron?.updateFeedUrl ||
+    ''
+  )
+}
+
+function getManualDownloadUrl(config: any): string {
+  return (
+    getClientConfig(config).downloadUrl ||
+    config?.electron?.downloadUrl ||
+    ''
+  )
+}
+
+function getLatestVersionHint(config: any): string {
+  return (
+    getClientConfig(config).latestVersion ||
+    config?.electron?.latestVersion ||
+    ''
+  )
+}
+
+function normalizeProgress(progress: ProgressInfo): UpdateProgress {
+  const percent = Number(progress.percent)
+  const transferred = Number(progress.transferred)
+  const total = Number(progress.total)
+  const bytesPerSecond = Number(progress.bytesPerSecond)
+
+  return {
+    percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0,
+    transferred: Number.isFinite(transferred) ? transferred : 0,
+    total: Number.isFinite(total) ? total : 0,
+    bytesPerSecond: Number.isFinite(bytesPerSecond) ? bytesPerSecond : 0,
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error || '自动更新失败')
+}
+
+function applyUpdateInfo(info: UpdateInfo | UpdateDownloadedEvent | null | undefined): void {
+  if (!info) {
+    return
+  }
+
+  setUpdateState({
+    latestVersion: info.version || updateState.latestVersion,
+  })
+}
+
+function registerAutoUpdaterEvents(): void {
+  if (initialized) {
+    return
+  }
+
+  initialized = true
+  autoUpdater.logger = logger
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = false
+  autoUpdater.allowPrerelease = false
+  autoUpdater.forceDevUpdateConfig = DEV_UPDATE_CHECK_ENABLED && !app.isPackaged
+
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateState({
+      phase: 'checking',
+      error: '',
+      progress: null,
+      message: '正在检查更新',
+    })
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    logger.info('[update] app update available', {
+      currentVersion: app.getVersion(),
+      latestVersion: info.version,
+      feedUrl: configuredFeedUrl,
+    })
+    setUpdateState({
+      phase: 'available',
+      latestVersion: info.version || updateState.latestVersion,
+      available: true,
+      downloaded: false,
+      progress: null,
+      error: '',
+      message: '发现新版本，正在下载',
+    })
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    setUpdateState({
+      phase: 'downloading',
+      progress: normalizeProgress(progress),
+      available: true,
+      downloaded: false,
+      error: '',
+      message: '正在下载更新',
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (event) => {
+    logger.info('[update] app update downloaded', {
+      currentVersion: app.getVersion(),
+      latestVersion: event.version,
+      downloadedFile: event.downloadedFile || null,
+    })
+    setUpdateState({
+      phase: 'downloaded',
+      latestVersion: event.version || updateState.latestVersion,
+      available: true,
+      downloaded: true,
+      progress: {
+        percent: 100,
+        transferred: updateState.progress?.transferred || 0,
+        total: updateState.progress?.total || 0,
+        bytesPerSecond: 0,
+      },
+      error: '',
+      message: '更新已下载，重启后安装',
+    })
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    logger.info('[update] app update not available', {
+      currentVersion: app.getVersion(),
+      latestVersion: info.version || null,
+      feedUrl: configuredFeedUrl,
+    })
+    setUpdateState({
+      phase: 'not-available',
+      latestVersion: info.version || updateState.latestVersion,
+      available: false,
+      downloaded: false,
+      progress: null,
+      error: '',
+      lastCheckedAt: new Date().toISOString(),
+      message: '当前已是最新',
+    })
+  })
+
+  autoUpdater.on('update-cancelled', (info) => {
+    logger.warn('[update] app update cancelled', {
+      latestVersion: info.version || null,
+    })
+    setUpdateState({
+      phase: 'idle',
+      progress: null,
+      error: '',
+      message: '更新下载已取消',
+    })
+  })
+
+  autoUpdater.on('error', (error) => {
+    const message = getErrorMessage(error)
+    logger.warn('[update] app update failed:', message)
+    setUpdateState({
+      phase: 'error',
+      progress: null,
+      error: message,
+      message: '自动更新失败',
+    })
+  })
+}
+
+export function initializeAppUpdateService(options: InitializeOptions): void {
+  isDevRuntime = options.isDev
+  registerAutoUpdaterEvents()
+  setUpdateState({
+    phase: isRuntimeUpdateAllowed() ? 'idle' : 'disabled',
+    message: isRuntimeUpdateAllowed() ? '自动更新待命' : '开发模式已跳过自动更新',
+  })
+}
+
+export function setAppUpdateInstallCleanup(callback: () => Promise<void> | void): void {
+  installCleanup = callback
+}
+
+export function isAppUpdateInstallInProgress(): boolean {
+  return installingDownloadedUpdate
+}
+
+export function getAppUpdateState(): UpdateState {
+  return createUpdateState()
+}
+
+export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Promise<UpdateActionResult> {
+  let config: any = null
+
+  try {
+    config = await loadDataApiConfig({
+      force: options.force === true,
+      timeoutMs: options.force ? 10000 : 5000,
+    })
+  } catch (error) {
+    if (!process.env.ARAMGG_UPDATE_FEED_URL) {
+      const message = getErrorMessage(error)
+      logger.warn('[update] failed to load update config:', message)
+      setUpdateState({
+        phase: isRuntimeUpdateAllowed() ? 'no-feed' : 'disabled',
+        error: message,
+        message: isRuntimeUpdateAllowed() ? '未读取到自动更新配置' : '开发模式已跳过自动更新',
+      })
+      return {
+        success: false,
+        data: getAppUpdateState(),
+        error: message,
+      }
+    }
+  }
+
+  const manualDownloadUrl = getManualDownloadUrl(config)
+  const latestVersion = getLatestVersionHint(config)
+
+  if (!isRuntimeUpdateAllowed()) {
+    setUpdateState({
+      phase: 'disabled',
+      manualDownloadUrl,
+      latestVersion,
+      feedUrl: '',
+      feedConfigured: false,
+      message: isDevRuntime ? '开发模式已跳过自动更新' : '自动更新不可用',
+    })
+    return {
+      success: true,
+      data: getAppUpdateState(),
+    }
+  }
+
+  let feedUrl = ''
+  try {
+    feedUrl = normalizeFeedUrl(getUpdateFeedCandidate(config))
+  } catch (error) {
+    const message = getErrorMessage(error)
+    setUpdateState({
+      phase: 'error',
+      manualDownloadUrl,
+      latestVersion,
+      feedUrl: '',
+      feedConfigured: false,
+      error: message,
+      message: '自动更新源配置无效',
+    })
+    return {
+      success: false,
+      data: getAppUpdateState(),
+      error: message,
+    }
+  }
+
+  if (!feedUrl) {
+    configuredFeedUrl = ''
+    setUpdateState({
+      phase: 'no-feed',
+      manualDownloadUrl,
+      latestVersion,
+      feedUrl: '',
+      feedConfigured: false,
+      error: '',
+      message: '未配置自动更新源',
+    })
+    return {
+      success: true,
+      data: getAppUpdateState(),
+    }
+  }
+
+  if (feedUrl !== configuredFeedUrl) {
+    configuredFeedUrl = feedUrl
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: feedUrl,
+    })
+    logger.info('[update] feed configured', {
+      feedUrl,
+      reason: options.reason || 'refresh',
+    })
+  }
+
+  const shouldPreserveActivePhase = ['checking', 'available', 'downloading', 'downloaded', 'installing'].includes(
+    updateState.phase
+  )
+
+  setUpdateState({
+    phase: shouldPreserveActivePhase ? updateState.phase : 'idle',
+    manualDownloadUrl,
+    latestVersion,
+    feedUrl,
+    feedConfigured: true,
+    error: '',
+    message: shouldPreserveActivePhase ? updateState.message : '自动更新待命',
+  })
+
+  return {
+    success: true,
+    data: getAppUpdateState(),
+  }
+}
+
+export async function checkForAppUpdate(reason = 'manual'): Promise<UpdateActionResult> {
+  if (checkForUpdatesPromise) {
+    return checkForUpdatesPromise
+  }
+
+  checkForUpdatesPromise = (async () => {
+    const configResult = await refreshAppUpdateConfig({
+      force: reason === 'manual',
+      reason,
+    })
+
+    if (!configResult.success || !updateState.feedConfigured || !isRuntimeUpdateAllowed()) {
+      return {
+        success: configResult.success,
+        data: getAppUpdateState(),
+        error: configResult.error,
+      }
+    }
+
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      applyUpdateInfo(result?.updateInfo)
+      setUpdateState({
+        lastCheckedAt: new Date().toISOString(),
+      })
+      return {
+        success: true,
+        data: getAppUpdateState(),
+      }
+    } catch (error) {
+      const message = getErrorMessage(error)
+      logger.warn('[update] check failed:', message)
+      setUpdateState({
+        phase: 'error',
+        progress: null,
+        error: message,
+        message: '检查更新失败',
+      })
+      return {
+        success: false,
+        data: getAppUpdateState(),
+        error: message,
+      }
+    }
+  })().finally(() => {
+    checkForUpdatesPromise = null
+  })
+
+  return checkForUpdatesPromise
+}
+
+export async function downloadAppUpdate(): Promise<UpdateActionResult> {
+  if (!updateState.feedConfigured) {
+    const configResult = await refreshAppUpdateConfig({ force: true, reason: 'manual-download' })
+    if (!configResult.success || !updateState.feedConfigured) {
+      return configResult
+    }
+  }
+
+  try {
+    await autoUpdater.downloadUpdate()
+    return {
+      success: true,
+      data: getAppUpdateState(),
+    }
+  } catch (error) {
+    const message = getErrorMessage(error)
+    logger.warn('[update] download failed:', message)
+    setUpdateState({
+      phase: 'error',
+      progress: null,
+      error: message,
+      message: '下载更新失败',
+    })
+    return {
+      success: false,
+      data: getAppUpdateState(),
+      error: message,
+    }
+  }
+}
+
+export async function installDownloadedAppUpdate(): Promise<UpdateActionResult> {
+  if (!updateState.downloaded) {
+    return {
+      success: false,
+      data: getAppUpdateState(),
+      error: '更新尚未下载完成',
+    }
+  }
+
+  try {
+    installingDownloadedUpdate = true
+    setUpdateState({
+      phase: 'installing',
+      message: '正在重启安装',
+      canCheck: false,
+      canInstall: false,
+    })
+
+    if (installCleanup) {
+      await installCleanup()
+    }
+
+    allowMainWindowClose()
+    autoUpdater.quitAndInstall(false, true)
+
+    return {
+      success: true,
+      data: getAppUpdateState(),
+    }
+  } catch (error) {
+    const message = getErrorMessage(error)
+    installingDownloadedUpdate = false
+    logger.warn('[update] install failed:', message)
+    setUpdateState({
+      phase: 'error',
+      error: message,
+      message: '重启安装失败',
+    })
+    return {
+      success: false,
+      data: getAppUpdateState(),
+      error: message,
+    }
+  }
+}

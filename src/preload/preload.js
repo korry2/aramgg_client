@@ -18,6 +18,7 @@ const validEvents = new Set([
     'game-ended',
     'end-of-game',
     'quit-confirm-requested',
+    'app-update-status-changed',
 ])
 
 const on = (channel, callback) => {
@@ -58,6 +59,12 @@ const electronAPI = {
     appInfo: {
         getVersionInfo: () => ipcRenderer.invoke('get-version-info'),
         openLogDirectory: () => ipcRenderer.invoke('open-log-directory'),
+    },
+    appUpdate: {
+        getState: () => ipcRenderer.invoke('app-update-get-state'),
+        check: () => ipcRenderer.invoke('app-update-check'),
+        download: () => ipcRenderer.invoke('app-update-download'),
+        install: () => ipcRenderer.invoke('app-update-install'),
     },
     analytics: {
         getStatus: () => ipcRenderer.invoke('analytics-get-status'),
