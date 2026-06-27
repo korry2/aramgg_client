@@ -33,6 +33,7 @@ type UpdateState = {
   latestVersion: string
   feedUrl: string
   feedConfigured: boolean
+  autoUpdateEnabled: boolean
   manualDownloadUrl: string
   available: boolean
   downloaded: boolean
@@ -63,6 +64,9 @@ const UPDATE_STATUS_CHANNEL = 'app-update-status-changed'
 const DEV_UPDATE_CHECK_ENABLED = /^(1|true|yes)$/i.test(
   String(process.env.ARAMGG_ALLOW_DEV_UPDATE_CHECK || '')
 )
+const AUTO_UPDATE_ENV_VALUE = String(process.env.ARAMGG_ENABLE_AUTO_UPDATE || '').trim()
+const AUTO_UPDATE_ENV_CONFIGURED = AUTO_UPDATE_ENV_VALUE.length > 0
+const AUTO_UPDATE_ENV_ENABLED = /^(1|true|yes)$/i.test(AUTO_UPDATE_ENV_VALUE)
 
 let initialized = false
 let isDevRuntime = false
@@ -77,6 +81,7 @@ let updateState: UpdateState = {
   latestVersion: '',
   feedUrl: '',
   feedConfigured: false,
+  autoUpdateEnabled: false,
   manualDownloadUrl: '',
   available: false,
   downloaded: false,
@@ -92,6 +97,7 @@ function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
   const phase = patch.phase || updateState?.phase || 'uninitialized'
   const feedUrl = patch.feedUrl ?? updateState?.feedUrl ?? ''
   const feedConfigured = patch.feedConfigured ?? Boolean(feedUrl)
+  const autoUpdateEnabled = patch.autoUpdateEnabled ?? updateState?.autoUpdateEnabled ?? false
   const currentVersion = app.getVersion()
   const busy = phase === 'checking' || phase === 'available' || phase === 'downloading' || phase === 'installing'
 
@@ -101,6 +107,7 @@ function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
     latestVersion: patch.latestVersion ?? updateState?.latestVersion ?? '',
     feedUrl,
     feedConfigured,
+    autoUpdateEnabled,
     manualDownloadUrl: patch.manualDownloadUrl ?? updateState?.manualDownloadUrl ?? '',
     available: patch.available ?? updateState?.available ?? false,
     downloaded: patch.downloaded ?? updateState?.downloaded ?? false,
@@ -108,7 +115,7 @@ function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
     error: patch.error ?? updateState?.error ?? '',
     message: patch.message ?? updateState?.message ?? '',
     lastCheckedAt: patch.lastCheckedAt ?? updateState?.lastCheckedAt ?? '',
-    canCheck: patch.canCheck ?? (isRuntimeUpdateAllowed() && feedConfigured && !busy && phase !== 'downloaded'),
+    canCheck: patch.canCheck ?? (autoUpdateEnabled && isRuntimeUpdateAllowed() && feedConfigured && !busy && phase !== 'downloaded'),
     canInstall: patch.canInstall ?? phase === 'downloaded',
   }
 }
@@ -191,6 +198,14 @@ function getLatestVersionHint(config: any): string {
     config?.electron?.latestVersion ||
     ''
   )
+}
+
+function getAutoUpdateEnabled(config: any): boolean {
+  if (AUTO_UPDATE_ENV_CONFIGURED) {
+    return AUTO_UPDATE_ENV_ENABLED
+  }
+
+  return getClientConfig(config).autoUpdateEnabled === true || config?.electron?.autoUpdateEnabled === true
 }
 
 function normalizeProgress(progress: ProgressInfo): UpdateProgress {
@@ -341,9 +356,13 @@ function registerAutoUpdaterEvents(): void {
 export function initializeAppUpdateService(options: InitializeOptions): void {
   isDevRuntime = options.isDev
   registerAutoUpdaterEvents()
+  const runtimeAllowed = isRuntimeUpdateAllowed()
   setUpdateState({
-    phase: isRuntimeUpdateAllowed() ? 'idle' : 'disabled',
-    message: isRuntimeUpdateAllowed() ? '自动更新待命' : '开发模式已跳过自动更新',
+    phase: 'disabled',
+    autoUpdateEnabled: false,
+    feedUrl: '',
+    feedConfigured: false,
+    message: runtimeAllowed ? '自动更新未启用' : '开发模式已跳过自动更新',
   })
 }
 
@@ -370,11 +389,21 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
   } catch (error) {
     if (!process.env.ARAMGG_UPDATE_FEED_URL) {
       const message = getErrorMessage(error)
+      const autoUpdateEnabled = AUTO_UPDATE_ENV_CONFIGURED ? AUTO_UPDATE_ENV_ENABLED : false
+      const autoUpdateUnavailable = !autoUpdateEnabled || !isRuntimeUpdateAllowed()
       logger.warn('[update] failed to load update config:', message)
       setUpdateState({
-        phase: isRuntimeUpdateAllowed() ? 'no-feed' : 'disabled',
+        phase: autoUpdateUnavailable ? 'disabled' : 'no-feed',
+        autoUpdateEnabled,
+        feedUrl: '',
+        feedConfigured: false,
+        available: false,
+        downloaded: false,
+        progress: null,
         error: message,
-        message: isRuntimeUpdateAllowed() ? '未读取到自动更新配置' : '开发模式已跳过自动更新',
+        message: autoUpdateUnavailable
+          ? (isRuntimeUpdateAllowed() ? '自动更新未启用' : '开发模式已跳过自动更新')
+          : '未读取到自动更新配置',
       })
       return {
         success: false,
@@ -386,14 +415,40 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
 
   const manualDownloadUrl = getManualDownloadUrl(config)
   const latestVersion = getLatestVersionHint(config)
+  const autoUpdateEnabled = getAutoUpdateEnabled(config)
 
-  if (!isRuntimeUpdateAllowed()) {
+  if (!autoUpdateEnabled) {
+    configuredFeedUrl = ''
     setUpdateState({
       phase: 'disabled',
+      autoUpdateEnabled: false,
       manualDownloadUrl,
       latestVersion,
       feedUrl: '',
       feedConfigured: false,
+      available: false,
+      downloaded: false,
+      progress: null,
+      error: '',
+      message: '自动更新未启用',
+    })
+    return {
+      success: true,
+      data: getAppUpdateState(),
+    }
+  }
+
+  if (!isRuntimeUpdateAllowed()) {
+    setUpdateState({
+      phase: 'disabled',
+      autoUpdateEnabled,
+      manualDownloadUrl,
+      latestVersion,
+      feedUrl: '',
+      feedConfigured: false,
+      available: false,
+      downloaded: false,
+      progress: null,
       message: isDevRuntime ? '开发模式已跳过自动更新' : '自动更新不可用',
     })
     return {
@@ -409,10 +464,14 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
     const message = getErrorMessage(error)
     setUpdateState({
       phase: 'error',
+      autoUpdateEnabled,
       manualDownloadUrl,
       latestVersion,
       feedUrl: '',
       feedConfigured: false,
+      available: false,
+      downloaded: false,
+      progress: null,
       error: message,
       message: '自动更新源配置无效',
     })
@@ -427,10 +486,14 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
     configuredFeedUrl = ''
     setUpdateState({
       phase: 'no-feed',
+      autoUpdateEnabled,
       manualDownloadUrl,
       latestVersion,
       feedUrl: '',
       feedConfigured: false,
+      available: false,
+      downloaded: false,
+      progress: null,
       error: '',
       message: '未配置自动更新源',
     })
@@ -458,6 +521,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
 
   setUpdateState({
     phase: shouldPreserveActivePhase ? updateState.phase : 'idle',
+    autoUpdateEnabled,
     manualDownloadUrl,
     latestVersion,
     feedUrl,
@@ -483,7 +547,7 @@ export async function checkForAppUpdate(reason = 'manual'): Promise<UpdateAction
       reason,
     })
 
-    if (!configResult.success || !updateState.feedConfigured || !isRuntimeUpdateAllowed()) {
+    if (!configResult.success || !updateState.autoUpdateEnabled || !updateState.feedConfigured || !isRuntimeUpdateAllowed()) {
       return {
         success: configResult.success,
         data: getAppUpdateState(),
@@ -524,9 +588,21 @@ export async function checkForAppUpdate(reason = 'manual'): Promise<UpdateAction
 }
 
 export async function downloadAppUpdate(): Promise<UpdateActionResult> {
-  if (!updateState.feedConfigured) {
+  if (!updateState.autoUpdateEnabled || !updateState.feedConfigured) {
     const configResult = await refreshAppUpdateConfig({ force: true, reason: 'manual-download' })
-    if (!configResult.success || !updateState.feedConfigured) {
+    if (!configResult.success) {
+      return configResult
+    }
+
+    if (!updateState.autoUpdateEnabled) {
+      return {
+        success: false,
+        data: getAppUpdateState(),
+        error: '自动更新未启用',
+      }
+    }
+
+    if (!updateState.feedConfigured) {
       return configResult
     }
   }

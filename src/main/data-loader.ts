@@ -26,6 +26,7 @@ type ClientConfig = {
     latestVersion?: string
     minimumVersion?: string
     downloadUrl?: string
+    autoUpdateEnabled?: boolean
     updateFeedUrl?: string
     changelog?: unknown
     releaseNotes?: unknown
@@ -33,6 +34,7 @@ type ClientConfig = {
   electron?: {
     latestVersion?: string
     downloadUrl?: string
+    autoUpdateEnabled?: boolean
     updateFeedUrl?: string
     changelog?: unknown
     releaseNotes?: unknown

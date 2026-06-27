@@ -100,6 +100,7 @@ export async function getVersionInfo() {
     currentVersion,
     latestVersion,
     downloadUrl: clientConfig.downloadUrl || '',
+    autoUpdateEnabled: clientConfig.autoUpdateEnabled === true,
     updateFeedUrl: clientConfig.updateFeedUrl || '',
     minimumVersion,
     dataVersion: config?.dataVersion || '',

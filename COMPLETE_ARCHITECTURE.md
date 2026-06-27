@@ -94,14 +94,14 @@ LCU gameflow InProgress
   -> get-version-info IPC
   -> Display.vue
 
-/api/client/v1/config client.updateFeedUrl
+/api/client/v1/config client.autoUpdateEnabled + client.updateFeedUrl
   -> app-update-service.ts
   -> electron-updater generic feed
   -> app-update-* IPC / app-update-status-changed
   -> Display.vue
 ```
 
-主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。`app-update-service.ts` 读取 `client.updateFeedUrl` 配置 `electron-updater` generic feed，生产环境启动后自动检查更新，发现新版本后自动下载，下载完成后由用户点击重启安装。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
+主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。`app-update-service.ts` 只有在远端 `client.autoUpdateEnabled: true` 时才读取 `client.updateFeedUrl` 并配置 `electron-updater` generic feed；未开启时保留手动下载入口，不会自动检查或下载。自动更新开启后，生产环境启动会检查更新，发现新版本后自动下载，下载完成后由用户点击重启安装。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
 
 ## IPC 速查
 

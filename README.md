@@ -74,10 +74,11 @@ npm run release:push
 
 - `client.latestVersion`：新版本号。
 - `client.downloadUrl`：新安装包或最新下载页。
-- `client.updateFeedUrl`：自动更新 feed 目录，首期指向腾讯 OSS/COS 上公开可读的 Windows 产物目录。
+- `client.autoUpdateEnabled`：自动下载/安装总开关，未完整测试前保持 `false` 或不下发。
+- `client.updateFeedUrl`：自动更新 feed 目录；只有 `client.autoUpdateEnabled: true` 时才会被客户端使用。
 - `client.changelog` / `client.releaseNotes`：新版本更新条目。
 
-自动更新 feed 目录需要包含 `latest.yml`、`aramgg_client Setup <version>.exe` 和对应 `.exe.blockmap`。`downloadUrl` 仍作为自动更新不可用时的手动下载兜底入口。
+自动更新 feed 目录需要包含 `latest.yml`、`aramgg_client Setup <version>.exe` 和对应 `.exe.blockmap`。当前优先更新 `latestVersion`、`downloadUrl` 和更新日志，让旧客户端走手动下载；等自动更新链路验证完整后再开启 `autoUpdateEnabled`。
 
 示例：当前 `0.1.0` 执行 `npm run release:patch` 会生成 `0.1.1` 的版本提交和 `v0.1.1` tag；推送后 GitHub Actions 会校验 tag 必须等于 `package.json` 版本，校验通过才发布 Release。
 

@@ -1,6 +1,6 @@
 # Electron 客户端版本更新方案
 
-本文档记录 aramgg Electron 客户端的版本发布和自动更新方案。当前 GitHub Releases 发布链路已经验证可用；主界面已接入版本提示、下载入口、更新日志展示和 `electron-updater` 自动下载/重启安装流程。更新 feed 通过远端 `client.updateFeedUrl` 配置，首期按腾讯 OSS/COS HTTPS 静态目录发布。
+本文档记录 aramgg Electron 客户端的版本发布和自动更新方案。当前 GitHub Releases 发布链路已经验证可用；主界面已接入版本提示、下载入口、更新日志展示和 `electron-updater` 自动下载/重启安装流程。自动更新默认不启用，只有远端 `client.autoUpdateEnabled: true` 时才会读取 `client.updateFeedUrl`。更新 feed 首期按腾讯 OSS/COS HTTPS 静态目录发布。
 
 ## 目标
 
@@ -70,7 +70,7 @@ GitHub Release v0.2.0/
 - 当前客户端版本、远端最新版本和更新提示。
 - `client.downloadUrl` 对应的“下载更新”入口。
 - 页脚“更新日志”弹窗，优先展示远端 `client.changelog` / `client.releaseNotes`，字段缺失时回退到打包内的本地兜底日志。
-- `client.updateFeedUrl` 对应的应用内自动更新源，主进程使用 `electron-updater` 检查、下载，并在下载完成后由用户点击重启安装。
+- `client.autoUpdateEnabled` + `client.updateFeedUrl` 对应的应用内自动更新源；默认关闭，打开后主进程使用 `electron-updater` 检查、下载，并在下载完成后由用户点击重启安装。
 
 旧客户端要看到未来版本的更新日志，必须先把未来版本条目发布到远端 `config`；打包内本地兜底日志无法覆盖尚未发布时不存在的版本。
 
@@ -84,6 +84,7 @@ GitHub Release v0.2.0/
     "latestVersion": "0.2.0",
     "minimumVersion": "0.1.0",
     "downloadUrl": "https://data.dtodo.cn/downloads/aramgg-electron/latest",
+    "autoUpdateEnabled": false,
     "updateFeedUrl": "https://your-bucket.cos.ap-shanghai.myqcloud.com/aramgg-electron/windows/",
     "changelog": [
       {
@@ -101,11 +102,12 @@ GitHub Release v0.2.0/
 }
 ```
 
-`updateFeedUrl` 指向目录，不是单个安装包。该目录需要能直接读取 `latest.yml`、安装包 `.exe` 和 `.blockmap`。如果误配置到 `latest.yml`，客户端会归一化到所在目录。
+`autoUpdateEnabled` 是自动下载/安装总开关，默认保持 `false`。`updateFeedUrl` 指向目录，不是单个安装包；只有开关为 `true` 时客户端才会使用该目录。该目录需要能直接读取 `latest.yml`、安装包 `.exe` 和 `.blockmap`。如果误配置到 `latest.yml`，客户端会归一化到所在目录。
 
 本地开发和 CI 也可以用环境变量覆盖：
 
 ```text
+ARAMGG_ENABLE_AUTO_UPDATE=true
 ARAMGG_UPDATE_FEED_URL=https://example.com/releases/windows
 ARAMGG_ALLOW_DEV_UPDATE_CHECK=1
 ```
@@ -113,6 +115,7 @@ ARAMGG_ALLOW_DEV_UPDATE_CHECK=1
 默认行为：
 
 - 开发模式不检查更新。
+- 远端 `client.autoUpdateEnabled` 未显式为 `true` 时不检查更新。
 - 未配置 feed URL 时不检查更新。
 - 打包后生产环境才自动检查。
 - 用户主动点击检查更新时，可以触发一次显式检查。
@@ -123,8 +126,8 @@ ARAMGG_ALLOW_DEV_UPDATE_CHECK=1
 当前运行时流程：
 
 1. 应用启动。
-2. 读取远程客户端配置或环境变量中的 `updateFeedUrl`。
-3. 生产环境配置 `autoUpdater.setFeedURL({ provider: "generic", url })`。
+2. 读取远程客户端配置中的 `autoUpdateEnabled` 和 `updateFeedUrl`，或测试环境变量覆盖值。
+3. 只有开关打开且存在 feed 时，生产环境才配置 `autoUpdater.setFeedURL({ provider: "generic", url })`。
 4. 注册更新事件：检查中、发现新版本、未发现更新、下载进度、下载完成、错误。
 5. renderer 通过 preload 暴露的 IPC API 显示更新状态，用户可主动检查。
 6. 下载完成后由用户确认重启安装，调用 `quitAndInstall()`。
@@ -167,9 +170,9 @@ Electron 的页面更新属于应用本体更新的一部分：
 1. 安装旧版本，例如 `0.1.4`。
 2. 修改版本号并重新发布新版本，例如 `0.1.5`。
 3. 确认 GitHub Release 包含 `.exe`、`.blockmap`、`latest.yml`。
-4. 启动旧版本，确认能发现新版本。
+4. 先保持 `client.autoUpdateEnabled: false`，更新远端 `/api/client/v1/config` 的 `client.latestVersion`、`client.downloadUrl` 和 `client.changelog`，确认旧版本只展示更新提示和手动下载入口。
 5. 上传 `latest.yml`、安装包 `.exe` 和 `.blockmap` 到腾讯 OSS/COS 的 `client.updateFeedUrl` 目录。
-6. 更新远端 `/api/client/v1/config` 的 `client.latestVersion`、`client.downloadUrl`、`client.updateFeedUrl` 和 `client.changelog`，确认旧版本能看到新版本更新日志。
+6. 在小范围测试配置里设置 `client.autoUpdateEnabled: true` 和 `client.updateFeedUrl`，启动旧版本，确认能发现新版本。
 7. 验证下载进度、下载完成、重启安装和版本号变化。
 8. 验证没有更新时的状态。
 9. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
