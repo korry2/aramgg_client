@@ -50,6 +50,18 @@ function getInstallSideDataDir() {
     }
 
     try {
+        return path.join(path.dirname(path.dirname(electronApp.getPath('exe'))), APP_DATA_DIR_NAME)
+    } catch {
+        return null
+    }
+}
+
+function getLegacyInstallSideDataDir() {
+    if (!hasElectronApp() || !electronApp.isPackaged || process.platform !== 'win32') {
+        return null
+    }
+
+    try {
         return path.join(path.dirname(electronApp.getPath('exe')), APP_DATA_DIR_NAME)
     } catch {
         return null
@@ -86,6 +98,7 @@ export function getAppDataDir() {
     const installSideDataDir = getInstallSideDataDir()
 
     if (installSideDataDir && canUseDataDir(installSideDataDir)) {
+        migrateLegacyInstallSideDataDir(installSideDataDir)
         cachedAppDataDir = installSideDataDir
         return cachedAppDataDir
     }
@@ -121,8 +134,25 @@ export function getConfigDir() {
     return configDir
 }
 
+function migrateLegacyInstallSideDataDir(targetDir) {
+    const legacyDir = getLegacyInstallSideDataDir()
+
+    if (!legacyDir || legacyDir === targetDir || !fs.existsSync(legacyDir)) {
+        return
+    }
+
+    try {
+        fs.copySync(legacyDir, targetDir, {
+            overwrite: false,
+            errorOnExist: false,
+        })
+    } catch {
+        // Keep the new sibling data directory even if old install-side data cannot be copied.
+    }
+}
+
 function migrateInstallSideConfigDir(configDir) {
-    const installSideDataDir = getInstallSideDataDir()
+    const installSideDataDir = getLegacyInstallSideDataDir()
 
     if (!installSideDataDir) {
         return

@@ -5,7 +5,8 @@ import { loadDataApiConfig } from './data-loader.ts'
 import logger from './modules/logger.ts'
 import { allowMainWindowClose } from './modules/window-manager.ts'
 
-const { autoUpdater } = electronUpdater
+const { autoUpdater, CancellationToken } = electronUpdater
+type UpdateCancellationToken = InstanceType<typeof CancellationToken>
 
 type UpdatePhase =
   | 'uninitialized'
@@ -37,6 +38,8 @@ type UpdateState = {
   manualDownloadUrl: string
   available: boolean
   downloaded: boolean
+  gamePhase: string
+  downloadDeferred: boolean
   progress: UpdateProgress | null
   error: string
   message: string
@@ -67,13 +70,18 @@ const DEV_UPDATE_CHECK_ENABLED = /^(1|true|yes)$/i.test(
 const AUTO_UPDATE_ENV_VALUE = String(process.env.ARAMGG_ENABLE_AUTO_UPDATE || '').trim()
 const AUTO_UPDATE_ENV_CONFIGURED = AUTO_UPDATE_ENV_VALUE.length > 0
 const AUTO_UPDATE_ENV_ENABLED = /^(1|true|yes)$/i.test(AUTO_UPDATE_ENV_VALUE)
+const UPDATE_DOWNLOAD_BLOCKED_PHASES = new Set(['GameStart', 'InProgress'])
 
 let initialized = false
 let isDevRuntime = false
 let configuredFeedUrl = ''
 let installCleanup: (() => Promise<void> | void) | null = null
 let checkForUpdatesPromise: Promise<UpdateActionResult> | null = null
+let downloadUpdatePromise: Promise<UpdateActionResult> | null = null
+let activeDownloadCancellationToken: UpdateCancellationToken | null = null
 let installingDownloadedUpdate = false
+let currentGamePhase = ''
+let downloadDeferredByGame = false
 
 let updateState: UpdateState = {
   phase: 'uninitialized',
@@ -85,6 +93,8 @@ let updateState: UpdateState = {
   manualDownloadUrl: '',
   available: false,
   downloaded: false,
+  gamePhase: '',
+  downloadDeferred: false,
   progress: null,
   error: '',
   message: '自动更新初始化中',
@@ -93,12 +103,26 @@ let updateState: UpdateState = {
   canInstall: false,
 }
 
+function isGameBlockingUpdate(phase = currentGamePhase): boolean {
+  return UPDATE_DOWNLOAD_BLOCKED_PHASES.has(phase)
+}
+
+function getDownloadedUpdateMessage(): string {
+  return '更新已下载，退出或重启应用时会自动安装'
+}
+
+function getDeferredDownloadMessage(): string {
+  return '对局进行中，结束后继续下载更新'
+}
+
 function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
   const phase = patch.phase || updateState?.phase || 'uninitialized'
   const feedUrl = patch.feedUrl ?? updateState?.feedUrl ?? ''
   const feedConfigured = patch.feedConfigured ?? Boolean(feedUrl)
   const autoUpdateEnabled = patch.autoUpdateEnabled ?? updateState?.autoUpdateEnabled ?? false
   const currentVersion = app.getVersion()
+  const gamePhase = patch.gamePhase ?? updateState?.gamePhase ?? currentGamePhase
+  const downloadDeferred = patch.downloadDeferred ?? updateState?.downloadDeferred ?? downloadDeferredByGame
   const busy = phase === 'checking' || phase === 'available' || phase === 'downloading' || phase === 'installing'
 
   return {
@@ -111,6 +135,8 @@ function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
     manualDownloadUrl: patch.manualDownloadUrl ?? updateState?.manualDownloadUrl ?? '',
     available: patch.available ?? updateState?.available ?? false,
     downloaded: patch.downloaded ?? updateState?.downloaded ?? false,
+    gamePhase,
+    downloadDeferred,
     progress: patch.progress ?? updateState?.progress ?? null,
     error: patch.error ?? updateState?.error ?? '',
     message: patch.message ?? updateState?.message ?? '',
@@ -121,6 +147,14 @@ function createUpdateState(patch: Partial<UpdateState> = {}): UpdateState {
 }
 
 function setUpdateState(patch: Partial<UpdateState>): UpdateState {
+  if (Object.prototype.hasOwnProperty.call(patch, 'gamePhase')) {
+    currentGamePhase = patch.gamePhase || ''
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'downloadDeferred')) {
+    downloadDeferredByGame = patch.downloadDeferred === true
+  }
+
   updateState = createUpdateState(patch)
   broadcastUpdateState()
   return updateState
@@ -240,6 +274,56 @@ function applyUpdateInfo(info: UpdateInfo | UpdateDownloadedEvent | null | undef
   })
 }
 
+function deferDownloadUntilGameEnds(message = getDeferredDownloadMessage()): UpdateState {
+  return setUpdateState({
+    phase: updateState.downloaded ? 'downloaded' : 'available',
+    available: updateState.available,
+    downloaded: updateState.downloaded,
+    downloadDeferred: !updateState.downloaded,
+    progress: updateState.downloaded ? updateState.progress : null,
+    error: '',
+    message: updateState.downloaded ? getDownloadedUpdateMessage() : message,
+  })
+}
+
+function cancelActiveDownloadForGame(): void {
+  if (!activeDownloadCancellationToken || activeDownloadCancellationToken.cancelled) {
+    return
+  }
+
+  logger.info('[update] cancelling active download because game is in progress', {
+    gamePhase: currentGamePhase,
+  })
+  downloadDeferredByGame = true
+  activeDownloadCancellationToken.cancel()
+}
+
+function shouldDownloadAvailableUpdate(): boolean {
+  return (
+    updateState.autoUpdateEnabled &&
+    updateState.feedConfigured &&
+    updateState.available &&
+    !updateState.downloaded &&
+    isRuntimeUpdateAllowed()
+  )
+}
+
+function scheduleAppUpdateDownload(reason: string): void {
+  if (!shouldDownloadAvailableUpdate()) {
+    return
+  }
+
+  if (isGameBlockingUpdate()) {
+    if (updateState.phase === 'downloading') {
+      cancelActiveDownloadForGame()
+    }
+    deferDownloadUntilGameEnds()
+    return
+  }
+
+  void downloadAppUpdate(reason)
+}
+
 function registerAutoUpdaterEvents(): void {
   if (initialized) {
     return
@@ -247,7 +331,7 @@ function registerAutoUpdaterEvents(): void {
 
   initialized = true
   autoUpdater.logger = logger
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.allowPrerelease = false
   autoUpdater.forceDevUpdateConfig = DEV_UPDATE_CHECK_ENABLED && !app.isPackaged
@@ -272,10 +356,12 @@ function registerAutoUpdaterEvents(): void {
       latestVersion: info.version || updateState.latestVersion,
       available: true,
       downloaded: false,
+      downloadDeferred: isGameBlockingUpdate(),
       progress: null,
       error: '',
-      message: '发现新版本，正在下载',
+      message: isGameBlockingUpdate() ? '发现新版本，等待对局结束后下载' : '发现新版本，正在后台下载',
     })
+    scheduleAppUpdateDownload('update-available')
   })
 
   autoUpdater.on('download-progress', (progress) => {
@@ -284,8 +370,9 @@ function registerAutoUpdaterEvents(): void {
       progress: normalizeProgress(progress),
       available: true,
       downloaded: false,
+      downloadDeferred: false,
       error: '',
-      message: '正在下载更新',
+      message: '正在后台下载更新',
     })
   })
 
@@ -300,6 +387,7 @@ function registerAutoUpdaterEvents(): void {
       latestVersion: event.version || updateState.latestVersion,
       available: true,
       downloaded: true,
+      downloadDeferred: false,
       progress: {
         percent: 100,
         transferred: updateState.progress?.transferred || 0,
@@ -307,7 +395,7 @@ function registerAutoUpdaterEvents(): void {
         bytesPerSecond: 0,
       },
       error: '',
-      message: '更新已下载，重启后安装',
+      message: getDownloadedUpdateMessage(),
     })
   })
 
@@ -322,6 +410,7 @@ function registerAutoUpdaterEvents(): void {
       latestVersion: info.version || updateState.latestVersion,
       available: false,
       downloaded: false,
+      downloadDeferred: false,
       progress: null,
       error: '',
       lastCheckedAt: new Date().toISOString(),
@@ -332,9 +421,16 @@ function registerAutoUpdaterEvents(): void {
   autoUpdater.on('update-cancelled', (info) => {
     logger.warn('[update] app update cancelled', {
       latestVersion: info.version || null,
+      gamePhase: currentGamePhase || null,
     })
+    if (isGameBlockingUpdate() && shouldDownloadAvailableUpdate()) {
+      deferDownloadUntilGameEnds()
+      return
+    }
+
     setUpdateState({
       phase: 'idle',
+      downloadDeferred: false,
       progress: null,
       error: '',
       message: '更新下载已取消',
@@ -346,6 +442,7 @@ function registerAutoUpdaterEvents(): void {
     logger.warn('[update] app update failed:', message)
     setUpdateState({
       phase: 'error',
+      downloadDeferred: false,
       progress: null,
       error: message,
       message: '自动更新失败',
@@ -378,6 +475,61 @@ export function getAppUpdateState(): UpdateState {
   return createUpdateState()
 }
 
+export function setAppUpdateGamePhase(phase: string | null | undefined): UpdateState {
+  const normalizedPhase = String(phase || '')
+
+  if (normalizedPhase === currentGamePhase && updateState.gamePhase === normalizedPhase) {
+    return getAppUpdateState()
+  }
+
+  const wasBlocking = isGameBlockingUpdate()
+  const isBlocking = isGameBlockingUpdate(normalizedPhase)
+
+  currentGamePhase = normalizedPhase
+
+  if (isBlocking) {
+    if (updateState.phase === 'downloading') {
+      cancelActiveDownloadForGame()
+    }
+
+    if (!updateState.available && !updateState.downloaded) {
+      return setUpdateState({
+        gamePhase: normalizedPhase,
+        downloadDeferred: false,
+      })
+    }
+
+    return setUpdateState({
+      gamePhase: normalizedPhase,
+      downloadDeferred: updateState.available && !updateState.downloaded,
+      message: updateState.downloaded ? getDownloadedUpdateMessage() : getDeferredDownloadMessage(),
+    })
+  }
+
+  const shouldResumeDownload =
+    wasBlocking &&
+    updateState.downloadDeferred &&
+    shouldDownloadAvailableUpdate()
+
+  if (shouldResumeDownload) {
+    setUpdateState({
+      gamePhase: normalizedPhase,
+      phase: 'available',
+      downloadDeferred: false,
+      error: '',
+      message: '对局结束，继续下载更新',
+    })
+    scheduleAppUpdateDownload('game-ended')
+    return getAppUpdateState()
+  }
+
+  return setUpdateState({
+    gamePhase: normalizedPhase,
+    downloadDeferred: false,
+    message: updateState.downloaded ? getDownloadedUpdateMessage() : updateState.message,
+  })
+}
+
 export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Promise<UpdateActionResult> {
   let config: any = null
 
@@ -399,6 +551,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
         feedConfigured: false,
         available: false,
         downloaded: false,
+        downloadDeferred: false,
         progress: null,
         error: message,
         message: autoUpdateUnavailable
@@ -428,6 +581,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
       feedConfigured: false,
       available: false,
       downloaded: false,
+      downloadDeferred: false,
       progress: null,
       error: '',
       message: '自动更新未启用',
@@ -448,6 +602,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
       feedConfigured: false,
       available: false,
       downloaded: false,
+      downloadDeferred: false,
       progress: null,
       message: isDevRuntime ? '开发模式已跳过自动更新' : '自动更新不可用',
     })
@@ -471,6 +626,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
       feedConfigured: false,
       available: false,
       downloaded: false,
+      downloadDeferred: false,
       progress: null,
       error: message,
       message: '自动更新源配置无效',
@@ -493,6 +649,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
       feedConfigured: false,
       available: false,
       downloaded: false,
+      downloadDeferred: false,
       progress: null,
       error: '',
       message: '未配置自动更新源',
@@ -587,9 +744,13 @@ export async function checkForAppUpdate(reason = 'manual'): Promise<UpdateAction
   return checkForUpdatesPromise
 }
 
-export async function downloadAppUpdate(): Promise<UpdateActionResult> {
+export async function downloadAppUpdate(reason = 'manual-download'): Promise<UpdateActionResult> {
+  if (downloadUpdatePromise) {
+    return downloadUpdatePromise
+  }
+
   if (!updateState.autoUpdateEnabled || !updateState.feedConfigured) {
-    const configResult = await refreshAppUpdateConfig({ force: true, reason: 'manual-download' })
+    const configResult = await refreshAppUpdateConfig({ force: true, reason })
     if (!configResult.success) {
       return configResult
     }
@@ -607,30 +768,86 @@ export async function downloadAppUpdate(): Promise<UpdateActionResult> {
     }
   }
 
-  try {
-    await autoUpdater.downloadUpdate()
+  if (!shouldDownloadAvailableUpdate()) {
+    return {
+      success: false,
+      data: getAppUpdateState(),
+      error: updateState.downloaded ? '更新已下载完成' : '当前没有可下载的更新',
+    }
+  }
+
+  if (isGameBlockingUpdate()) {
+    deferDownloadUntilGameEnds()
     return {
       success: true,
       data: getAppUpdateState(),
     }
-  } catch (error) {
-    const message = getErrorMessage(error)
-    logger.warn('[update] download failed:', message)
-    setUpdateState({
-      phase: 'error',
-      progress: null,
-      error: message,
-      message: '下载更新失败',
-    })
-    return {
-      success: false,
-      data: getAppUpdateState(),
-      error: message,
-    }
   }
+
+  const cancellationToken = new CancellationToken()
+  activeDownloadCancellationToken = cancellationToken
+
+  downloadUpdatePromise = (async () => {
+    try {
+      logger.info('[update] downloading app update', {
+        reason,
+        latestVersion: updateState.latestVersion || null,
+        feedUrl: configuredFeedUrl,
+      })
+      setUpdateState({
+        phase: 'downloading',
+        downloadDeferred: false,
+        available: true,
+        downloaded: false,
+        error: '',
+        message: '正在后台下载更新',
+      })
+
+      await autoUpdater.downloadUpdate(cancellationToken)
+
+      return {
+        success: true,
+        data: getAppUpdateState(),
+      }
+    } catch (error) {
+      if (cancellationToken.cancelled && isGameBlockingUpdate()) {
+        deferDownloadUntilGameEnds()
+        return {
+          success: true,
+          data: getAppUpdateState(),
+        }
+      }
+
+      const message = getErrorMessage(error)
+      logger.warn('[update] download failed:', message)
+      setUpdateState({
+        phase: 'error',
+        downloadDeferred: false,
+        progress: null,
+        error: message,
+        message: '下载更新失败',
+      })
+      return {
+        success: false,
+        data: getAppUpdateState(),
+        error: message,
+      }
+    } finally {
+      if (activeDownloadCancellationToken === cancellationToken) {
+        activeDownloadCancellationToken = null
+      }
+      downloadUpdatePromise = null
+    }
+  })()
+
+  return downloadUpdatePromise
 }
 
-export async function installDownloadedAppUpdate(): Promise<UpdateActionResult> {
+export function shouldInstallDownloadedAppUpdateOnQuit(): boolean {
+  return updateState.phase === 'downloaded' && updateState.downloaded && !installingDownloadedUpdate
+}
+
+export async function installDownloadedAppUpdate(reason = 'manual-install'): Promise<UpdateActionResult> {
   if (!updateState.downloaded) {
     return {
       success: false,
@@ -641,6 +858,10 @@ export async function installDownloadedAppUpdate(): Promise<UpdateActionResult> 
 
   try {
     installingDownloadedUpdate = true
+    logger.info('[update] installing downloaded update', {
+      reason,
+      latestVersion: updateState.latestVersion || null,
+    })
     setUpdateState({
       phase: 'installing',
       message: '正在重启安装',
@@ -653,7 +874,7 @@ export async function installDownloadedAppUpdate(): Promise<UpdateActionResult> 
     }
 
     allowMainWindowClose()
-    autoUpdater.quitAndInstall(false, true)
+    autoUpdater.quitAndInstall(true, true)
 
     return {
       success: true,

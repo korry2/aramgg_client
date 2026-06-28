@@ -13,6 +13,24 @@ const SUMMARY_TEXT_LIMIT = 220
 
 export const LOCAL_CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '0.1.17',
+    date: '2026-06-29',
+    title: '自动更新支持',
+    summary: '新增客户端自动更新能力，为后续版本升级做准备。',
+    changes: [
+      '支持自动更新功能。',
+    ],
+  },
+  {
+    version: '0.1.16',
+    date: '2026-06-29',
+    title: '数据版本更新',
+    summary: '更新客户端可用数据版本。',
+    changes: [
+      '支持 0.16.13 版本数据。',
+    ],
+  },
+  {
     version: '0.1.15',
     date: '2026-06-25',
     title: '稳定推荐与快捷键',

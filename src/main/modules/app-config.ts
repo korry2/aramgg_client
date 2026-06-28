@@ -23,9 +23,12 @@ import { checkForClientUpdate } from '../version-checker.ts'
 import {
     checkForAppUpdate,
     initializeAppUpdateService,
+    installDownloadedAppUpdate,
     isAppUpdateInstallInProgress,
     refreshAppUpdateConfig,
+    setAppUpdateGamePhase,
     setAppUpdateInstallCleanup,
+    shouldInstallDownloadedAppUpdateOnQuit,
 } from '../app-update-service.ts'
 import { initAnalyticsService, markAnalyticsAppCleanExit } from '../services/analytics-service.ts'
 import {
@@ -1146,6 +1149,7 @@ async function initGameFlowMonitor() {
             }
 
             autoScreenshotService.setGameflowPhase(phase)
+            setAppUpdateGamePhase(phase)
 
             if (phase && phase !== lastPhase) {
                 const prevPhase = lastPhase
@@ -1380,9 +1384,39 @@ function ensureQuitCleanup(reason = 'app quit') {
 }
 
 function registerAppEvents() {
+    let appUpdateInstallOnQuitPromise = null
+
     app.on('before-quit', (event) => {
         if (isAppUpdateInstallInProgress()) {
             logger.info('[app] before-quit allowed for app update install')
+            return
+        }
+
+        if (shouldInstallDownloadedAppUpdateOnQuit()) {
+            event.preventDefault()
+
+            if (!appUpdateInstallOnQuitPromise) {
+                appUpdateInstallOnQuitPromise = installDownloadedAppUpdate('before-quit')
+                    .then((result) => {
+                        if (!result.success) {
+                            logger.warn('[app] failed to install downloaded update on quit:', result.error)
+                            return ensureQuitCleanup('before-quit-update-install-failed').finally(() => {
+                                app.quit()
+                            })
+                        }
+                        return null
+                    })
+                    .catch((error) => {
+                        logger.warn('[app] failed to install downloaded update on quit:', error.message)
+                        return ensureQuitCleanup('before-quit-update-install-error').finally(() => {
+                            app.quit()
+                        })
+                    })
+                    .finally(() => {
+                        appUpdateInstallOnQuitPromise = null
+                    })
+            }
+
             return
         }
 

@@ -48,12 +48,15 @@
                     <section class="update-panel" :class="updatePanelClass">
                         <div class="update-main">
                             <div class="update-copy">
-                                <span>应用更新</span>
-                                <strong>{{ updateTitle }}</strong>
-                                <small>{{ updateMessage }}</small>
+                                <div class="update-heading">
+                                    <span>应用更新</span>
+                                    <strong>{{ updateTitle }}</strong>
+                                </div>
+                                <small v-if="updateDetailMessage">{{ updateDetailMessage }}</small>
                             </div>
                             <div class="update-actions">
                                 <button
+                                    v-if="showCheckUpdateAction"
                                     class="update-action"
                                     type="button"
                                     title="检查更新"
@@ -63,10 +66,11 @@
                                     <RefreshCw class="update-action-icon" :class="{ spinning: updateIsChecking }" />
                                 </button>
                                 <button
-                                    v-if="canInstallUpdate"
+                                    v-if="showInstallUpdateAction"
                                     class="update-action accent"
                                     type="button"
-                                    title="重启安装"
+                                    :title="installUpdateTitle"
+                                    :disabled="!canInstallUpdate"
                                     @click="installAppUpdate"
                                 >
                                     <RotateCw class="update-action-icon" />
@@ -372,6 +376,7 @@ const manualUpdateDownloadUrl = computed(() => {
 })
 
 const updatePhase = computed(() => appUpdateState.value?.phase || 'uninitialized')
+const updateDownloadDeferred = computed(() => Boolean(appUpdateState.value?.downloadDeferred))
 
 const updatePanelClass = computed(() => `phase-${updatePhase.value}`)
 
@@ -385,6 +390,10 @@ const updateTitle = computed(() => {
 
     if (updatePhase.value === 'checking') {
         return '正在检查'
+    }
+
+    if (updatePhase.value === 'available' && updateDownloadDeferred.value) {
+        return `等待下载${versionSuffix}`
     }
 
     if (updatePhase.value === 'available' || updatePhase.value === 'downloading') {
@@ -408,7 +417,7 @@ const updateTitle = computed(() => {
     }
 
     if (updatePhase.value === 'disabled') {
-        return '自动更新未启用'
+        return '暂未支持自动更新'
     }
 
     if (updatePhase.value === 'error') {
@@ -430,6 +439,17 @@ const updateMessage = computed(() => {
     return versionHint.value || '自动更新待命'
 })
 
+const updateDetailMessage = computed(() => {
+    if (updatePhase.value === 'disabled') {
+        return ''
+    }
+
+    const message = updateMessage.value.trim()
+    const title = updateTitle.value.trim()
+
+    return message && message !== title ? message : ''
+})
+
 const updateIsChecking = computed(() => updatePhase.value === 'checking')
 
 const canCheckUpdate = computed(() => {
@@ -440,8 +460,24 @@ const canInstallUpdate = computed(() => {
     return Boolean(appUpdateState.value?.canInstall) && !updateActionPending.value
 })
 
+const showCheckUpdateAction = computed(() => {
+    return !['downloaded', 'installing'].includes(updatePhase.value)
+})
+
+const showInstallUpdateAction = computed(() => {
+    return ['downloaded', 'installing'].includes(updatePhase.value)
+})
+
+const installUpdateTitle = computed(() => {
+    if (updateActionPending.value || updatePhase.value === 'installing') {
+        return '正在处理'
+    }
+
+    return '重启安装'
+})
+
 const showManualDownloadLink = computed(() => {
-    return Boolean(manualUpdateDownloadUrl.value) && !canInstallUpdate.value
+    return Boolean(manualUpdateDownloadUrl.value) && !showInstallUpdateAction.value
 })
 
 const updateProgressPercent = computed(() => {
@@ -1171,7 +1207,7 @@ onBeforeUnmount(() => {
 
 .update-panel {
     margin-top: 8px;
-    padding: 9px 10px;
+    padding: 6px 8px;
     border: 1px solid rgba(226, 192, 143, 0.18);
     border-radius: 4px;
     background: rgba(4, 15, 24, 0.42);
@@ -1194,46 +1230,58 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
 }
 
 .update-copy {
     min-width: 0;
 }
 
-.update-copy span,
-.update-copy strong,
-.update-copy small {
-    display: block;
+.update-heading {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 7px;
 }
 
 .update-copy span {
+    flex: 0 0 auto;
     color: #bacac6;
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.1;
 }
 
 .update-copy strong {
-    margin-top: 2px;
+    min-width: 0;
     color: #e2c08f;
-    font-size: 13px;
-    font-weight: 900;
-    line-height: 1.2;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.15;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .update-copy small {
-    margin-top: 3px;
+    display: block;
+    margin-top: 2px;
     color: #859491;
-    font-size: 10px;
-    line-height: 1.35;
+    font-size: 9px;
+    line-height: 1.2;
     overflow: hidden;
     text-wrap: pretty;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@supports (-webkit-line-clamp: 1) {
+    .update-copy small {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 1;
+    }
 }
 
 .update-panel.phase-error .update-copy small {
@@ -1244,12 +1292,12 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     flex: 0 0 auto;
-    gap: 6px;
+    gap: 4px;
 }
 
 .update-action {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1283,8 +1331,8 @@ onBeforeUnmount(() => {
 }
 
 .update-action-icon {
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
 }
 
 .update-action-icon.spinning {
@@ -1292,15 +1340,15 @@ onBeforeUnmount(() => {
 }
 
 .update-progress {
-    margin-top: 8px;
+    margin-top: 6px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 70px;
+    grid-template-columns: minmax(0, 1fr) 58px;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .update-progress-track {
-    height: 6px;
+    height: 4px;
     overflow: hidden;
     border-radius: 4px;
     background: rgba(7, 10, 13, 0.58);
@@ -1318,7 +1366,7 @@ onBeforeUnmount(() => {
 
 .update-progress-text {
     color: #e2c08f;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 900;
     font-variant-numeric: tabular-nums;
     text-align: right;
