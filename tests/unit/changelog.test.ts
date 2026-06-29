@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getChangelogEntries,
+  LOCAL_CHANGELOG_ENTRIES,
   normalizeChangelogEntries,
 } from '../../src/main/changelog.ts'
 
@@ -51,6 +52,6 @@ describe('changelog entries', () => {
 
     expect(remoteEntries).toHaveLength(1)
     expect(remoteEntries[0].changes).toEqual(['Remote entry'])
-    expect(fallbackEntries[0].version).toBe('0.1.15')
+    expect(fallbackEntries[0].version).toBe(LOCAL_CHANGELOG_ENTRIES[0].version)
   })
 })
