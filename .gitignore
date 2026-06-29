@@ -6,6 +6,7 @@ node_modules
 /resources/client-data
 /.runtime
 /.codex-tmp
+/.codex-update-test
 
 # local env files
 .env
