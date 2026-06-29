@@ -293,12 +293,12 @@ class MyClass {
 
 ## 🎯 下一步目标
 
-### 短期（这周）
+### 短期
 - [ ] 熟悉 npm run type-check 命令
 - [ ] 学习基本的 TypeScript 语法
 - [ ] 在新代码中使用类型注解
 
-### 中期（这月）
+### 中期
 - [ ] 转换更多 JS 文件为 TS
 - [ ] 为 Vue 组件添加类型
 - [ ] 参与 code review 时检查类型

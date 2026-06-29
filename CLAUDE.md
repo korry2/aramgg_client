@@ -15,6 +15,7 @@
 - `dist/`、`dist-electron/`、`build/` 是生成产物，不要作为源码编辑。
 - Renderer 不能假设 Node 能力；只能通过 `window.electronAPI` 走 preload/IPC。
 - 运行时可变数据统一走 `src/main/modules/app-paths.ts`：安装版优先写入安装目录旁的 `aramgg_client-data/`，不可写时回退到 Electron `userData`。
+- 客户端英雄、海克斯、装备数据前台读取必须本地优先：完整缓存或打包兜底数据先渲染英雄详情和海克斯弹窗；远端 `dataVersion` 检查和新版本下载只在后台进行，且必须等必需文件完整后再激活。
 
 ## 常用命令
 

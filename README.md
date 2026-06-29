@@ -96,6 +96,8 @@ npm run release:push
 
 本仓库不提交真实 API Key。需要本地配置时，复制 `.env.local.example` 为 `.env.local`，再填入自己的 `ARAMGG_DATA_API_KEY`。
 
+客户端展示数据采用本地优先策略：打包内置的 `resources/client-data/` 和运行时 `data/current.json` / `data/versions/<dataVersion>/` 会先用于英雄详情、海克斯弹窗和推荐列表渲染；远端 `/api/client/v1/config` 只用于后台检查和准备新数据版本，必需文件完整后才切换当前版本。
+
 ## 关键文档
 
 - [完整架构](./COMPLETE_ARCHITECTURE.md)
@@ -119,7 +121,7 @@ npm run release:push
 - LCU 凭据默认从运行中的 League Client 进程自动发现；主界面「游戏目录」是自动发现失败时的高级兜底，只用于读取 LCU lockfile / 日志。
 - Windows 安装包使用 NSIS 引导式安装，可在安装时选择安装目录；安装器会把用户选择的父目录归一化到 `...\aramgg_client` 应用子目录。
 - 运行时可变数据统一通过 `src/main/modules/app-paths.ts` 管理：安装版优先写入安装目录旁的 `aramgg_client-data/`，不可写时回退到 Electron `userData`。
-- 子目录约定：`config/` 存储 electron-store 配置，`logs/` 存储应用日志，`remote-data-cache/` 存储远端数据缓存，`ocr-partial-screenshots/` 存储 OCR 调试截图。
+- 子目录约定：`config/` 存储 electron-store 配置，`logs/` 存储应用日志，`data/` 存储版本化客户端数据缓存，`ocr-partial-screenshots/` 存储 OCR 调试截图。
 
 ## 安全边界
 

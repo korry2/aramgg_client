@@ -256,7 +256,7 @@ export class MyService {
 
 ## 🎯 后续优化方向
 
-### Phase 1: 完整类型覆盖 (本周)
+### Phase 1: 完整类型覆盖
 ```
 目标：Convert 所有关键 .js 文件为 .ts
 - [ ] src/components/*.vue 添加 script setup lang="ts"
@@ -264,7 +264,7 @@ export class MyService {
 - [ ] electron/modules/*.js 转为 .ts
 ```
 
-### Phase 2: 严格类型检查 (本月)
+### Phase 2: 严格类型检查
 ```
 目标：启用更多 TypeScript 严格选项
 - [ ] "noImplicitAny": true
@@ -352,13 +352,13 @@ code src/service/lcu.ts
 cat docs/TYPESCRIPT_QUICK_REFERENCE.md
 ```
 
-### 这周目标
+### 短期目标
 - [ ] 理解 TypeScript 基础概念
 - [ ] 在 IDE 中熟练使用类型提示
 - [ ] 为新代码添加完整的类型注解
 - [ ] 成功在 code review 中识别类型错误
 
-### 下周计划
+### 后续计划
 - [ ] Convert 更多 .js 为 .ts
 - [ ] 为 Vue 组件添加类型支持
 - [ ] 建立类型检查的 CI 流程

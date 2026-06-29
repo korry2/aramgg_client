@@ -285,12 +285,12 @@ npm install opencv.js  # 如果需要更高级的图像处理
 2. ✅ 验证 LCU API 端点的响应
 3. ✅ 记录不同阶段的实际时间
 
-### 本周内
+### 短期行动
 1. 集成 GameFlowMonitor 到 ChampionMonitor
 2. 测试事件触发是否正确
 3. 准备好 Tesseract.js 的集成方案
 
-### 下周
+### 后续行动
 1. 开始实现特征检测模块
 2. 设计 OCR 识别的流程
 3. 准备测试图像集

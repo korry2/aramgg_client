@@ -29,7 +29,7 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | IPC 注册 | `src/main/modules/ipc-handlers.ts`、`src/main/services/lcu/ipc-handlers.ts` | Store、截图、数据、LCU 等业务通道 |
 | LCU 服务 | `src/main/services/lcu/` | LCU token、gameflow、champ-select、符文页 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
-| 数据加载 | `src/main/data-loader.ts` | 远端数据、磁盘缓存、英雄/海克斯/装备统计 |
+| 数据加载 | `src/main/data-loader.ts` | 远端数据、版本化本地缓存、打包兜底数据、英雄/海克斯/装备统计 |
 | 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
 | 自动截图 | `src/main/auto-screenshot-service.ts` | 串行截图和 OCR 队列，受 gameflow 阶段控制 |
 | 图像分析 | `src/main/image-analyzer.ts` | 海克斯 OCR 和匹配 |
@@ -49,10 +49,25 @@ LCU token 和端口优先从运行中的 League Client / LeagueClientUx 进程�
 
 - 安装版优先使用安装目录旁的 `aramgg_client-data/`，目录不可写时回退到 Electron `userData`。
 - 开发环境使用 Electron `userData`，避免污染源码目录。
-- `config/` 存放 electron-store 配置，`logs/` 存放应用日志，`remote-data-cache/` 存放远端数据缓存，`ocr-partial-screenshots/` 存放 OCR 调试截图。
+- `config/` 存放 electron-store 配置，`logs/` 存放应用日志，`data/` 存放版本化客户端数据缓存，`ocr-partial-screenshots/` 存放 OCR 调试截图。
 - 新增日志、缓存或用户保存文件时，先在 `app-paths.ts` 增加目录函数，再由业务模块调用。
 
 ## 主数据流
+
+### 客户端数据热更新和本地优先读取
+
+```text
+resources/client-data/ 或 appData/data/current.json
+  -> getActiveDataSet()
+  -> 英雄详情、海克斯弹窗、右侧推荐列表先渲染本地完整数据
+
+/api/client/v1/config
+  -> 后台比较 dataVersion
+  -> prepareDataVersion() 下载 manifest 和必需文件
+  -> 必需文件完整后原子更新 current.json
+```
+
+数据目录按版本隔离为 `data/versions/<dataVersion>/`。`current.json` 只指向已通过完整性检查的版本，避免半成品覆盖可用数据。英雄详情和海克斯弹窗的前台关键路径会先读取本地较新缓存分片，再读取当前激活版本；远端版本检查不应阻塞首屏。只有本地缺少必需详情文件时，才在兜底路径中等待远端分片或单英雄详情。
 
 ### ARAM 选人只读推荐
 

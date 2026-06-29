@@ -86,13 +86,14 @@ https://data.dtodo.cn/api/client/v1/config
 
 `client.changelog` 和 `client.releaseNotes` 都可作为客户端更新日志来源，推荐使用上面的数组结构。`client.autoUpdateEnabled` 是自动下载/安装总开关，默认保持 `false`；只有它为 `true` 时客户端才会读取 `client.updateFeedUrl`。`client.updateFeedUrl` 指向公开可读的 `electron-updater` generic feed 目录，目录下需要有 `latest.yml`、Windows 安装包 `.exe` 和 `.blockmap`。已发布的旧客户端只能通过远端 `config` 看到未来版本更新日志；打包内的本地日志只作为离线或字段缺失时的兜底。
 
-客户端启动时：
+客户端启动和前台展示时：
 
-1. 读取远程 `config`。
-2. 比较本地缓存的 `dataVersion`。
-3. 版本一致时直接使用本地缓存。
-4. 版本变化时读取 `manifest`，按需下载变化的数据文件。
-5. 下载完成后原子切换本地缓存版本。
+1. 先读取运行时 `data/current.json` 和打包内置 `resources/client-data/current.json`，找到完整可用的数据版本。
+2. 英雄详情、海克斯弹窗和右侧推荐列表立即使用完整本地版本渲染，不等待远端版本检查。
+3. 后台读取远程 `config` 并比较 `dataVersion`。
+4. 远端版本一致时不下载新数据。
+5. 远端版本更高时读取 `manifest`，把新版本的必需文件下载到 `data/versions/<dataVersion>/`。
+6. 新版本通过完整性检查后，原子更新 `data/current.json`，后续请求再使用新版本。
 
 本地缓存建议按版本隔离：
 
@@ -112,6 +113,8 @@ data/
 ```
 
 `current.json` 只记录当前激活版本，避免更新中断导致缓存半成品覆盖可用数据。
+
+英雄详情分片也遵循本地优先：前台请求可直接使用磁盘上已存在的较新分片或当前激活版本分片；不要为了探测远端新版详情而阻塞详情页或海克斯弹窗。只有当前本地版本缺少所需文件时，才进入远端分片或单英雄详情兜底。
 
 ## 官方客户端接口
 

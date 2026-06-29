@@ -291,22 +291,22 @@ npm run type-check:watch
 
 ## ⏭️ 下一步行动
 
-### 今天
+### 立即执行
 - [ ] 运行 `npm run type-check` 验证
 - [ ] 阅读 `TYPESCRIPT_COMMANDS_CHEATSHEET.md`
 - [ ] 启动 `npm run type-check:watch`
 
-### 这周
+### 短期行动
 - [ ] 学习 `TYPESCRIPT_QUICK_REFERENCE.md`
 - [ ] 转换一个 .js 文件为 .ts
 - [ ] 在代码中体验类型提示
 
-### 下周
+### 后续行动
 - [ ] 参与 code review，审查类型
 - [ ] 转换更多文件为 TypeScript
 - [ ] 建立团队编码规范
 
-### 本月
+### 中期目标
 - [ ] 达到 80% TypeScript 覆盖率
 - [ ] 启用更多严格检查选项
 - [ ] 在 CI 中集成 type-check
