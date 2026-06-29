@@ -1,10 +1,17 @@
 // @ts-nocheck
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, nativeImage, shell } from 'electron'
+import { writeFile } from 'fs/promises'
 import path from 'path'
 import { captureScreenshot } from '../screenshot.ts'
 import { analyzeScreenshot } from '../image-analyzer.ts'
 import autoScreenshotService from '../auto-screenshot-service.ts'
 import { registerLCUIpcHandlers } from '../services/lcu/ipc-handlers.ts'
+import { getLCUServiceInstance } from '../services/lcu/lcu-service.ts'
+import {
+    createMockPostGameSharePosterData,
+    getLatestPostGameSharePosterData,
+    preparePostGameSharePosterData,
+} from '../services/post-game-share.ts'
 import {
     applyAugmentSidePanelWindowLayout,
     applyFloatingWindowLayout,
@@ -64,9 +71,11 @@ const BROADCAST_CHANNELS = new Set([
     'augment-cleared',
     'game-ended',
     'end-of-game',
+    'post-game-share-ready',
 ])
 const championDataLoadRequests = new Map()
 let quitRequested = false
+const MAX_POSTER_DATA_URL_LENGTH = 24 * 1024 * 1024
 
 function getElapsedMs(startedAt) {
     return Date.now() - startedAt
@@ -127,6 +136,34 @@ function assertSafeExternalUrl(url) {
     }
 
     return parsedUrl.toString()
+}
+
+function getPosterPngBuffer(dataUrl) {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+        throw new Error('Invalid poster image format')
+    }
+
+    if (dataUrl.length > MAX_POSTER_DATA_URL_LENGTH) {
+        throw new Error('Poster image is too large')
+    }
+
+    const base64 = dataUrl.slice('data:image/png;base64,'.length)
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+        throw new Error('Poster image is empty')
+    }
+
+    return buffer
+}
+
+function getPosterSavePath(filePath) {
+    if (!filePath) {
+        return ''
+    }
+
+    return path.extname(filePath).toLowerCase() === '.png'
+        ? filePath
+        : `${filePath}.png`
 }
 
 async function validateLolDirectory(lolPath) {
@@ -879,6 +916,104 @@ export function registerIpcHandlers(isDev) {
         const safeUrl = assertSafeExternalUrl(url)
         await shell.openExternal(safeUrl)
         return { success: true }
+    })
+
+    ipcMain.handle('post-game-share-get-latest', async () => {
+        try {
+            const lcuService = getLCUServiceInstance()
+            return await getLatestPostGameSharePosterData(lcuService, 'renderer-request')
+        } catch (error) {
+            logger.warn('[post-game-share] failed to get latest poster data:', error.message)
+            return {
+                success: false,
+                data: null,
+                error: error.message,
+            }
+        }
+    })
+
+    ipcMain.handle('post-game-share-refresh', async () => {
+        try {
+            const lcuService = getLCUServiceInstance()
+            return await preparePostGameSharePosterData(lcuService, 'renderer-refresh')
+        } catch (error) {
+            logger.warn('[post-game-share] failed to refresh poster data:', error.message)
+            return {
+                success: false,
+                data: null,
+                error: error.message,
+            }
+        }
+    })
+
+    ipcMain.handle('post-game-share-create-mock', async () => {
+        try {
+            return await createMockPostGameSharePosterData()
+        } catch (error) {
+            logger.warn('[post-game-share] failed to create mock poster data:', error.message)
+            return {
+                success: false,
+                data: null,
+                error: error.message,
+            }
+        }
+    })
+
+    ipcMain.handle('post-game-share-copy-image', async (_event, dataUrl) => {
+        try {
+            getPosterPngBuffer(dataUrl)
+            const image = nativeImage.createFromDataURL(dataUrl)
+            if (image.isEmpty()) {
+                throw new Error('Poster image is empty')
+            }
+
+            clipboard.writeImage(image)
+            return { success: true }
+        } catch (error) {
+            logger.warn('[post-game-share] failed to copy poster image:', error.message)
+            return {
+                success: false,
+                error: error.message,
+            }
+        }
+    })
+
+    ipcMain.handle('post-game-share-save-image', async (event, dataUrl, suggestedFilename = 'aramgg-post-game-share.png') => {
+        try {
+            const buffer = getPosterPngBuffer(dataUrl)
+            const ownerWindow = BrowserWindow.fromWebContents(event.sender) || getMainWindow()
+            const dialogOptions = {
+                title: '保存赛后海报',
+                defaultPath: suggestedFilename,
+                filters: [
+                    { name: 'PNG 图片', extensions: ['png'] },
+                ],
+            }
+            const result = ownerWindow
+                ? await dialog.showSaveDialog(ownerWindow, dialogOptions)
+                : await dialog.showSaveDialog(dialogOptions)
+
+            if (result.canceled || !result.filePath) {
+                return {
+                    success: false,
+                    cancelled: true,
+                    reason: 'cancelled',
+                }
+            }
+
+            const filePath = getPosterSavePath(result.filePath)
+            await writeFile(filePath, buffer)
+            return {
+                success: true,
+                filePath,
+            }
+        } catch (error) {
+            logger.warn('[post-game-share] failed to save poster image:', error.message)
+            return {
+                success: false,
+                error: error.message,
+            }
+        }
     })
 
     ipcMain.handle('screenshot-capture', async () => {

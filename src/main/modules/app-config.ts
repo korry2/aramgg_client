@@ -35,6 +35,11 @@ import {
     collectAramCandidateChampionIds,
     getAramBenchRecommendation,
 } from '../services/aram/bench-recommendation.ts'
+import {
+    capturePostGameShareSnapshot,
+    preparePostGameSharePosterData,
+    resetPostGameShareSnapshot,
+} from '../services/post-game-share.ts'
 import logger from './logger.ts'
 import store from './app-store.ts'
 import { getAppDataDir } from './app-paths.ts'
@@ -792,6 +797,41 @@ async function showChampionInsightForChampSelect(lcuService) {
     await pollChampSelectSnapshot(lcuService, 'champ-select-insight', true)
 }
 
+function showMainWindowForPostGameShare() {
+    const mainWindow = getMainWindow()
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return
+    }
+
+    if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+    }
+
+    if (!mainWindow.isVisible()) {
+        if (typeof mainWindow.showInactive === 'function') {
+            mainWindow.showInactive()
+        } else {
+            mainWindow.show()
+        }
+    }
+}
+
+async function prepareAndNotifyPostGameShare(lcuService, reason) {
+    const result = await preparePostGameSharePosterData(lcuService, reason)
+    if (!result?.data || result.data.status === 'unavailable') {
+        logger.debug('[post-game-share] poster notification skipped', {
+            reason,
+            success: result?.success,
+            status: result?.data?.status || null,
+            error: result?.error || null,
+        })
+        return
+    }
+
+    showMainWindowForPostGameShare()
+    await notifyAllWindows('post-game-share-ready', result.data)
+}
+
 async function resolveInProgressChampion(lcuService) {
     const gameflowSession = await lcuService.getReadOnlyJsonEndpoint('/lol-gameflow/v1/session')
     const sessionChampionId = getLikelyChampionIdFromGameflowSession(gameflowSession?.data)
@@ -1170,6 +1210,7 @@ async function initGameFlowMonitor() {
                         break
                     case 'ChampSelect':
                         logger.info('进入选人阶段 - 暂停游戏内海克斯 OCR')
+                        resetPostGameShareSnapshot('LCU phase ChampSelect')
                         setPopupWindowAlwaysOnTop(true)
                         lastAutoAppliedItemSetChampionId = null
                         resetChampSelectItemSetState(`LCU phase ${phase}`)
@@ -1179,6 +1220,7 @@ async function initGameFlowMonitor() {
                         break
                     case 'GameStart':
                         logger.info('游戏开始加载')
+                        resetPostGameShareSnapshot('LCU phase GameStart')
                         allowChampionInsightInBackground('LCU phase GameStart')
                         notifyAllWindows('game-started', {})
                         resetChampSelectItemSetState('LCU phase GameStart')
@@ -1190,22 +1232,26 @@ async function initGameFlowMonitor() {
                         notifyAllWindows('game-in-progress', {})
                         resetChampSelectItemSetState('LCU phase InProgress')
                         void recoverChampionInsightForInProgress(lcuService, 'LCU phase InProgress')
+                        void capturePostGameShareSnapshot(lcuService, 'LCU phase InProgress')
                         await startAutoScreenshotForGame('LCU phase InProgress')
                         break
                     case 'WaitingForStats':
                         logger.info('游戏已结束')
                         notifyAllWindows('game-ended', {})
+                        void prepareAndNotifyPostGameShare(lcuService, 'LCU phase WaitingForStats')
                         resetChampSelectItemSetState('LCU phase WaitingForStats')
                         stopAutoScreenshotForGame('LCU phase WaitingForStats')
                         break
                     case 'PreEndOfGame':
                         logger.info('游戏结束统计阶段')
+                        void prepareAndNotifyPostGameShare(lcuService, 'LCU phase PreEndOfGame')
                         resetChampSelectItemSetState('LCU phase PreEndOfGame')
                         stopAutoScreenshotForGame('LCU phase PreEndOfGame')
                         break
                     case 'EndOfGame':
                         logger.info('游戏完全结束')
                         notifyAllWindows('end-of-game', {})
+                        void prepareAndNotifyPostGameShare(lcuService, 'LCU phase EndOfGame')
                         resetChampSelectItemSetState('LCU phase EndOfGame')
                         stopAutoScreenshotForGame('LCU phase EndOfGame')
                         break
@@ -1214,6 +1260,7 @@ async function initGameFlowMonitor() {
 
             if (phase === GAMEFLOW_AUGMENT_ANALYSIS_PHASE) {
                 void logReadOnlyGameApiDiagnostics(lcuService, phase, `heartbeat:${source}`)
+                void capturePostGameShareSnapshot(lcuService, `heartbeat:${source}`)
                 if (lastInProgressInsightChampionId == null) {
                     void recoverChampionInsightForInProgress(lcuService, 'LCU phase InProgress heartbeat')
                 }

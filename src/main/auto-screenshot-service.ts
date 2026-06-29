@@ -31,6 +31,7 @@ import {
     shouldShowAugmentSidePanel,
     shouldShowAugmentTopOverlay,
 } from './modules/user-preferences.ts'
+import { recordPostGameAugments } from './services/post-game-share.ts'
 
 const AUTO_SCREENSHOT_SUMMARY_INTERVAL_MS = 2 * 60 * 1000
 const ANALYSIS_MISS_LOG_INTERVAL_MS = 60 * 1000
@@ -1041,6 +1042,10 @@ class AutoScreenshotService {
 
     _sendAugmentDetectedPayload(winrateData, notifyMode = 'detected') {
         try {
+            recordPostGameAugments(winrateData).catch(error => {
+                logger.debug('[post-game-share] failed to record detected augments:', error.message)
+            })
+
             if (this._isManualHiddenAugmentSuppressed(winrateData)) {
                 return
             }

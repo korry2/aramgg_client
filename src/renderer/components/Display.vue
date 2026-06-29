@@ -167,6 +167,24 @@
                 <OverlayPreferences />
                 <ChampionMonitor />
 
+                <section class="post-game-panel">
+                    <div class="section-header">
+                        <p class="section-kicker">赛后海报</p>
+                    </div>
+                    <button
+                        class="post-game-share-button mock"
+                        type="button"
+                        :disabled="postGameShareLoading"
+                        @click="createMockPostGameSharePoster"
+                    >
+                        <Sparkles class="icon" />
+                        <span class="button-copy">
+                            <span class="text">模拟生成</span>
+                            <span class="hint">每次点击刷新预览</span>
+                        </span>
+                    </button>
+                </section>
+
                 <section class="diagnostic-panel">
                     <div class="section-header">
                         <p class="section-kicker">窗口预览</p>
@@ -298,6 +316,23 @@
                 </section>
             </div>
 
+            <PostGameShareModal
+                v-if="showPostGameShare && postGamePoster"
+                :poster="postGamePoster"
+                @close="closePostGameShare"
+            />
+
+            <button
+                v-if="shouldShowPostGameFloatingShare"
+                class="post-game-floating-share"
+                type="button"
+                title="分享战报"
+                :disabled="postGameShareLoading"
+                @click="requestPostGameSharePoster({ openOnReady: true })"
+            >
+                <Share2 class="icon" />
+                <span>{{ postGameShareFloatingLabel }}</span>
+            </button>
         </section>
     </div>
 </template>
@@ -307,6 +342,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ItemSetInstaller from './ItemSetInstaller.vue'
 import OverlayPreferences from './OverlayPreferences.vue'
 import ChampionMonitor from './ChampionMonitor.vue'
+import PostGameShareModal from './PostGameShareModal.vue'
 import { electronAPI } from '../native/electron-api.js'
 import {
     ChevronRight,
@@ -320,6 +356,8 @@ import {
     RotateCw,
     Save,
     ScrollText,
+    Share2,
+    Sparkles,
     Target,
     Trash2,
     X,
@@ -331,6 +369,9 @@ const appUpdateState = ref(null)
 const updateActionPending = ref(false)
 const showQuitConfirm = ref(false)
 const showChangelog = ref(false)
+const showPostGameShare = ref(false)
+const postGamePoster = ref(null)
+const postGameShareLoading = ref(false)
 const showAdvancedLcuConfig = ref(false)
 const manualLolPath = ref('')
 const manualPathStatus = ref(null)
@@ -344,6 +385,10 @@ const FEEDBACK_URL = `mailto:${FEEDBACK_EMAIL}`
 const GITHUB_URL = 'https://github.com/valkia/aramgg_client'
 let removeQuitConfirmListener = null
 let removeAppUpdateListener = null
+let removePostGameShareListener = null
+let removeGameEndedListener = null
+let removeEndOfGameListener = null
+let postGameShareTimer = null
 
 const clientVersionLabel = computed(() => {
     if (!versionInfo.value) {
@@ -514,6 +559,35 @@ const changelogEntries = computed(() => {
 })
 
 const hasChangelog = computed(() => changelogEntries.value.length > 0)
+
+const hasPostGameStats = (poster) => {
+    const stats = poster?.stats
+    if (!stats) {
+        return false
+    }
+
+    return [stats.kills, stats.deaths, stats.assists].every((value) => {
+        if (value == null) {
+            return false
+        }
+
+        if (typeof value === 'string' && !value.trim()) {
+            return false
+        }
+
+        return Number.isFinite(Number(value))
+    })
+}
+
+const shouldShowPostGameFloatingShare = computed(() => hasPostGameStats(postGamePoster.value))
+
+const postGameShareFloatingLabel = computed(() => {
+    if (postGameShareLoading.value) {
+        return '生成中'
+    }
+
+    return '分享战报'
+})
 
 const loadVersionInfo = async () => {
     try {
@@ -768,6 +842,92 @@ const closeChangelog = () => {
     showChangelog.value = false
 }
 
+const closePostGameShare = () => {
+    showPostGameShare.value = false
+}
+
+const applyPostGamePoster = (poster, openOnReady = true) => {
+    if (!poster || poster.status === 'unavailable') {
+        return false
+    }
+
+    const canSharePoster = hasPostGameStats(poster)
+    postGamePoster.value = poster
+    if (openOnReady && canSharePoster) {
+        showPostGameShare.value = true
+    }
+    return canSharePoster
+}
+
+const requestPostGameSharePoster = async ({ openOnReady = true, refresh = false, silent = false } = {}) => {
+    if (postGameShareLoading.value) {
+        return
+    }
+
+    postGameShareLoading.value = true
+    try {
+        const result = refresh
+            ? await electronAPI.postGameShare.refresh()
+            : await electronAPI.postGameShare.getLatest()
+
+        if (applyPostGamePoster(result?.data, openOnReady)) {
+            return
+        }
+
+        if (!silent) {
+            testStatus.value = {
+                type: 'info',
+                message: result?.error ? `赛后海报暂不可用：${result.error}` : '暂未捕获到可分享的最近对局。',
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to request post-game share poster:', error)
+        if (!silent) {
+            testStatus.value = {
+                type: 'error',
+                message: '生成赛后海报失败：' + (error.message || error),
+            }
+        }
+    } finally {
+        postGameShareLoading.value = false
+    }
+}
+
+const createMockPostGameSharePoster = async () => {
+    if (postGameShareLoading.value) {
+        return
+    }
+
+    postGameShareLoading.value = true
+    try {
+        const result = await electronAPI.postGameShare.createMock()
+        if (applyPostGamePoster(result?.data, true)) {
+            return
+        }
+
+        throw new Error(result?.error || '模拟海报生成失败')
+    } catch (error) {
+        console.warn('Failed to create mock post-game share poster:', error)
+        testStatus.value = {
+            type: 'error',
+            message: '模拟生成失败：' + (error.message || error),
+        }
+    } finally {
+        postGameShareLoading.value = false
+    }
+}
+
+const schedulePostGameSharePosterRequest = () => {
+    if (postGameShareTimer) {
+        clearTimeout(postGameShareTimer)
+    }
+
+    postGameShareTimer = setTimeout(() => {
+        postGameShareTimer = null
+        requestPostGameSharePoster({ openOnReady: true, silent: true })
+    }, 1200)
+}
+
 const formatChangelogVersion = (entry) => {
     const version = String(entry?.version || '').trim()
     if (!version) {
@@ -920,13 +1080,29 @@ onMounted(() => {
     removeAppUpdateListener = electronAPI.events.on('app-update-status-changed', (state) => {
         appUpdateState.value = state
     })
+    removePostGameShareListener = electronAPI.events.on('post-game-share-ready', (poster) => {
+        applyPostGamePoster(poster, true)
+    })
+    removeGameEndedListener = electronAPI.events.on('game-ended', schedulePostGameSharePosterRequest)
+    removeEndOfGameListener = electronAPI.events.on('end-of-game', schedulePostGameSharePosterRequest)
+    requestPostGameSharePoster({ openOnReady: false, silent: true })
 })
 
 onBeforeUnmount(() => {
+    if (postGameShareTimer) {
+        clearTimeout(postGameShareTimer)
+        postGameShareTimer = null
+    }
     removeQuitConfirmListener?.()
     removeQuitConfirmListener = null
     removeAppUpdateListener?.()
     removeAppUpdateListener = null
+    removePostGameShareListener?.()
+    removePostGameShareListener = null
+    removeGameEndedListener?.()
+    removeGameEndedListener = null
+    removeEndOfGameListener?.()
+    removeEndOfGameListener = null
 })
 </script>
 
@@ -1543,6 +1719,170 @@ onBeforeUnmount(() => {
 .manual-path-suggestion:hover {
     border-color: rgba(255, 180, 171, 0.48);
     background: rgba(255, 180, 171, 0.14);
+}
+
+.post-game-panel {
+    padding: 14px;
+    border-top: 1px solid rgba(244, 236, 220, 0.06);
+}
+
+.post-game-share-button {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 6px;
+    color: #061116;
+    background:
+        linear-gradient(135deg, rgba(155, 232, 220, 0.96), rgba(231, 189, 104, 0.92));
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 14px 28px rgba(0, 0, 0, 0.28);
+    text-align: left;
+    cursor: pointer;
+    transition-property: scale, filter, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+}
+
+.post-game-share-button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
+    transition-property: opacity;
+    transition-duration: 160ms;
+    transition-timing-function: ease-out;
+}
+
+.post-game-share-button:hover:not(:disabled) {
+    filter: brightness(1.05);
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.16),
+        0 18px 34px rgba(0, 0, 0, 0.34);
+}
+
+.post-game-share-button:hover:not(:disabled)::before {
+    opacity: 1;
+}
+
+.post-game-share-button:active:not(:disabled) {
+    scale: 0.96;
+}
+
+.post-game-share-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.post-game-share-button.mock {
+    color: #d7e4f1;
+    background:
+        linear-gradient(135deg, rgba(25, 38, 48, 0.95), rgba(37, 49, 57, 0.9));
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.1),
+        0 12px 24px rgba(0, 0, 0, 0.24);
+}
+
+.post-game-share-button.mock:hover:not(:disabled) {
+    filter: brightness(1.08);
+    box-shadow:
+        0 0 0 1px rgba(155, 232, 220, 0.22),
+        0 16px 30px rgba(0, 0, 0, 0.3);
+}
+
+.post-game-share-button .icon {
+    width: 19px;
+    height: 19px;
+    flex: 0 0 auto;
+    color: #061116;
+}
+
+.post-game-share-button.mock .icon {
+    color: #9be8dc;
+}
+
+.post-game-share-button .text,
+.post-game-share-button .hint {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.post-game-share-button .text {
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.post-game-share-button .hint {
+    margin-top: 2px;
+    color: rgba(6, 17, 22, 0.72);
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.post-game-share-button.mock .hint {
+    color: rgba(215, 228, 241, 0.62);
+}
+
+.post-game-floating-share {
+    position: absolute;
+    right: 16px;
+    bottom: 78px;
+    z-index: 8;
+    min-width: 112px;
+    min-height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 14px 0 16px;
+    border: 0;
+    border-radius: 23px;
+    color: #061116;
+    background:
+        linear-gradient(135deg, rgba(155, 232, 220, 0.98), rgba(231, 189, 104, 0.96));
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.16),
+        0 14px 28px rgba(0, 0, 0, 0.34),
+        0 0 22px rgba(155, 232, 220, 0.16);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 900;
+    transition-property: scale, filter, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+}
+
+.post-game-floating-share:hover:not(:disabled) {
+    filter: brightness(1.06);
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.2),
+        0 18px 34px rgba(0, 0, 0, 0.4),
+        0 0 28px rgba(155, 232, 220, 0.22);
+}
+
+.post-game-floating-share:active:not(:disabled) {
+    scale: 0.96;
+}
+
+.post-game-floating-share:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.post-game-floating-share .icon {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
 }
 
 .diagnostic-panel {

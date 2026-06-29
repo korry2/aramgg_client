@@ -91,6 +91,13 @@ export const electronAPI = {
   shell: {
     openExternal: (...args) => requireElectronAPI().shell.openExternal(...args),
   },
+  postGameShare: {
+    getLatest: (...args) => requireElectronAPI().postGameShare.getLatest(...args),
+    refresh: (...args) => requireElectronAPI().postGameShare.refresh(...args),
+    createMock: (...args) => requireElectronAPI().postGameShare.createMock(...args),
+    copyImage: (...args) => requireElectronAPI().postGameShare.copyImage(...args),
+    saveImage: (...args) => requireElectronAPI().postGameShare.saveImage(...args),
+  },
   events: {
     on: (...args) => requireElectronAPI().events.on(...args),
     once: (...args) => requireElectronAPI().events.once(...args),

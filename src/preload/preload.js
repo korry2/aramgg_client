@@ -17,6 +17,7 @@ const validEvents = new Set([
     'augment-cleared',
     'game-ended',
     'end-of-game',
+    'post-game-share-ready',
     'quit-confirm-requested',
     'app-update-status-changed',
 ])
@@ -122,6 +123,14 @@ const electronAPI = {
             }
             return ipcRenderer.invoke('shell-open-external', parsedUrl.toString())
         },
+    },
+    postGameShare: {
+        getLatest: () => ipcRenderer.invoke('post-game-share-get-latest'),
+        refresh: () => ipcRenderer.invoke('post-game-share-refresh'),
+        createMock: () => ipcRenderer.invoke('post-game-share-create-mock'),
+        copyImage: (dataUrl) => ipcRenderer.invoke('post-game-share-copy-image', dataUrl),
+        saveImage: (dataUrl, suggestedFilename) =>
+            ipcRenderer.invoke('post-game-share-save-image', dataUrl, suggestedFilename),
     },
     events: {
         on,
