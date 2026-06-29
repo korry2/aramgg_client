@@ -2,11 +2,15 @@
  * 测试胜率查询功能
  */
 
-import { app, ipcMain } from 'electron'
+import electron from 'electron'
+
+const { app } = typeof electron === 'object' ? electron : {}
 
 console.log('=== 测试胜率查询 ===')
 
-app.whenReady().then(async () => {
+const ready = app?.whenReady ? app.whenReady() : Promise.resolve()
+
+ready.then(async () => {
   try {
     // 导入 data-loader
     const { getChampionAugmentStats } = await import('../../src/main/data-loader.ts')

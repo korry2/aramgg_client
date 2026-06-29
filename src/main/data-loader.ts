@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'fs/promises'
 import path from 'path'
 import logger from './modules/logger.ts'
 import { getAppDataDir } from './modules/app-paths.ts'
@@ -179,6 +179,38 @@ function sanitizePathPart(value: string | number): string {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
+function compareDataVersions(left: string, right: string): number {
+  const tokenize = (value: string): Array<number | string> =>
+    String(value || '')
+      .split(/[^a-zA-Z0-9]+/)
+      .filter(Boolean)
+      .map((part) => (/^\d+$/.test(part) ? Number(part) : part.toLowerCase()))
+
+  const leftParts = tokenize(left)
+  const rightParts = tokenize(right)
+  const maxLength = Math.max(leftParts.length, rightParts.length)
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] ?? 0
+    const rightPart = rightParts[index] ?? 0
+
+    if (leftPart === rightPart) {
+      continue
+    }
+
+    if (typeof leftPart === 'number' && typeof rightPart === 'number') {
+      return leftPart - rightPart
+    }
+
+    return String(leftPart).localeCompare(String(rightPart), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  }
+
+  return 0
+}
+
 function normalizeDataPath(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\/+/, '')
 }
@@ -209,6 +241,22 @@ async function getDataRootDir(): Promise<string> {
   return dataRootDirPromise
 }
 
+async function readLocalDataVersionDirs(dataRootDir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(path.join(dataRootDir, 'versions'), { withFileTypes: true })
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter(Boolean)
+  } catch (error: any) {
+    if (error.code !== 'ENOENT') {
+      logger.warn(`Failed to read local data versions from ${dataRootDir}:`, error.message)
+    }
+
+    return []
+  }
+}
+
 function getBundledDataRootDirs(): string[] {
   const candidates: string[] = []
 
@@ -219,6 +267,16 @@ function getBundledDataRootDirs(): string[] {
   candidates.push(path.join(process.cwd(), 'resources', BUNDLED_DATA_DIR_NAME))
 
   return candidates
+}
+
+async function listLocalDataVersions(): Promise<string[]> {
+  const versions = new Set<string>()
+  const dataRootDir = await getDataRootDir()
+
+  const rootVersions = await readLocalDataVersionDirs(dataRootDir)
+  rootVersions.forEach((version) => versions.add(version))
+
+  return [...versions].sort(compareDataVersions).reverse()
 }
 
 async function getVersionDir(dataVersion: string): Promise<string> {
@@ -443,6 +501,22 @@ async function readDataFileFromDisk(dataVersion: string, dataPath: string): Prom
 async function writeDataFileToDisk(dataVersion: string, dataPath: string, payload: any): Promise<void> {
   const versionDir = await getVersionDir(dataVersion)
   await writeJsonFileAtomic(path.join(versionDir, normalizeDataPath(dataPath)), payload)
+}
+
+async function readCachedVersionedDataFile(dataVersion: string, dataPath: string): Promise<any | null> {
+  const normalizedPath = normalizeDataPath(dataPath)
+  const cacheKey = `${dataVersion}:${normalizedPath}`
+  const cached = cache.get(cacheKey)
+  if (cached) {
+    return cached.data
+  }
+
+  const payload = await readDataFileFromDisk(dataVersion, normalizedPath)
+  if (payload != null) {
+    cache.set(cacheKey, { data: payload, createdAt: Date.now() })
+  }
+
+  return payload
 }
 
 async function fetchVersionedDataFile(
@@ -786,6 +860,18 @@ async function loadChampionShardIndexForDataSet(
   }
 }
 
+async function loadCachedChampionShardIndexForDataSet(dataSet: ActiveDataSet): Promise<any | null> {
+  const logicalPath = 'champion-shards/index.json'
+  const manifestPath = findManifestPath(dataSet.manifest, logicalPath)
+  const payload =
+    await readCachedVersionedDataFile(dataSet.dataVersion, logicalPath) ||
+    (manifestPath !== logicalPath
+      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestPath)
+      : null)
+
+  return payload
+}
+
 function extractList(payload: any, key: string): any[] {
   const data = unwrapEnvelope(payload)
   const value = Array.isArray(data) ? data : data?.[key] ?? payload?.[key]
@@ -823,7 +909,7 @@ async function loadChampionDetailFromShard(
   options: FetchJsonOptions = {}
 ): Promise<any | null> {
   const shardPayload = source === 'cached'
-    ? cache.get(`${dataSet.dataVersion}:${shardPath}`)?.data || await readDataFileFromDisk(dataSet.dataVersion, shardPath)
+    ? await readCachedVersionedDataFile(dataSet.dataVersion, shardPath)
     : await fetchVersionedDataFile(
       dataSet.dataVersion,
       shardPath,
@@ -879,37 +965,88 @@ async function loadSingleChampionDetailFromDataSet(
   return detail
 }
 
-async function loadLatestChampionDetailPayload(
+async function loadCachedSingleChampionDetailFromDataSet(
+  dataSet: ActiveDataSet,
+  championId: string | number
+): Promise<any | null> {
+  const singleChampionPath = `champions/${championId}.json`
+  const manifestSingleChampionPath = findManifestPathIfExists(dataSet.manifest, singleChampionPath)
+  if (!manifestSingleChampionPath) {
+    return null
+  }
+
+  const payload =
+    await readCachedVersionedDataFile(dataSet.dataVersion, singleChampionPath) ||
+    (manifestSingleChampionPath !== singleChampionPath
+      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestSingleChampionPath)
+      : null)
+
+  if (!payload) {
+    return null
+  }
+
+  const detail = unwrapEnvelope(payload)
+  detailCache.set(`${dataSet.dataVersion}:champion:${championId}`, detail)
+  return detail
+}
+
+async function loadCachedChampionDetailPayload(
+  dataSet: ActiveDataSet,
+  championId: string | number,
+): Promise<any | null> {
+  const cacheKey = `${dataSet.dataVersion}:champion:${championId}`
+  if (detailCache.has(cacheKey)) {
+    logger.debug('[data-loader] champion detail memory cache hit', {
+      dataVersion: dataSet.dataVersion,
+      championId,
+    })
+    return detailCache.get(cacheKey)
+  }
+
+  const shardIndex = await loadCachedChampionShardIndexForDataSet(dataSet)
+  const shardPath = shardIndex ? findShardPathForChampion(shardIndex, championId) : null
+
+  if (shardPath) {
+    const cachedShardDetail = await loadChampionDetailFromShard(dataSet, championId, shardPath, 'cached')
+    if (cachedShardDetail) {
+      logger.debug('[data-loader] champion detail loaded from local shard', {
+        dataVersion: dataSet.dataVersion,
+        championId,
+        shardPath,
+      })
+      return cachedShardDetail
+    }
+  }
+
+  return loadCachedSingleChampionDetailFromDataSet(dataSet, championId)
+}
+
+async function loadCachedLatestChampionDetailPayload(
   championId: string | number,
   activeDataSet: ActiveDataSet,
   activeShardPath: string | null
 ): Promise<any | null> {
-  try {
-    const config = await loadDataApiConfig({ timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS })
-    const dataVersion = String(config?.dataVersion || '')
-    if (!dataVersion || dataVersion === activeDataSet.dataVersion) {
-      return null
+  const localVersions = await listLocalDataVersions()
+  const newerVersions = localVersions.filter((dataVersion) =>
+    compareDataVersions(dataVersion, activeDataSet.dataVersion) > 0
+  )
+
+  for (const dataVersion of newerVersions) {
+    const manifest = await readCachedVersionedDataFile(dataVersion, 'manifest.json')
+    if (!manifest) {
+      continue
     }
 
-    const cacheKey = `${dataVersion}:champion:${championId}`
-    if (detailCache.has(cacheKey)) {
-      logger.debug('[data-loader] champion detail newer-version memory cache hit', {
-        activeDataVersion: activeDataSet.dataVersion,
+    const latestDataSet: ActiveDataSet = {
+      config: {
         dataVersion,
-        championId,
-      })
-      return detailCache.get(cacheKey)
-    }
-
-    const manifest = await fetchVersionedDataFile(
+        manifest: `${getVersionDataPrefix(dataVersion)}/manifest.json`,
+      },
       dataVersion,
-      'manifest.json',
-      config.manifest || `${getVersionDataPrefix(dataVersion)}/manifest.json`,
-      { timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS }
-    )
-    const latestDataSet: ActiveDataSet = { config, dataVersion, manifest }
+      manifest,
+    }
     const triedShardPaths = new Set<string>()
-    const loadCachedShard = async (shardPath: string): Promise<any | null> => {
+    const tryCachedShard = async (shardPath: string): Promise<any | null> => {
       triedShardPaths.add(shardPath)
       const cachedShardDetail = await loadChampionDetailFromShard(latestDataSet, championId, shardPath, 'cached')
       if (cachedShardDetail) {
@@ -926,57 +1063,32 @@ async function loadLatestChampionDetailPayload(
     }
 
     if (activeShardPath) {
-      const activePathDetail = await loadCachedShard(activeShardPath)
+      const activePathDetail = await tryCachedShard(activeShardPath)
       if (activePathDetail) {
         return activePathDetail
       }
     }
 
-    const latestShardIndex = await loadChampionShardIndexForDataSet(latestDataSet, {
-      timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS,
-    })
+    const latestShardIndex = await loadCachedChampionShardIndexForDataSet(latestDataSet)
     const latestShardPath = latestShardIndex ? findShardPathForChampion(latestShardIndex, championId) : null
     const shardPath = latestShardPath || activeShardPath
 
     if (shardPath && !triedShardPaths.has(shardPath)) {
-      const cachedShardDetail = await loadCachedShard(shardPath)
+      const cachedShardDetail = await tryCachedShard(shardPath)
       if (cachedShardDetail) {
         return cachedShardDetail
       }
     }
 
-    const singleChampionDetail = await loadSingleChampionDetailFromDataSet(latestDataSet, championId, {
-      timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS,
-    })
+    const singleChampionDetail = await loadCachedSingleChampionDetailFromDataSet(latestDataSet, championId)
     if (singleChampionDetail) {
-      logger.debug('[data-loader] champion detail loaded from newer single detail', {
+      logger.debug('[data-loader] champion detail loaded from newer local single detail', {
         activeDataVersion: activeDataSet.dataVersion,
         dataVersion,
         championId,
       })
       return singleChampionDetail
     }
-
-    if (shardPath) {
-      const remoteShardDetail = await loadChampionDetailFromShard(
-        latestDataSet,
-        championId,
-        shardPath,
-        'remote',
-        { timeoutMs: CHAMPION_DETAIL_FETCH_TIMEOUT_MS }
-      )
-      if (remoteShardDetail) {
-        logger.debug('[data-loader] champion detail loaded from newer remote shard', {
-          activeDataVersion: activeDataSet.dataVersion,
-          dataVersion,
-          championId,
-          shardPath,
-        })
-        return remoteShardDetail
-      }
-    }
-  } catch (error: any) {
-    logger.warn(`Failed to load newer champion detail ${championId}; using active data version:`, error.message)
   }
 
   return null
@@ -987,30 +1099,14 @@ async function loadChampionDetailPayload(championId: string | number): Promise<a
   const shardIndex = await loadChampionShardIndexForDataSet(dataSet)
   const shardPath = shardIndex ? findShardPathForChampion(shardIndex, championId) : null
 
-  const latestDetail = await loadLatestChampionDetailPayload(championId, dataSet, shardPath)
-  if (latestDetail) {
-    return latestDetail
+  const latestCachedDetail = await loadCachedLatestChampionDetailPayload(championId, dataSet, shardPath)
+  if (latestCachedDetail) {
+    return latestCachedDetail
   }
 
-  const cacheKey = `${dataSet.dataVersion}:champion:${championId}`
-  if (detailCache.has(cacheKey)) {
-    logger.debug('[data-loader] champion detail memory cache hit', {
-      dataVersion: dataSet.dataVersion,
-      championId,
-    })
-    return detailCache.get(cacheKey)
-  }
-
-  if (shardPath) {
-    const cachedShardDetail = await loadChampionDetailFromShard(dataSet, championId, shardPath, 'cached')
-    if (cachedShardDetail) {
-      logger.debug('[data-loader] champion detail loaded from local shard', {
-        dataVersion: dataSet.dataVersion,
-        championId,
-        shardPath,
-      })
-      return cachedShardDetail
-    }
+  const cachedDetail = await loadCachedChampionDetailPayload(dataSet, championId)
+  if (cachedDetail) {
+    return cachedDetail
   }
 
   try {

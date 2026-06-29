@@ -37,6 +37,20 @@ function oldVladimirShard(): any {
         build: {
           coreItems: [{ items: [6653, 3020, 4645] }],
         },
+        builds: [
+          {
+            queueId: 450,
+            stats: { games: 1200, wins: 600, winRate: 0.5 },
+            tags: { damage: 'AP' },
+            coreItems: [{ items: [6653, 3020, 4645] }],
+          },
+        ],
+        augments: [
+          {
+            id: 1205,
+            stats: { games: 900, wins: 540, winRate: 0.6, pickRate: 0.12 },
+          },
+        ],
       },
     },
   }
@@ -53,6 +67,12 @@ function latestVladimirShard(): any {
             stats: { games: 6535, wins: 3400, winRate: 0.52 },
             tags: { damage: 'AP' },
             coreItems: [{ items: [6653, 3020, 4645] }],
+          },
+        ],
+        augments: [
+          {
+            id: 1205,
+            stats: { games: 1900, wins: 1045, winRate: 0.55, pickRate: 0.2 },
           },
         ],
       },
@@ -84,7 +104,16 @@ async function seedData(): Promise<void> {
     manifest: '/api/client/v1/data/16.12.1/manifest.json',
   })
   await writeJson(path.join(activeVersionDir, 'manifest.json'), manifest(activeFiles))
-  await writeJson(path.join(activeVersionDir, 'augments.json'), { augments: [] })
+  await writeJson(path.join(activeVersionDir, 'augments.json'), {
+    augments: [
+      {
+        id: 1205,
+        name: 'Deft',
+        rarity: 'gold',
+        iconUrl: '/augment/deft.png',
+      },
+    ],
+  })
   await writeJson(path.join(activeVersionDir, 'champions.json'), { champions: [] })
   await writeJson(path.join(activeVersionDir, 'items.json'), { items: [] })
   await writeJson(path.join(activeVersionDir, 'champion-shards', 'index.json'), shardIndex('16.12.1'))
@@ -114,9 +143,9 @@ describe('latest champion shard detail loading', () => {
           status: 200,
           statusText: 'OK',
           json: async () => ({
-            dataVersion: '16.12.2',
+            dataVersion: '16.12.1',
             gamePatch: '16.12',
-            manifest: '/api/client/v1/data/16.12.2/manifest.json',
+            manifest: '/api/client/v1/data/16.12.1/manifest.json',
           }),
         }
       }
@@ -153,6 +182,102 @@ describe('latest champion shard detail loading', () => {
       expect(build.builds[0].games).toBe(6535)
       expect(build.coreItems[0].itemIds).toEqual(['6653', '3020', '4645'])
     } finally {
+      clearCache()
+    }
+  })
+
+  it('returns local champion detail without waiting for a slow remote version check', async () => {
+    await rm(path.join(tempRoot, 'data', 'versions', '16.12.2'), { recursive: true, force: true })
+
+    let releaseConfig: (() => void) | null = null
+    const configResponse = new Promise<any>((resolve) => {
+      releaseConfig = () => resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          dataVersion: '16.12.1',
+          gamePatch: '16.12',
+          manifest: '/api/client/v1/data/16.12.1/manifest.json',
+        }),
+      })
+    })
+
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = String(input)
+      if (url.endsWith('/api/client/v1/config')) {
+        return configResponse
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    const { loadChampionBuild, clearCache } = await import('../../src/main/data-loader.ts')
+    let buildPromise: Promise<any> | null = null
+
+    try {
+      buildPromise = loadChampionBuild(8)
+      const build = await Promise.race([
+        buildPromise,
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Champion detail waited for remote config')), 100)
+        }),
+      ])
+
+      expect(build?.builds).toHaveLength(1)
+      expect(build.builds[0].games).toBe(1200)
+    } finally {
+      releaseConfig?.()
+      await buildPromise?.catch(() => null)
+      clearCache()
+    }
+  })
+
+  it('returns local augment popup data without waiting for a slow remote version check', async () => {
+    await rm(path.join(tempRoot, 'data', 'versions', '16.12.2'), { recursive: true, force: true })
+
+    let releaseConfig: (() => void) | null = null
+    const configResponse = new Promise<any>((resolve) => {
+      releaseConfig = () => resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          dataVersion: '16.12.1',
+          gamePatch: '16.12',
+          manifest: '/api/client/v1/data/16.12.1/manifest.json',
+        }),
+      })
+    })
+
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = String(input)
+      if (url.endsWith('/api/client/v1/config')) {
+        return configResponse
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    const { getChampionDetailData, clearCache } = await import('../../src/main/data-loader.ts')
+    let detailPromise: Promise<any> | null = null
+
+    try {
+      detailPromise = getChampionDetailData(8)
+      const detail = await Promise.race([
+        detailPromise,
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Augment popup data waited for remote config')), 100)
+        }),
+      ])
+
+      expect(detail.augmentBase.map((augment: any) => augment.id)).toEqual([1205])
+      expect(detail.augments['1205'].win_rate).toBe(0.6)
+      expect(detail.builds).toHaveLength(1)
+      expect(detail.championName.nameCN).toBe('Vladimir')
+    } finally {
+      releaseConfig?.()
+      await detailPromise?.catch(() => null)
       clearCache()
     }
   })
