@@ -13,6 +13,16 @@ const SUMMARY_TEXT_LIMIT = 220
 
 export const LOCAL_CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '0.1.18',
+    date: '2026-06-30',
+    title: '赛后分享与本地数据体验',
+    summary: '新增对局结束后的分享海报，并优化前台数据的本地优先加载体验。',
+    changes: [
+      '新增赛后战绩分享海报，支持在对局结束后生成分享图。',
+      '英雄详情、海克斯弹窗和推荐列表优先使用完整本地数据，减少等待远端检查时的空白。',
+    ],
+  },
+  {
     version: '0.1.17',
     date: '2026-06-29',
     title: '自动更新支持',
