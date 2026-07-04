@@ -1,5 +1,7 @@
 # aramgg_client
 
+语言：简体中文（默认） | [English](./README.en.md)
+
 英雄联盟 ARAM 辅助工具，基于 Electron + Vue 3 + electron-vite。当前能力集中在：
 
 - 通过 LCU 只读接口和 `OnJsonApiEvent` WebSocket 读取选人、游戏流程状态。
