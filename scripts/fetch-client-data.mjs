@@ -1,13 +1,15 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
 const DATA_API_ORIGIN = process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
 const DATA_API_PREFIX = '/api/client/v1'
 const OUTPUT_DIR = process.env.ARAMGG_CLIENT_DATA_DIR || path.join('resources', 'client-data')
-const DOWNLOAD_CONCURRENCY = Number.parseInt(process.env.ARAMGG_CLIENT_DATA_CONCURRENCY || '4', 10)
-const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.ARAMGG_CLIENT_DATA_TIMEOUT_MS || '60000', 10)
-const REQUEST_RETRY_COUNT = Number.parseInt(process.env.ARAMGG_CLIENT_DATA_RETRIES || '3', 10)
+const DOWNLOAD_CONCURRENCY = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_CONCURRENCY, 3)
+const REQUEST_TIMEOUT_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_TIMEOUT_MS, 120000)
+const REQUEST_RETRY_COUNT = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRIES, 5)
+const RETRY_BASE_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_DELAY_MS, 1500)
+const RETRY_MAX_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_MAX_DELAY_MS, 10000)
 
 const REQUIRED_DATA_PATHS = new Set([
   'augments.json',
@@ -16,6 +18,11 @@ const REQUIRED_DATA_PATHS = new Set([
   'manifest.json',
   'champion-shards/index.json',
 ])
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value || '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
 
 function getApiUrl(resourcePath) {
   if (/^https?:\/\//i.test(resourcePath)) {
@@ -41,6 +48,12 @@ function isBundledDataPath(dataPath) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function getRetryDelay(attempt) {
+  const exponentialDelay = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
+  const jitter = Math.floor(Math.random() * 250)
+  return Math.min(RETRY_MAX_DELAY_MS, exponentialDelay) + jitter
 }
 
 async function fetchTextOnce(resourcePath) {
@@ -70,17 +83,31 @@ async function fetchTextOnce(resourcePath) {
   }
 }
 
-async function fetchText(resourcePath) {
+async function fetchText(resourcePath, options = {}) {
   let lastError = null
+  const expectedBytes = Number(options.expectedBytes || 0)
+  const label = options.label || normalizeDataPath(resourcePath)
 
   for (let attempt = 1; attempt <= REQUEST_RETRY_COUNT; attempt += 1) {
     try {
-      return await fetchTextOnce(resourcePath)
+      const content = await fetchTextOnce(resourcePath)
+      const actualBytes = Buffer.byteLength(content)
+
+      if (expectedBytes > 0 && actualBytes !== expectedBytes) {
+        throw new Error(
+          `Size mismatch for ${label}: expected ${expectedBytes} bytes, got ${actualBytes}`
+        )
+      }
+
+      return content
     } catch (error) {
       lastError = error
       if (attempt < REQUEST_RETRY_COUNT) {
-        console.warn(`[client-data] retry ${attempt}/${REQUEST_RETRY_COUNT}: ${error.message}`)
-        await sleep(1000 * attempt)
+        const delay = getRetryDelay(attempt)
+        console.warn(
+          `[client-data] retry ${attempt}/${REQUEST_RETRY_COUNT} in ${delay}ms: ${error.message}`
+        )
+        await sleep(delay)
       }
     }
   }
@@ -134,25 +161,67 @@ async function writeTextFile(filePath, content) {
   await writeFile(filePath, content, 'utf8')
 }
 
+async function isExistingFileComplete(filePath, file) {
+  try {
+    const fileStat = await stat(filePath)
+    return file.bytes > 0 ? fileStat.size === file.bytes : fileStat.size > 0
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return false
+    }
+
+    throw error
+  }
+}
+
 async function isExistingBundleComplete(versionDir, files) {
   for (const file of files) {
     const filePath = path.join(versionDir, file.path)
 
-    try {
-      const fileStat = await stat(filePath)
-      if (file.bytes > 0 && fileStat.size !== file.bytes) {
-        return false
-      }
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        return false
-      }
-
-      throw error
+    if (!(await isExistingFileComplete(filePath, file))) {
+      return false
     }
   }
 
   return true
+}
+
+async function downloadBundleFile(versionDir, file, manifestDataPath, manifestText) {
+  const filePath = path.join(versionDir, file.path)
+
+  if (await isExistingFileComplete(filePath, file)) {
+    return { reused: true }
+  }
+
+  const content = file.path === manifestDataPath
+    ? manifestText
+    : await fetchText(file.url || file.path, {
+        expectedBytes: file.bytes,
+        label: file.path,
+      })
+
+  await writeTextFile(filePath, content)
+  return { reused: false }
+}
+
+async function pruneInactiveVersions(activeDataVersion) {
+  const versionsRoot = path.join(OUTPUT_DIR, 'versions')
+  const activeDirName = sanitizePathPart(activeDataVersion)
+
+  let entries = []
+  try {
+    entries = await readdir(versionsRoot, { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return
+    }
+
+    throw error
+  }
+
+  await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && entry.name !== activeDirName)
+    .map((entry) => rm(path.join(versionsRoot, entry.name), { recursive: true, force: true })))
 }
 
 async function runLimited(items, limit, worker) {
@@ -217,6 +286,10 @@ async function main() {
     `[client-data] required bundle files=${files.length} shards=${shardCount} ` +
       `bytes=${totalBytes} output=${path.resolve(OUTPUT_DIR)}`
   )
+  console.log(
+    `[client-data] download concurrency=${DOWNLOAD_CONCURRENCY} ` +
+      `timeout=${REQUEST_TIMEOUT_MS}ms retries=${REQUEST_RETRY_COUNT}`
+  )
 
   if (
     String(existingPointer?.dataVersion || '') === dataVersion &&
@@ -243,13 +316,22 @@ async function main() {
     return
   }
 
-  await rm(OUTPUT_DIR, { recursive: true, force: true })
   await mkdir(versionDir, { recursive: true })
 
+  let downloadedCount = 0
+  let reusedCount = 0
   await runLimited(files, DOWNLOAD_CONCURRENCY, async (file) => {
-    const content = file.path === manifestDataPath ? manifestText : await fetchText(file.url || file.path)
-    await writeTextFile(path.join(versionDir, file.path), content)
+    const result = await downloadBundleFile(versionDir, file, manifestDataPath, manifestText)
+    if (result.reused) {
+      reusedCount += 1
+    } else {
+      downloadedCount += 1
+    }
   })
+
+  if (!(await isExistingBundleComplete(versionDir, files))) {
+    throw new Error(`Downloaded bundle for ${dataVersion} is incomplete`)
+  }
 
   await writeTextFile(
     path.join(OUTPUT_DIR, 'current.json'),
@@ -265,10 +347,12 @@ async function main() {
       activatedAt: new Date().toISOString(),
     })
   )
+  await pruneInactiveVersions(dataVersion)
 
   console.log(
     `[client-data] bundled ${files.length} files for ${dataVersion} ` +
       `with ${shardCount} shards (${(totalBytes / 1024 / 1024).toFixed(2)} MB) ` +
+      `downloaded=${downloadedCount} reused=${reusedCount} ` +
       `in ${Date.now() - startedAt}ms`
   )
 }

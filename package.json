@@ -71,13 +71,20 @@
       }
     ],
     "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "public/icon.ico",
       "artifactName": "aramgg_client Setup ${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "disableWebInstaller": true,
       "include": "installer/installer.nsh",
       "perMachine": false,
       "language": "2052",
