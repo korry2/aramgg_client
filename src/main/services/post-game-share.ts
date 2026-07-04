@@ -729,27 +729,6 @@ function collectKnownAugmentIds(
   return results
 }
 
-function normalizeAugmentSource(rawAugment: AnyRecord, source: string): SnapshotAugment | null {
-  const id = toPositiveInteger(rawAugment.id ?? rawAugment.augmentId)
-  const name = getStringValue(rawAugment.name)
-  if (!id && !name) {
-    return null
-  }
-
-  return {
-    id,
-    augmentId: id,
-    name,
-    rarity: getStringValue(rawAugment.rarity) || 'unknown',
-    iconPath: getStringValue(rawAugment.iconPath || rawAugment.iconUrl) || null,
-    iconUrl: getAugmentIconUrl(getStringValue(rawAugment.iconPath || rawAugment.iconUrl)),
-    winRate: toFiniteNumber(rawAugment.winRate),
-    pickRate: toFiniteNumber(rawAugment.pickRate),
-    recommendScore: toFiniteNumber(rawAugment.recommendScore),
-    source,
-  }
-}
-
 function mergeStats(existing: PostGameShareStatBlock, incoming?: PostGameShareStatBlock): PostGameShareStatBlock {
   if (!incoming) {
     return existing
@@ -954,7 +933,11 @@ async function buildSnapshotUpdateFromPayload(params: {
     (selectedChampionName ? await resolveChampionIdFromName(selectedChampionName) : null)
   const champion = await createChampion(championId, selectedChampionName)
   const augmentBaseById = await loadAugmentDetail()
-  const augmentIds = collectKnownAugmentIds(params.payload, augmentBaseById)
+  const selectedPlayerAugmentIds = collectKnownAugmentIds(selectedPlayer, augmentBaseById)
+  const activePlayerAugmentIds = selectedPlayer === activePlayer
+    ? []
+    : collectKnownAugmentIds(activePlayer, augmentBaseById)
+  const augmentIds = selectedPlayerAugmentIds.length ? selectedPlayerAugmentIds : activePlayerAugmentIds
   const liveAugments = await decorateAugments(
     augmentIds.map((augmentId) => ({
       id: augmentId,
@@ -1103,25 +1086,6 @@ export function resetPostGameShareSnapshot(reason: string): void {
   latestPosterData = null
   liveSnapshotAt = 0
   logger.debug('[post-game-share] snapshot reset', { reason })
-}
-
-export async function recordPostGameAugments(payload: unknown): Promise<void> {
-  if (!isRecord(payload) || !Array.isArray(payload.augments)) {
-    return
-  }
-
-  const championId = toPositiveInteger(payload.championId) || currentSnapshot.champion.id
-  const champion = championId ? await createChampion(championId, currentSnapshot.champion.name) : currentSnapshot.champion
-  const augments = payload.augments
-    .map((augment: unknown) => isRecord(augment) ? normalizeAugmentSource(augment, 'augment-detection') : null)
-    .filter((augment): augment is SnapshotAugment => augment != null)
-  const decoratedAugments = await decorateAugments(augments, champion.id)
-
-  mergeSnapshot({
-    champion,
-    augments: decoratedAugments,
-    sources: ['augment-detection'],
-  })
 }
 
 export async function capturePostGameShareSnapshot(
