@@ -52,7 +52,6 @@
                                     <span>应用更新</span>
                                     <strong>{{ updateTitle }}</strong>
                                 </div>
-                                <small v-if="updateDetailMessage">{{ updateDetailMessage }}</small>
                             </div>
                             <div class="update-actions">
                                 <button
@@ -471,29 +470,6 @@ const updateTitle = computed(() => {
     }
 
     return versionInfo.value?.isNewer && latestVersion ? `可更新${versionSuffix}` : '自动更新'
-})
-
-const updateMessage = computed(() => {
-    if (appUpdateState.value?.error) {
-        return appUpdateState.value.error
-    }
-
-    if (appUpdateState.value?.message) {
-        return appUpdateState.value.message
-    }
-
-    return versionHint.value || '自动更新待命'
-})
-
-const updateDetailMessage = computed(() => {
-    if (updatePhase.value === 'disabled') {
-        return ''
-    }
-
-    const message = updateMessage.value.trim()
-    const title = updateTitle.value.trim()
-
-    return message && message !== title ? message : ''
 })
 
 const updateIsChecking = computed(() => updatePhase.value === 'checking')
@@ -1481,31 +1457,6 @@ onBeforeUnmount(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.update-copy small {
-    display: block;
-    margin-top: 2px;
-    color: #859491;
-    font-size: 9px;
-    line-height: 1.2;
-    overflow: hidden;
-    text-wrap: pretty;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-@supports (-webkit-line-clamp: 1) {
-    .update-copy small {
-        white-space: normal;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 1;
-    }
-}
-
-.update-panel.phase-error .update-copy small {
-    color: #ffb4ab;
 }
 
 .update-actions {
