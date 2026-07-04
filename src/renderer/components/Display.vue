@@ -328,7 +328,7 @@
                 type="button"
                 title="分享战报"
                 :disabled="postGameShareLoading"
-                @click="requestPostGameSharePoster({ openOnReady: true })"
+                @click="openPostGameShareFromFloatingButton"
             >
                 <Share2 class="icon" />
                 <span>{{ postGameShareFloatingLabel }}</span>
@@ -344,6 +344,7 @@ import OverlayPreferences from './OverlayPreferences.vue'
 import ChampionMonitor from './ChampionMonitor.vue'
 import PostGameShareModal from './PostGameShareModal.vue'
 import { electronAPI } from '../native/electron-api.js'
+import { trackAnalyticsEvent } from '../services/analytics.ts'
 import {
     ChevronRight,
     ClipboardList,
@@ -588,6 +589,23 @@ const postGameShareFloatingLabel = computed(() => {
 
     return '分享战报'
 })
+
+const getPostGameShareAnalyticsParams = (poster = postGamePoster.value, extra = {}) => ({
+    status: poster?.status || 'unknown',
+    result: poster?.result || 'unknown',
+    champion_id: poster?.champion?.id ?? null,
+    augment_count: Array.isArray(poster?.augments) ? poster.augments.length : 0,
+    has_stats: hasPostGameStats(poster),
+    ...extra,
+})
+
+const trackPostGameShareEvent = (name, params = {}) => {
+    try {
+        trackAnalyticsEvent(name, getPostGameShareAnalyticsParams(postGamePoster.value, params))
+    } catch (error) {
+        console.warn('Failed to track post-game share event:', error)
+    }
+}
 
 const loadVersionInfo = async () => {
     try {
@@ -846,6 +864,13 @@ const closePostGameShare = () => {
     showPostGameShare.value = false
 }
 
+const openPostGameShareFromFloatingButton = () => {
+    trackPostGameShareEvent('post_game_share_button_click', {
+        button: 'floating_share',
+    })
+    requestPostGameSharePoster({ openOnReady: true, analyticsTrigger: 'floating_share' })
+}
+
 const applyPostGamePoster = (poster, openOnReady = true) => {
     if (!poster || poster.status === 'unavailable') {
         return false
@@ -859,7 +884,12 @@ const applyPostGamePoster = (poster, openOnReady = true) => {
     return canSharePoster
 }
 
-const requestPostGameSharePoster = async ({ openOnReady = true, refresh = false, silent = false } = {}) => {
+const requestPostGameSharePoster = async ({
+    openOnReady = true,
+    refresh = false,
+    silent = false,
+    analyticsTrigger = '',
+} = {}) => {
     if (postGameShareLoading.value) {
         return
     }
@@ -871,6 +901,11 @@ const requestPostGameSharePoster = async ({ openOnReady = true, refresh = false,
             : await electronAPI.postGameShare.getLatest()
 
         if (applyPostGamePoster(result?.data, openOnReady)) {
+            if (openOnReady && analyticsTrigger) {
+                trackPostGameShareEvent('post_game_share_modal_open', {
+                    trigger: analyticsTrigger,
+                })
+            }
             return
         }
 
@@ -898,16 +933,25 @@ const createMockPostGameSharePoster = async () => {
         return
     }
 
+    trackPostGameShareEvent('post_game_share_button_click', {
+        button: 'mock_generate',
+    })
     postGameShareLoading.value = true
     try {
         const result = await electronAPI.postGameShare.createMock()
         if (applyPostGamePoster(result?.data, true)) {
+            trackAnalyticsEvent('post_game_share_mock_success', getPostGameShareAnalyticsParams(result?.data, {
+                trigger: 'mock_generate',
+            }))
             return
         }
 
         throw new Error(result?.error || '模拟海报生成失败')
     } catch (error) {
         console.warn('Failed to create mock post-game share poster:', error)
+        trackPostGameShareEvent('post_game_share_mock_failure', {
+            error_message: error?.message || String(error || 'unknown'),
+        })
         testStatus.value = {
             type: 'error',
             message: '模拟生成失败：' + (error.message || error),

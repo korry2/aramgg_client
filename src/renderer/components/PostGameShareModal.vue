@@ -58,6 +58,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CheckCircle2, CircleAlert, Copy, Download, X } from 'lucide-vue-next'
 import { electronAPI } from '../native/electron-api.js'
+import { trackAnalyticsEvent } from '../services/analytics.ts'
 
 const props = defineProps({
   poster: {
@@ -106,6 +107,37 @@ function buildChampionDisplayName(champion) {
 }
 
 const championName = computed(() => buildChampionDisplayName(props.poster?.champion))
+
+function hasPosterStats(poster) {
+  const stats = poster?.stats
+  if (!stats) return false
+
+  return [stats.kills, stats.deaths, stats.assists].every((value) => {
+    if (value == null) return false
+    if (typeof value === 'string' && !value.trim()) return false
+    return Number.isFinite(Number(value))
+  })
+}
+
+function getPosterAnalyticsParams(extra = {}) {
+  const poster = props.poster || {}
+  return {
+    status: poster.status || 'unknown',
+    result: poster.result || 'unknown',
+    champion_id: poster.champion?.id ?? null,
+    augment_count: Array.isArray(poster.augments) ? poster.augments.length : 0,
+    has_stats: hasPosterStats(poster),
+    ...extra,
+  }
+}
+
+function trackPostGameShareEvent(name, params = {}) {
+  try {
+    trackAnalyticsEvent(name, getPosterAnalyticsParams(params))
+  } catch (error) {
+    console.warn('Failed to track post-game share event:', error)
+  }
+}
 
 function safeNumber(value) {
   const numberValue = Number(value)
@@ -565,12 +597,18 @@ function showToast(message, type = 'success') {
   }, 2200)
 }
 
-async function runPosterAction(action) {
+async function runPosterAction(action, actionName) {
   actionPending.value = true
   try {
     await drawPoster()
     await action(exportPosterDataUrl())
   } catch (error) {
+    if (actionName) {
+      trackPostGameShareEvent(`post_game_share_${actionName}_failure`, {
+        button: actionName,
+        error_message: error?.message || String(error || 'unknown'),
+      })
+    }
     showToast(error?.message || '操作失败', 'error')
   } finally {
     actionPending.value = false
@@ -578,26 +616,41 @@ async function runPosterAction(action) {
 }
 
 async function copyPoster() {
+  trackPostGameShareEvent('post_game_share_copy_click', {
+    button: 'copy',
+  })
   await runPosterAction(async (dataUrl) => {
     const result = await electronAPI.postGameShare.copyImage(dataUrl)
     if (!result?.success) {
       throw new Error(result?.error || '复制失败')
     }
+    trackPostGameShareEvent('post_game_share_copy_success', {
+      button: 'copy',
+    })
     showToast('海报已复制')
-  })
+  }, 'copy')
 }
 
 async function savePoster() {
+  trackPostGameShareEvent('post_game_share_save_click', {
+    button: 'save',
+  })
   await runPosterAction(async (dataUrl) => {
     const result = await electronAPI.postGameShare.saveImage(dataUrl, buildSuggestedFilename())
     if (result?.cancelled) {
+      trackPostGameShareEvent('post_game_share_save_cancel', {
+        button: 'save',
+      })
       return
     }
     if (!result?.success) {
       throw new Error(result?.error || '保存失败')
     }
+    trackPostGameShareEvent('post_game_share_save_success', {
+      button: 'save',
+    })
     showToast('海报已保存')
-  })
+  }, 'save')
 }
 
 watch(
