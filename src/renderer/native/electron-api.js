@@ -40,6 +40,10 @@ export const electronAPI = {
     setEnabled: (...args) => requireElectronAPI().analytics.setEnabled(...args),
     track: (...args) => requireElectronAPI().analytics.track(...args),
   },
+  locale: {
+    get: (...args) => requireElectronAPI().locale.get(...args),
+    set: (...args) => requireElectronAPI().locale.set(...args),
+  },
   screenshot: {
     capture: (...args) => requireElectronAPI().screenshot.capture(...args),
     analyze: (...args) => requireElectronAPI().screenshot.analyze(...args),

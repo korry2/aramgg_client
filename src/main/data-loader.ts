@@ -9,7 +9,10 @@ type FetchJsonOptions = {
   force?: boolean
   ttlMs?: number
   timeoutMs?: number
+  locale?: string
 }
+
+type SupportedDataLocale = 'zh-CN' | 'en-US' | 'zh-TW'
 
 type ClientConfig = {
   service?: string
@@ -51,12 +54,28 @@ type ActiveDataSet = {
   config: ClientConfig
   dataVersion: string
   manifest: any
+  locale: SupportedDataLocale
+}
+
+type ManifestLoadResult = {
+  manifest: any
+  locale: SupportedDataLocale
 }
 
 export const DATA_API_ORIGIN =
   process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
 export const DATA_API_PREFIX = '/api/client/v1'
 export const DATA_API_CONFIG_PATH = `${DATA_API_PREFIX}/config`
+export const DEFAULT_DATA_LOCALE: SupportedDataLocale = 'zh-CN'
+export const SUPPORTED_DATA_LOCALES: Array<{
+  code: SupportedDataLocale
+  label: string
+  nativeLabel: string
+}> = [
+  { code: 'zh-CN', label: 'Simplified Chinese', nativeLabel: '简体中文' },
+  { code: 'en-US', label: 'English', nativeLabel: 'English' },
+  { code: 'zh-TW', label: 'Traditional Chinese', nativeLabel: '繁體中文' },
+]
 
 const CONFIG_TTL_MS = 5 * 60 * 1000
 const DATA_TTL_MS = 12 * 60 * 60 * 1000
@@ -82,13 +101,13 @@ const detailCache = new Map<string, any>()
 const augmentDetailCache = new Map<string, Record<string, any>>()
 const championAugmentStatsCache = new Map<string, any[]>()
 const championAugmentStatsPending = new Map<string, Promise<any[]>>()
+const activeDataSetPromises = new Map<SupportedDataLocale, Promise<ActiveDataSet>>()
+const activeDataSetCaches = new Map<SupportedDataLocale, { data: ActiveDataSet; createdAt: number }>()
+const activeDataSetRefreshPromises = new Map<SupportedDataLocale, Promise<ActiveDataSet | null>>()
+const backgroundRefreshErrors = new Map<SupportedDataLocale, { signature: string; loggedAt: number }>()
 let electronFetch: any = null
 let dataRootDirPromise: Promise<string> | null = null
-let activeDataSetPromise: Promise<ActiveDataSet> | null = null
-let activeDataSetCache: { data: ActiveDataSet; createdAt: number } | null = null
-let activeDataSetRefreshPromise: Promise<ActiveDataSet | null> | null = null
-let lastBackgroundRefreshErrorSignature = ''
-let lastBackgroundRefreshErrorLogAt = 0
+let activeDataLocale: SupportedDataLocale = DEFAULT_DATA_LOCALE
 
 const rarityMap: Record<string, string> = {
   0: 'kSilver',
@@ -97,6 +116,86 @@ const rarityMap: Record<string, string> = {
   silver: 'kSilver',
   gold: 'kGold',
   prismatic: 'kPrismatic',
+}
+
+const localeAliases = new Map<string, SupportedDataLocale>([
+  ['zh', 'zh-CN'],
+  ['zh-cn', 'zh-CN'],
+  ['zh-hans', 'zh-CN'],
+  ['zh-sg', 'zh-CN'],
+  ['cn', 'zh-CN'],
+  ['en', 'en-US'],
+  ['en-us', 'en-US'],
+  ['en-gb', 'en-US'],
+  ['us', 'en-US'],
+  ['zh-tw', 'zh-TW'],
+  ['zh-hant', 'zh-TW'],
+  ['zh-hk', 'zh-TW'],
+  ['zh-mo', 'zh-TW'],
+  ['tw', 'zh-TW'],
+])
+
+export function tryNormalizeDataLocale(value: unknown): SupportedDataLocale | null {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/_/g, '-')
+    .toLowerCase()
+
+  return localeAliases.get(normalized) || null
+}
+
+export function normalizeDataLocale(value: unknown): SupportedDataLocale {
+  return tryNormalizeDataLocale(value) || DEFAULT_DATA_LOCALE
+}
+
+export function getDataLocale(): SupportedDataLocale {
+  return activeDataLocale
+}
+
+export function setDataLocale(locale: unknown): SupportedDataLocale {
+  const normalized = normalizeDataLocale(locale)
+  activeDataLocale = normalized
+  return activeDataLocale
+}
+
+function isLocaleDirectoryName(value: string): boolean {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/_/g, '-')
+    .toLowerCase()
+
+  return localeAliases.has(normalized)
+}
+
+function getClientConfigLocale(
+  config: ClientConfig | null | undefined,
+  fallbackLocale: unknown = activeDataLocale
+): SupportedDataLocale {
+  if (config?.locale) {
+    return normalizeDataLocale(config.locale)
+  }
+
+  return normalizeDataLocale(fallbackLocale)
+}
+
+function getVersionedDataCacheKey(
+  locale: SupportedDataLocale,
+  dataVersion: string,
+  dataPath: string
+): string {
+  return `${locale}:${dataVersion}:${normalizeDataPath(dataPath)}`
+}
+
+function setVersionedDataCache(
+  locale: SupportedDataLocale,
+  dataVersion: string,
+  dataPath: string,
+  payload: any
+): void {
+  cache.set(getVersionedDataCacheKey(locale, dataVersion, dataPath), {
+    data: payload,
+    createdAt: Date.now(),
+  })
 }
 
 function getApiUrl(resourcePath: string): string {
@@ -215,6 +314,15 @@ function normalizeDataPath(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\/+/, '')
 }
 
+function normalizeManifestResourcePath(value: string): string {
+  const normalized = value.replace(/\\/g, '/')
+  if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/')) {
+    return normalized
+  }
+
+  return normalizeDataPath(normalized)
+}
+
 function getVersionDataPrefix(dataVersion: string): string {
   return `${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}`
 }
@@ -241,20 +349,37 @@ async function getDataRootDir(): Promise<string> {
   return dataRootDirPromise
 }
 
-async function readLocalDataVersionDirs(dataRootDir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(path.join(dataRootDir, 'versions'), { withFileTypes: true })
-    return entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .filter(Boolean)
-  } catch (error: any) {
-    if (error.code !== 'ENOENT') {
-      logger.warn(`Failed to read local data versions from ${dataRootDir}:`, error.message)
-    }
+async function readLocalDataVersionDirs(
+  dataRootDir: string,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<string[]> {
+  const normalizedLocale = normalizeDataLocale(locale)
+  const versionsRoots = normalizedLocale === DEFAULT_DATA_LOCALE
+    ? [
+        path.join(dataRootDir, 'versions'),
+        path.join(dataRootDir, 'versions', DEFAULT_DATA_LOCALE),
+      ]
+    : [path.join(dataRootDir, 'versions', sanitizePathPart(normalizedLocale))]
+  const versions = new Set<string>()
 
-    return []
+  for (const versionsRoot of versionsRoots) {
+    const isRootVersionsDir = path.basename(versionsRoot) === 'versions'
+    try {
+      const entries = await readdir(versionsRoot, { withFileTypes: true })
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .filter(Boolean)
+        .filter((entryName) => !isRootVersionsDir || !isLocaleDirectoryName(entryName))
+        .forEach((entryName) => versions.add(entryName))
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        logger.warn(`Failed to read local data versions from ${versionsRoot}:`, error.message)
+      }
+    }
   }
+
+  return [...versions]
 }
 
 function getBundledDataRootDirs(): string[] {
@@ -269,32 +394,54 @@ function getBundledDataRootDirs(): string[] {
   return candidates
 }
 
-async function listLocalDataVersions(): Promise<string[]> {
+async function listLocalDataVersions(locale: SupportedDataLocale = activeDataLocale): Promise<string[]> {
   const versions = new Set<string>()
   const dataRootDir = await getDataRootDir()
 
-  const rootVersions = await readLocalDataVersionDirs(dataRootDir)
+  const rootVersions = await readLocalDataVersionDirs(dataRootDir, locale)
   rootVersions.forEach((version) => versions.add(version))
 
   return [...versions].sort(compareDataVersions).reverse()
 }
 
-async function getVersionDir(dataVersion: string): Promise<string> {
+async function getVersionDir(
+  dataVersion: string,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<string> {
   const dataRootDir = await getDataRootDir()
-  const versionDir = path.join(dataRootDir, 'versions', sanitizePathPart(dataVersion))
+  const normalizedLocale = normalizeDataLocale(locale)
+  const versionDir = normalizedLocale === DEFAULT_DATA_LOCALE
+    ? path.join(dataRootDir, 'versions', sanitizePathPart(dataVersion))
+    : path.join(dataRootDir, 'versions', sanitizePathPart(normalizedLocale), sanitizePathPart(dataVersion))
   await mkdir(versionDir, { recursive: true })
   return versionDir
 }
 
-async function getDataFileCandidatePaths(dataVersion: string, dataPath: string): Promise<string[]> {
+async function getDataFileCandidatePaths(
+  dataVersion: string,
+  dataPath: string,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<string[]> {
   const dataRootDir = await getDataRootDir()
   const normalizedPath = normalizeDataPath(dataPath)
-  return [
-    path.join(dataRootDir, 'versions', sanitizePathPart(dataVersion), normalizedPath),
-    ...getBundledDataRootDirs().map((bundledDataRootDir) =>
-      path.join(bundledDataRootDir, 'versions', sanitizePathPart(dataVersion), normalizedPath)
+  const normalizedLocale = normalizeDataLocale(locale)
+  const versionPathCandidates = normalizedLocale === DEFAULT_DATA_LOCALE
+    ? [
+        path.join('versions', sanitizePathPart(DEFAULT_DATA_LOCALE), sanitizePathPart(dataVersion), normalizedPath),
+        path.join('versions', sanitizePathPart(dataVersion), normalizedPath),
+      ]
+    : [
+        path.join('versions', sanitizePathPart(normalizedLocale), sanitizePathPart(dataVersion), normalizedPath),
+      ]
+
+  const candidates = [
+    ...versionPathCandidates.map((relativePath) => path.join(dataRootDir, relativePath)),
+    ...getBundledDataRootDirs().flatMap((bundledDataRootDir) =>
+      versionPathCandidates.map((relativePath) => path.join(bundledDataRootDir, relativePath))
     ),
   ]
+
+  return [...new Set(candidates)]
 }
 
 async function readJsonFile(filePath: string): Promise<any | null> {
@@ -329,43 +476,81 @@ async function writeJsonFileAtomic(filePath: string, payload: any): Promise<void
   await rename(tempPath, filePath)
 }
 
-async function readCachedCurrentDataPointer(): Promise<any | null> {
-  const dataRootDir = await getDataRootDir()
-  return readJsonFile(path.join(dataRootDir, CURRENT_DATA_FILE))
+function getCurrentDataFileNames(locale: SupportedDataLocale): string[] {
+  const normalizedLocale = normalizeDataLocale(locale)
+  if (normalizedLocale === DEFAULT_DATA_LOCALE) {
+    return [CURRENT_DATA_FILE, `current.${DEFAULT_DATA_LOCALE}.json`]
+  }
+
+  return [`current.${normalizedLocale}.json`]
 }
 
-async function readBundledCurrentDataPointers(): Promise<any[]> {
+function getWritableCurrentDataFileName(locale: SupportedDataLocale): string {
+  const normalizedLocale = normalizeDataLocale(locale)
+  return normalizedLocale === DEFAULT_DATA_LOCALE
+    ? CURRENT_DATA_FILE
+    : `current.${normalizedLocale}.json`
+}
+
+async function readCachedCurrentDataPointer(
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<any | null> {
+  const dataRootDir = await getDataRootDir()
+  for (const fileName of getCurrentDataFileNames(locale)) {
+    const pointer = await readJsonFile(path.join(dataRootDir, fileName))
+    if (pointer) {
+      return pointer
+    }
+  }
+
+  return null
+}
+
+async function readBundledCurrentDataPointers(
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<any[]> {
   const pointers: any[] = []
   for (const bundledDataRootDir of getBundledDataRootDirs()) {
-    const bundledPointer = await readJsonFile(path.join(bundledDataRootDir, CURRENT_DATA_FILE))
-    if (bundledPointer) {
-      logger.debug('[data-loader] bundled data pointer found', {
-        dataVersion: bundledPointer.dataVersion || null,
-      })
-      pointers.push(bundledPointer)
+    for (const fileName of getCurrentDataFileNames(locale)) {
+      const bundledPointer = await readJsonFile(path.join(bundledDataRootDir, fileName))
+      if (bundledPointer) {
+        logger.debug('[data-loader] bundled data pointer found', {
+          dataVersion: bundledPointer.dataVersion || null,
+          locale: bundledPointer.locale || locale,
+          fileName,
+        })
+        pointers.push(bundledPointer)
+      }
     }
   }
 
   return pointers
 }
 
-async function readCurrentDataPointerCandidates(): Promise<Array<{ pointer: any; source: string }>> {
+async function readCurrentDataPointerCandidates(
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<Array<{ pointer: any; source: string }>> {
   const candidates: Array<{ pointer: any; source: string }> = []
-  const cachedPointer = await readCachedCurrentDataPointer()
+  const cachedPointer = await readCachedCurrentDataPointer(locale)
   if (cachedPointer) {
     candidates.push({ pointer: cachedPointer, source: 'cache' })
   }
 
-  const bundledPointers = await readBundledCurrentDataPointers()
+  const bundledPointers = await readBundledCurrentDataPointers(locale)
   bundledPointers.forEach((pointer) => candidates.push({ pointer, source: 'bundled' }))
 
   return candidates
 }
 
-async function writeCurrentDataPointer(config: ClientConfig): Promise<void> {
+async function writeCurrentDataPointer(
+  config: ClientConfig,
+  locale: SupportedDataLocale = getClientConfigLocale(config)
+): Promise<void> {
   const dataRootDir = await getDataRootDir()
-  await writeJsonFileAtomic(path.join(dataRootDir, CURRENT_DATA_FILE), {
+  const normalizedLocale = normalizeDataLocale(locale)
+  await writeJsonFileAtomic(path.join(dataRootDir, getWritableCurrentDataFileName(normalizedLocale)), {
     schemaVersion: DATA_CACHE_SCHEMA_VERSION,
+    locale: normalizedLocale,
     dataVersion: config.dataVersion,
     gamePatch: config.gamePatch || '',
     generatedAt: config.generatedAt || '',
@@ -411,10 +596,36 @@ function getManifestFileEntries(manifest: any): any[] {
   return []
 }
 
+function getManifestEntryLogicalPath(entry: any): string {
+  const directPath = normalizeDataPath(String(entry?.path || entry?.logicalPath || ''))
+  if (directPath) {
+    return directPath
+  }
+
+  const urlPath = normalizeDataPath(String(entry?.url || ''))
+  for (const marker of [
+    'champion-shards/',
+    'champions/',
+  ]) {
+    const markerIndex = urlPath.indexOf(marker)
+    if (markerIndex >= 0) {
+      return urlPath.slice(markerIndex)
+    }
+  }
+
+  for (const fileName of ['augments.json', 'champions.json', 'items.json', 'manifest.json']) {
+    if (urlPath.endsWith(`/${fileName}`) || urlPath === fileName) {
+      return fileName
+    }
+  }
+
+  return urlPath
+}
+
 function findManifestEntry(manifest: any, logicalPath: string): any | null {
   const normalized = normalizeDataPath(logicalPath)
   return getManifestFileEntries(manifest).find((file: any) => {
-    const filePath = normalizeDataPath(String(file.path || file.url || ''))
+    const filePath = getManifestEntryLogicalPath(file)
     return filePath === normalized || filePath.endsWith(`/${normalized}`)
   }) || null
 }
@@ -423,12 +634,12 @@ function findManifestPath(manifest: any, logicalPath: string): string {
   const normalized = normalizeDataPath(logicalPath)
   const entry = findManifestEntry(manifest, normalized)
 
-  return normalizeDataPath(String(entry?.path || normalized))
+  return normalizeManifestResourcePath(String(entry?.url || entry?.path || normalized))
 }
 
 function findManifestPathIfExists(manifest: any, logicalPath: string): string | null {
   const entry = findManifestEntry(manifest, logicalPath)
-  return entry ? normalizeDataPath(String(entry.path || entry.url || logicalPath)) : null
+  return entry ? normalizeManifestResourcePath(String(entry.url || entry.path || logicalPath)) : null
 }
 
 function isRequiredBundledDataPath(dataPath: string): boolean {
@@ -444,7 +655,7 @@ function collectRequiredVersionDataFiles(manifest: any): Array<{ path: string; b
 
   getManifestFileEntries(manifest)
     .map((entry: any) => ({
-      path: normalizeDataPath(String(entry.path || entry.url || '')),
+      path: getManifestEntryLogicalPath(entry),
       bytes: Number(entry.bytes || 0),
     }))
     .filter((entry: any) => entry.path && isRequiredBundledDataPath(entry.path))
@@ -453,8 +664,13 @@ function collectRequiredVersionDataFiles(manifest: any): Array<{ path: string; b
   return [...filesByPath.values()].sort((left, right) => left.path.localeCompare(right.path))
 }
 
-async function hasDataFile(dataVersion: string, dataPath: string, expectedBytes = 0): Promise<boolean> {
-  for (const filePath of await getDataFileCandidatePaths(dataVersion, dataPath)) {
+async function hasDataFile(
+  dataVersion: string,
+  dataPath: string,
+  expectedBytes = 0,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<boolean> {
+  for (const filePath of await getDataFileCandidatePaths(dataVersion, dataPath, locale)) {
     const fileSize = await getJsonFileSize(filePath)
     if (fileSize == null) {
       continue
@@ -470,11 +686,16 @@ async function hasDataFile(dataVersion: string, dataPath: string, expectedBytes 
   return false
 }
 
-async function isCompleteVersionDataSet(dataVersion: string, manifest: any): Promise<boolean> {
+async function isCompleteVersionDataSet(
+  dataVersion: string,
+  manifest: any,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<boolean> {
   const requiredFiles = collectRequiredVersionDataFiles(manifest)
   for (const file of requiredFiles) {
-    if (!await hasDataFile(dataVersion, file.path, file.bytes)) {
+    if (!await hasDataFile(dataVersion, file.path, file.bytes, locale)) {
       logger.debug('[data-loader] data version completeness check missing file', {
+        locale,
         dataVersion,
         path: file.path,
         expectedBytes: file.bytes || null,
@@ -486,9 +707,13 @@ async function isCompleteVersionDataSet(dataVersion: string, manifest: any): Pro
   return true
 }
 
-async function readDataFileFromDisk(dataVersion: string, dataPath: string): Promise<any | null> {
+async function readDataFileFromDisk(
+  dataVersion: string,
+  dataPath: string,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<any | null> {
   const normalizedPath = normalizeDataPath(dataPath)
-  for (const filePath of await getDataFileCandidatePaths(dataVersion, normalizedPath)) {
+  for (const filePath of await getDataFileCandidatePaths(dataVersion, normalizedPath, locale)) {
     const payload = await readJsonFile(filePath)
     if (payload != null) {
       return payload
@@ -498,20 +723,30 @@ async function readDataFileFromDisk(dataVersion: string, dataPath: string): Prom
   return null
 }
 
-async function writeDataFileToDisk(dataVersion: string, dataPath: string, payload: any): Promise<void> {
-  const versionDir = await getVersionDir(dataVersion)
+async function writeDataFileToDisk(
+  dataVersion: string,
+  dataPath: string,
+  payload: any,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<void> {
+  const versionDir = await getVersionDir(dataVersion, locale)
   await writeJsonFileAtomic(path.join(versionDir, normalizeDataPath(dataPath)), payload)
 }
 
-async function readCachedVersionedDataFile(dataVersion: string, dataPath: string): Promise<any | null> {
+async function readCachedVersionedDataFile(
+  dataVersion: string,
+  dataPath: string,
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<any | null> {
+  const normalizedLocale = normalizeDataLocale(locale)
   const normalizedPath = normalizeDataPath(dataPath)
-  const cacheKey = `${dataVersion}:${normalizedPath}`
+  const cacheKey = getVersionedDataCacheKey(normalizedLocale, dataVersion, normalizedPath)
   const cached = cache.get(cacheKey)
   if (cached) {
     return cached.data
   }
 
-  const payload = await readDataFileFromDisk(dataVersion, normalizedPath)
+  const payload = await readDataFileFromDisk(dataVersion, normalizedPath, normalizedLocale)
   if (payload != null) {
     cache.set(cacheKey, { data: payload, createdAt: Date.now() })
   }
@@ -526,12 +761,14 @@ async function fetchVersionedDataFile(
   options: FetchJsonOptions = {}
 ): Promise<any> {
   const startedAt = Date.now()
+  const locale = normalizeDataLocale(options.locale || activeDataLocale)
   const normalizedPath = normalizeDataPath(dataPath)
-  const cacheKey = `${dataVersion}:${normalizedPath}`
+  const cacheKey = getVersionedDataCacheKey(locale, dataVersion, normalizedPath)
   const force = options.force === true
   const cached = cache.get(cacheKey)
   if (!force && cached && Date.now() - cached.createdAt < DATA_TTL_MS) {
     logger.debug('[data-loader] memory cache hit', {
+      locale,
       dataVersion,
       path: normalizedPath,
       durationMs: getElapsedMs(startedAt),
@@ -547,10 +784,11 @@ async function fetchVersionedDataFile(
 
   const request = (async () => {
     if (!force) {
-      const diskPayload = await readDataFileFromDisk(dataVersion, normalizedPath)
+      const diskPayload = await readDataFileFromDisk(dataVersion, normalizedPath, locale)
       if (diskPayload != null) {
         cache.set(cacheKey, { data: diskPayload, createdAt: Date.now() })
         logger.debug('[data-loader] disk cache hit', {
+          locale,
           dataVersion,
           path: normalizedPath,
           durationMs: getElapsedMs(startedAt),
@@ -562,6 +800,7 @@ async function fetchVersionedDataFile(
     try {
       const resolvedResourcePath = resolveVersionResourcePath(dataVersion, resourcePath || normalizedPath)
       logger.debug('[data-loader] remote fetch start', {
+        locale,
         dataVersion,
         path: normalizedPath,
         resourcePath: resolvedResourcePath,
@@ -571,20 +810,22 @@ async function fetchVersionedDataFile(
         resolvedResourcePath,
         { force, ttlMs: options.ttlMs, timeoutMs: options.timeoutMs }
       )
-      await writeDataFileToDisk(dataVersion, normalizedPath, payload)
+      await writeDataFileToDisk(dataVersion, normalizedPath, payload, locale)
       cache.set(cacheKey, { data: payload, createdAt: Date.now() })
       logger.debug('[data-loader] remote fetch completed', {
+        locale,
         dataVersion,
         path: normalizedPath,
         durationMs: getElapsedMs(startedAt),
       })
       return payload
     } catch (error: any) {
-      const diskPayload = await readDataFileFromDisk(dataVersion, normalizedPath)
+      const diskPayload = await readDataFileFromDisk(dataVersion, normalizedPath, locale)
       if (diskPayload != null) {
-        logger.warn(`Failed to refresh ${normalizedPath}; using cached data:`, error.message)
+        logger.warn(`Failed to refresh ${locale}/${normalizedPath}; using cached data:`, error.message)
         cache.set(cacheKey, { data: diskPayload, createdAt: Date.now() })
         logger.debug('[data-loader] disk fallback hit', {
+          locale,
           dataVersion,
           path: normalizedPath,
           durationMs: getElapsedMs(startedAt),
@@ -602,21 +843,173 @@ async function fetchVersionedDataFile(
   return request
 }
 
+function getDataApiConfigCandidates(locale: SupportedDataLocale): string[] {
+  if (locale === DEFAULT_DATA_LOCALE) {
+    return [DATA_API_CONFIG_PATH]
+  }
+
+  return [
+    `${DATA_API_CONFIG_PATH}?locale=${encodeURIComponent(locale)}`,
+    `${DATA_API_CONFIG_PATH}?lang=${encodeURIComponent(locale)}`,
+    `${DATA_API_CONFIG_PATH}?language=${encodeURIComponent(locale)}`,
+    `${DATA_API_PREFIX}/${encodeURIComponent(locale)}/config`,
+    `${DATA_API_CONFIG_PATH}/${encodeURIComponent(locale)}`,
+    DATA_API_CONFIG_PATH,
+  ]
+}
+
+function isRemoteNotFoundError(error: any): boolean {
+  const message = String(error?.message || error || '')
+  return /\b404\b/.test(message) || /not_found/i.test(message)
+}
+
+function normalizeClientConfig(
+  config: ClientConfig,
+  fallbackLocale: SupportedDataLocale
+): ClientConfig {
+  return {
+    ...config,
+    locale: normalizeDataLocale(config.locale || fallbackLocale),
+  }
+}
+
 export async function loadDataApiConfig(options: FetchJsonOptions = {}): Promise<ClientConfig> {
+  const locale = normalizeDataLocale(options.locale || activeDataLocale)
+  const candidates = getDataApiConfigCandidates(locale)
+  let fallbackConfig: ClientConfig | null = null
+  let lastError: any = null
+
+  for (const resourcePath of candidates) {
+    try {
+      const config = await fetchJson(resourcePath, {
+        ...options,
+        ttlMs: options.ttlMs ?? CONFIG_TTL_MS,
+      })
+      const configLocale = getClientConfigLocale(config, locale)
+      const normalizedConfig = normalizeClientConfig(config, configLocale)
+
+      if (locale === DEFAULT_DATA_LOCALE || configLocale === locale || !config?.locale) {
+        return normalizedConfig
+      }
+
+      if (!fallbackConfig) {
+        fallbackConfig = normalizedConfig
+      }
+
+      logger.debug('[data-loader] remote config locale mismatch; trying next candidate', {
+        requestedLocale: locale,
+        configLocale,
+        resourcePath,
+      })
+    } catch (error: any) {
+      lastError = error
+      if (!isRemoteNotFoundError(error)) {
+        break
+      }
+
+      logger.debug('[data-loader] remote config candidate not found', {
+        locale,
+        resourcePath,
+      })
+    }
+  }
+
+  if (fallbackConfig) {
+    logger.warn('[data-loader] requested data locale unavailable; using returned locale', {
+      requestedLocale: locale,
+      configLocale: fallbackConfig.locale || null,
+    })
+    return fallbackConfig
+  }
+
+  if (lastError) {
+    throw lastError
+  }
+
   return fetchJson(DATA_API_CONFIG_PATH, {
     ...options,
     ttlMs: options.ttlMs ?? CONFIG_TTL_MS,
   })
 }
 
-async function loadManifestForConfig(config: ClientConfig): Promise<any> {
+function getManifestResourceCandidates(
+  config: ClientConfig,
+  dataVersion: string,
+  locale: SupportedDataLocale
+): string[] {
+  const candidates = [
+    config.manifest || '',
+  ]
+
+  if (locale !== DEFAULT_DATA_LOCALE) {
+    candidates.push(
+      `${getVersionDataPrefix(dataVersion)}/${encodeURIComponent(locale)}/manifest.json`,
+      `${DATA_API_PREFIX}/data/${encodeURIComponent(locale)}/${encodeURIComponent(dataVersion)}/manifest.json`,
+      `${getVersionDataPrefix(dataVersion)}/manifest.${encodeURIComponent(locale)}.json`
+    )
+  }
+
+  candidates.push(`${getVersionDataPrefix(dataVersion)}/manifest.json`)
+
+  return [...new Set(candidates.filter(Boolean))]
+}
+
+async function loadManifestForConfig(
+  config: ClientConfig,
+  locale: SupportedDataLocale
+): Promise<ManifestLoadResult> {
   const dataVersion = String(config.dataVersion || '')
   if (!dataVersion) {
     throw new Error('Remote client data config is missing dataVersion')
   }
 
-  const manifestPath = config.manifest || `${getVersionDataPrefix(dataVersion)}/manifest.json`
-  return fetchVersionedDataFile(dataVersion, 'manifest.json', manifestPath, { force: true })
+  const candidates = getManifestResourceCandidates(config, dataVersion, locale)
+  let fallbackManifest: any | null = null
+  let lastError: any = null
+
+  for (const manifestPath of candidates) {
+    try {
+      const manifest = await fetchJson(manifestPath, {
+        force: true,
+        ttlMs: DATA_TTL_MS,
+        timeoutMs: DATA_FETCH_TIMEOUT_MS,
+      })
+      const manifestLocale = manifest?.locale ? normalizeDataLocale(manifest.locale) : locale
+      if (manifestLocale === locale || !manifest?.locale) {
+        await writeDataFileToDisk(dataVersion, 'manifest.json', manifest, locale)
+        setVersionedDataCache(locale, dataVersion, 'manifest.json', manifest)
+        return { manifest, locale }
+      }
+
+      if (!fallbackManifest) {
+        fallbackManifest = manifest
+      }
+
+      logger.debug('[data-loader] manifest locale mismatch; trying next candidate', {
+        requestedLocale: locale,
+        manifestLocale,
+        manifestPath,
+      })
+    } catch (error: any) {
+      lastError = error
+      if (!isRemoteNotFoundError(error)) {
+        break
+      }
+    }
+  }
+
+  if (fallbackManifest) {
+    const fallbackLocale = getClientConfigLocale(fallbackManifest, locale)
+    await writeDataFileToDisk(dataVersion, 'manifest.json', fallbackManifest, fallbackLocale)
+    setVersionedDataCache(fallbackLocale, dataVersion, 'manifest.json', fallbackManifest)
+    logger.warn('[data-loader] requested manifest locale unavailable; using returned locale', {
+      requestedLocale: locale,
+      manifestLocale: fallbackManifest.locale || null,
+    })
+    return { manifest: fallbackManifest, locale: fallbackLocale }
+  }
+
+  throw lastError || new Error(`Remote client data manifest not found for ${locale}/${dataVersion}`)
 }
 
 async function runLimited<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
@@ -632,9 +1025,16 @@ async function runLimited<T>(items: T[], limit: number, worker: (item: T) => Pro
   await Promise.all(workers)
 }
 
-async function prepareDataVersion(config: ClientConfig): Promise<ActiveDataSet> {
+async function prepareDataVersion(
+  config: ClientConfig,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<ActiveDataSet> {
   const dataVersion = String(config.dataVersion || '')
-  const manifest = await loadManifestForConfig(config)
+  const initialLocale = getClientConfigLocale(config, requestedLocale)
+  const manifestResult = await loadManifestForConfig(config, initialLocale)
+  const locale = manifestResult.locale
+  const manifest = manifestResult.manifest
+  const normalizedConfig = normalizeClientConfig(config, locale)
   const requiredDataPaths = collectRequiredVersionDataFiles(manifest)
     .map((file) => file.path)
     .filter((dataPath) => dataPath !== 'manifest.json')
@@ -642,33 +1042,40 @@ async function prepareDataVersion(config: ClientConfig): Promise<ActiveDataSet> 
   await runLimited(requiredDataPaths, DATA_REFRESH_CONCURRENCY, async (dataPath) => {
     await fetchVersionedDataFile(dataVersion, dataPath, findManifestPath(manifest, dataPath), {
         force: true,
+        locale,
       })
   })
-  await writeCurrentDataPointer(config)
+  await writeCurrentDataPointer(normalizedConfig, locale)
 
   logger.debug('[data-loader] data version files prepared', {
+    locale,
     dataVersion,
     fileCount: requiredDataPaths.length + 1,
   })
 
-  return { config, dataVersion, manifest }
+  return { config: normalizedConfig, dataVersion, manifest, locale }
 }
 
-async function loadCachedActiveDataSet(): Promise<ActiveDataSet | null> {
-  for (const candidate of await readCurrentDataPointerCandidates()) {
+async function loadCachedActiveDataSet(
+  locale: SupportedDataLocale = activeDataLocale
+): Promise<ActiveDataSet | null> {
+  const requestedLocale = normalizeDataLocale(locale)
+  for (const candidate of await readCurrentDataPointerCandidates(requestedLocale)) {
     const current = candidate.pointer
     const dataVersion = String(current?.dataVersion || '')
     if (!dataVersion) {
       continue
     }
 
-    const manifest = await readDataFileFromDisk(dataVersion, 'manifest.json')
+    const pointerLocale = getClientConfigLocale(current, requestedLocale)
+    const manifest = await readDataFileFromDisk(dataVersion, 'manifest.json', pointerLocale)
     if (!manifest) {
       continue
     }
 
-    if (!await isCompleteVersionDataSet(dataVersion, manifest)) {
+    if (!await isCompleteVersionDataSet(dataVersion, manifest, pointerLocale)) {
       logger.warn('[data-loader] cached data version is incomplete; skipping foreground use', {
+        locale: pointerLocale,
         dataVersion,
         source: candidate.source,
       })
@@ -677,6 +1084,7 @@ async function loadCachedActiveDataSet(): Promise<ActiveDataSet | null> {
 
     return {
       config: {
+        locale: pointerLocale,
         dataVersion,
         gamePatch: current.gamePatch || '',
         generatedAt: current.generatedAt || '',
@@ -684,46 +1092,63 @@ async function loadCachedActiveDataSet(): Promise<ActiveDataSet | null> {
       },
       dataVersion,
       manifest,
+      locale: pointerLocale,
     }
   }
 
   return null
 }
 
-function refreshLatestDataVersionInBackground(currentDataSet: ActiveDataSet): void {
-  if (activeDataSetRefreshPromise) {
+function refreshLatestDataVersionInBackground(
+  currentDataSet: ActiveDataSet,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): void {
+  const locale = normalizeDataLocale(requestedLocale)
+  if (activeDataSetRefreshPromises.has(locale)) {
     return
   }
 
-  activeDataSetRefreshPromise = (async () => {
-    const config = await loadDataApiConfig()
+  const refreshPromise = (async () => {
+    const config = await loadDataApiConfig({ locale })
     const remoteDataVersion = String(config?.dataVersion || '')
-    if (!remoteDataVersion || remoteDataVersion === currentDataSet.dataVersion) {
+    const remoteLocale = getClientConfigLocale(config, locale)
+    if (
+      !remoteDataVersion ||
+      (remoteDataVersion === currentDataSet.dataVersion && remoteLocale === currentDataSet.locale)
+    ) {
       return currentDataSet
     }
 
     logger.debug('[data-loader] remote data version refresh queued', {
+      requestedLocale: locale,
+      currentLocale: currentDataSet.locale,
+      remoteLocale,
       cachedDataVersion: currentDataSet.dataVersion,
       remoteDataVersion,
     })
 
-    const dataSet = await prepareDataVersion(config)
-    if (!await isCompleteVersionDataSet(dataSet.dataVersion, dataSet.manifest)) {
+    const dataSet = await prepareDataVersion(config, locale)
+    if (!await isCompleteVersionDataSet(dataSet.dataVersion, dataSet.manifest, dataSet.locale)) {
       throw new Error(`Prepared data version ${dataSet.dataVersion} is incomplete`)
     }
 
     return dataSet
   })()
     .then((dataSet) => {
-      if (!dataSet || dataSet.dataVersion === currentDataSet.dataVersion) {
+      if (
+        !dataSet ||
+        (dataSet.dataVersion === currentDataSet.dataVersion && dataSet.locale === currentDataSet.locale)
+      ) {
         return dataSet
       }
 
-      activeDataSetCache = {
+      activeDataSetCaches.set(locale, {
         data: dataSet,
         createdAt: Date.now(),
-      }
+      })
       logger.info('[data-loader] active data version refreshed in background', {
+        requestedLocale: locale,
+        locale: dataSet.locale,
         dataVersion: dataSet.dataVersion,
       })
       return dataSet
@@ -731,13 +1156,13 @@ function refreshLatestDataVersionInBackground(currentDataSet: ActiveDataSet): vo
     .catch((error: any) => {
       const message = error?.message || String(error)
       const now = Date.now()
+      const previousError = backgroundRefreshErrors.get(locale)
       const shouldLogWarning =
-        message !== lastBackgroundRefreshErrorSignature ||
-        now - lastBackgroundRefreshErrorLogAt >= DATA_BACKGROUND_REFRESH_ERROR_LOG_INTERVAL_MS
+        message !== previousError?.signature ||
+        now - (previousError?.loggedAt || 0) >= DATA_BACKGROUND_REFRESH_ERROR_LOG_INTERVAL_MS
 
       if (shouldLogWarning) {
-        lastBackgroundRefreshErrorSignature = message
-        lastBackgroundRefreshErrorLogAt = now
+        backgroundRefreshErrors.set(locale, { signature: message, loggedAt: now })
         logger.warn('[data-loader] background data refresh failed:', message)
       } else {
         logger.debug('[data-loader] background data refresh failed (suppressed):', message)
@@ -746,34 +1171,43 @@ function refreshLatestDataVersionInBackground(currentDataSet: ActiveDataSet): vo
       return null
     })
     .finally(() => {
-      activeDataSetRefreshPromise = null
+      activeDataSetRefreshPromises.delete(locale)
     })
+
+  activeDataSetRefreshPromises.set(locale, refreshPromise)
 }
 
-async function resolveActiveDataSet(): Promise<ActiveDataSet> {
+async function resolveActiveDataSet(
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<ActiveDataSet> {
+  const locale = normalizeDataLocale(requestedLocale)
   const startedAt = Date.now()
   let cachedDataSet: ActiveDataSet | null = null
 
   try {
-    cachedDataSet = await loadCachedActiveDataSet()
+    cachedDataSet = await loadCachedActiveDataSet(locale)
     if (cachedDataSet) {
       logger.debug('[data-loader] active data version resolved from complete local data', {
+        requestedLocale: locale,
+        locale: cachedDataSet.locale,
         dataVersion: cachedDataSet.dataVersion,
         durationMs: getElapsedMs(startedAt),
       })
-      refreshLatestDataVersionInBackground(cachedDataSet)
+      refreshLatestDataVersionInBackground(cachedDataSet, locale)
       return cachedDataSet
     }
 
-    const config = await loadDataApiConfig()
+    const config = await loadDataApiConfig({ locale })
     const remoteDataVersion = String(config?.dataVersion || '')
 
     if (!remoteDataVersion) {
       throw new Error('Remote client data config is missing dataVersion')
     }
 
-    const preparedDataSet = await prepareDataVersion(config)
+    const preparedDataSet = await prepareDataVersion(config, locale)
     logger.info('[data-loader] active data version prepared', {
+      requestedLocale: locale,
+      locale: preparedDataSet.locale,
       dataVersion: preparedDataSet.dataVersion,
       durationMs: getElapsedMs(startedAt),
     })
@@ -787,10 +1221,12 @@ async function resolveActiveDataSet(): Promise<ActiveDataSet> {
       return cachedDataSet
     }
 
-    const fallbackDataSet = await loadCachedActiveDataSet()
+    const fallbackDataSet =
+      await loadCachedActiveDataSet(locale) ||
+      (locale !== DEFAULT_DATA_LOCALE ? await loadCachedActiveDataSet(DEFAULT_DATA_LOCALE) : null)
     if (fallbackDataSet) {
       logger.warn(
-        `Failed to load remote client data; using cached data version ${fallbackDataSet.dataVersion}:`,
+        `Failed to load remote client data; using cached ${fallbackDataSet.locale} data version ${fallbackDataSet.dataVersion}:`,
         error.message
       )
       return fallbackDataSet
@@ -800,47 +1236,57 @@ async function resolveActiveDataSet(): Promise<ActiveDataSet> {
   }
 }
 
-async function getActiveDataSet(): Promise<ActiveDataSet> {
-  if (activeDataSetCache && Date.now() - activeDataSetCache.createdAt < CONFIG_TTL_MS) {
-    return activeDataSetCache.data
+async function getActiveDataSet(
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<ActiveDataSet> {
+  const locale = normalizeDataLocale(requestedLocale)
+  const cached = activeDataSetCaches.get(locale)
+  if (cached && Date.now() - cached.createdAt < CONFIG_TTL_MS) {
+    return cached.data
   }
 
+  let activeDataSetPromise = activeDataSetPromises.get(locale)
   if (!activeDataSetPromise) {
-    activeDataSetPromise = resolveActiveDataSet()
+    activeDataSetPromise = resolveActiveDataSet(locale)
       .then((dataSet) => {
-        activeDataSetCache = {
+        activeDataSetCaches.set(locale, {
           data: dataSet,
           createdAt: Date.now(),
-        }
+        })
         return dataSet
       })
       .finally(() => {
-        activeDataSetPromise = null
+        activeDataSetPromises.delete(locale)
       })
+    activeDataSetPromises.set(locale, activeDataSetPromise)
   }
 
   return activeDataSetPromise
 }
 
-async function loadDataFile(logicalPath: string): Promise<any> {
-  const dataSet = await getActiveDataSet()
+async function loadDataFile(
+  logicalPath: string,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
+  const dataSet = await getActiveDataSet(requestedLocale)
   return fetchVersionedDataFile(
     dataSet.dataVersion,
     logicalPath,
-    findManifestPath(dataSet.manifest, logicalPath)
+    findManifestPath(dataSet.manifest, logicalPath),
+    { locale: dataSet.locale }
   )
 }
 
-async function loadChampionsPayload(): Promise<any> {
-  return loadDataFile('champions.json')
+async function loadChampionsPayload(locale: SupportedDataLocale = activeDataLocale): Promise<any> {
+  return loadDataFile('champions.json', locale)
 }
 
-async function loadAugmentsPayload(): Promise<any> {
-  return loadDataFile('augments.json')
+async function loadAugmentsPayload(locale: SupportedDataLocale = activeDataLocale): Promise<any> {
+  return loadDataFile('augments.json', locale)
 }
 
-async function loadItemsPayload(): Promise<any> {
-  return loadDataFile('items.json')
+async function loadItemsPayload(locale: SupportedDataLocale = activeDataLocale): Promise<any> {
+  return loadDataFile('items.json', locale)
 }
 
 async function loadChampionShardIndexForDataSet(
@@ -852,7 +1298,7 @@ async function loadChampionShardIndexForDataSet(
       dataSet.dataVersion,
       'champion-shards/index.json',
       findManifestPath(dataSet.manifest, 'champion-shards/index.json'),
-      options
+      { ...options, locale: dataSet.locale }
     )
   } catch (error: any) {
     logger.warn(`Failed to load champion shard index for ${dataSet.dataVersion}:`, error.message)
@@ -864,9 +1310,9 @@ async function loadCachedChampionShardIndexForDataSet(dataSet: ActiveDataSet): P
   const logicalPath = 'champion-shards/index.json'
   const manifestPath = findManifestPath(dataSet.manifest, logicalPath)
   const payload =
-    await readCachedVersionedDataFile(dataSet.dataVersion, logicalPath) ||
-    (manifestPath !== logicalPath
-      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestPath)
+    await readCachedVersionedDataFile(dataSet.dataVersion, logicalPath, dataSet.locale) ||
+    (manifestPath !== logicalPath && !/^https?:\/\//i.test(manifestPath) && !manifestPath.startsWith('/')
+      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestPath, dataSet.locale)
       : null)
 
   return payload
@@ -895,9 +1341,13 @@ function findShardPathForChampion(shardIndex: any, championId: string | number):
   return shard?.path ? normalizeDataPath(String(shard.path)) : null
 }
 
-function cacheChampionShardDetails(dataVersion: string, champions: Record<string, any>): void {
+function cacheChampionShardDetails(
+  dataVersion: string,
+  locale: SupportedDataLocale,
+  champions: Record<string, any>
+): void {
   Object.entries(champions).forEach(([id, championDetail]) => {
-    detailCache.set(`${dataVersion}:champion:${id}`, championDetail)
+    detailCache.set(`${locale}:${dataVersion}:champion:${id}`, championDetail)
   })
 }
 
@@ -909,12 +1359,12 @@ async function loadChampionDetailFromShard(
   options: FetchJsonOptions = {}
 ): Promise<any | null> {
   const shardPayload = source === 'cached'
-    ? await readCachedVersionedDataFile(dataSet.dataVersion, shardPath)
+    ? await readCachedVersionedDataFile(dataSet.dataVersion, shardPath, dataSet.locale)
     : await fetchVersionedDataFile(
       dataSet.dataVersion,
       shardPath,
       findManifestPath(dataSet.manifest, shardPath),
-      options
+      { ...options, locale: dataSet.locale }
     )
   const shardData = shardPayload ? unwrapEnvelope(shardPayload) : null
   const champions = shardData?.champions || shardPayload?.champions || {}
@@ -924,7 +1374,7 @@ async function loadChampionDetailFromShard(
     return null
   }
 
-  cacheChampionShardDetails(dataSet.dataVersion, champions)
+  cacheChampionShardDetails(dataSet.dataVersion, dataSet.locale, champions)
   return detail
 }
 
@@ -954,10 +1404,10 @@ async function loadSingleChampionDetailFromDataSet(
     dataSet.dataVersion,
     singleChampionPath,
     manifestSingleChampionPath,
-    options
+    { ...options, locale: dataSet.locale }
   )
   const detail = unwrapEnvelope(payload)
-  detailCache.set(`${dataSet.dataVersion}:champion:${championId}`, detail)
+  detailCache.set(`${dataSet.locale}:${dataSet.dataVersion}:champion:${championId}`, detail)
   logger.debug('[data-loader] champion detail single fetch completed', {
     dataVersion: dataSet.dataVersion,
     championId,
@@ -976,9 +1426,11 @@ async function loadCachedSingleChampionDetailFromDataSet(
   }
 
   const payload =
-    await readCachedVersionedDataFile(dataSet.dataVersion, singleChampionPath) ||
-    (manifestSingleChampionPath !== singleChampionPath
-      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestSingleChampionPath)
+    await readCachedVersionedDataFile(dataSet.dataVersion, singleChampionPath, dataSet.locale) ||
+    (manifestSingleChampionPath !== singleChampionPath &&
+      !/^https?:\/\//i.test(manifestSingleChampionPath) &&
+      !manifestSingleChampionPath.startsWith('/')
+      ? await readCachedVersionedDataFile(dataSet.dataVersion, manifestSingleChampionPath, dataSet.locale)
       : null)
 
   if (!payload) {
@@ -986,7 +1438,7 @@ async function loadCachedSingleChampionDetailFromDataSet(
   }
 
   const detail = unwrapEnvelope(payload)
-  detailCache.set(`${dataSet.dataVersion}:champion:${championId}`, detail)
+  detailCache.set(`${dataSet.locale}:${dataSet.dataVersion}:champion:${championId}`, detail)
   return detail
 }
 
@@ -994,7 +1446,7 @@ async function loadCachedChampionDetailPayload(
   dataSet: ActiveDataSet,
   championId: string | number,
 ): Promise<any | null> {
-  const cacheKey = `${dataSet.dataVersion}:champion:${championId}`
+  const cacheKey = `${dataSet.locale}:${dataSet.dataVersion}:champion:${championId}`
   if (detailCache.has(cacheKey)) {
     logger.debug('[data-loader] champion detail memory cache hit', {
       dataVersion: dataSet.dataVersion,
@@ -1026,24 +1478,26 @@ async function loadCachedLatestChampionDetailPayload(
   activeDataSet: ActiveDataSet,
   activeShardPath: string | null
 ): Promise<any | null> {
-  const localVersions = await listLocalDataVersions()
+  const localVersions = await listLocalDataVersions(activeDataSet.locale)
   const newerVersions = localVersions.filter((dataVersion) =>
     compareDataVersions(dataVersion, activeDataSet.dataVersion) > 0
   )
 
   for (const dataVersion of newerVersions) {
-    const manifest = await readCachedVersionedDataFile(dataVersion, 'manifest.json')
+    const manifest = await readCachedVersionedDataFile(dataVersion, 'manifest.json', activeDataSet.locale)
     if (!manifest) {
       continue
     }
 
     const latestDataSet: ActiveDataSet = {
       config: {
+        locale: activeDataSet.locale,
         dataVersion,
         manifest: `${getVersionDataPrefix(dataVersion)}/manifest.json`,
       },
       dataVersion,
       manifest,
+      locale: activeDataSet.locale,
     }
     const triedShardPaths = new Set<string>()
     const tryCachedShard = async (shardPath: string): Promise<any | null> => {
@@ -1587,20 +2041,24 @@ export async function loadChampionLinks(championId: string | number): Promise<an
   }
 }
 
-export async function loadAugmentBase(): Promise<any[]> {
-  const augmentsPayload = await loadAugmentsPayload()
+export async function loadAugmentBase(locale: SupportedDataLocale = activeDataLocale): Promise<any[]> {
+  const augmentsPayload = await loadAugmentsPayload(normalizeDataLocale(locale))
   return extractList(augmentsPayload, 'augments').map(mapPublicAugmentBase)
 }
 
-export async function loadAugmentDetail(): Promise<Record<string, any>> {
-  const dataSet = await getActiveDataSet()
-  const cacheKey = `${dataSet.dataVersion}:augment-detail`
+export async function loadAugmentBaseForLocale(locale: unknown): Promise<any[]> {
+  return loadAugmentBase(normalizeDataLocale(locale))
+}
+
+export async function loadAugmentDetail(locale: SupportedDataLocale = activeDataLocale): Promise<Record<string, any>> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(locale))
+  const cacheKey = `${dataSet.locale}:${dataSet.dataVersion}:augment-detail`
   const cached = augmentDetailCache.get(cacheKey)
   if (cached) {
     return cached
   }
 
-  const augments = await loadAugmentBase()
+  const augments = await loadAugmentBase(dataSet.locale)
   const detail = augments.reduce((result: Record<string, any>, augment: any) => {
     result[String(augment.id)] = augment
     return result
@@ -1674,11 +2132,12 @@ export async function loadChampionRoster(): Promise<any[]> {
 }
 
 export async function getChampionDetailData(championId: string | number): Promise<any> {
+  const dataSet = await getActiveDataSet()
   const [stats, augmentBase, augmentDetail, augments, augmentTrios, buildData, items, championName, championLinks] =
     await Promise.all([
       loadChampionStats(championId),
-      loadAugmentBase(),
-      loadAugmentDetail(),
+      loadAugmentBase(dataSet.locale),
+      loadAugmentDetail(dataSet.locale),
       loadChampionAugments(championId),
       loadChampionAugmentTrios(championId),
       loadChampionBuild(championId),
@@ -1730,7 +2189,7 @@ export async function getAugmentWinrate(
 export async function getChampionAugmentStats(championId: string | number): Promise<any[]> {
   const dataSet = await getActiveDataSet()
   const normalizedChampionId = String(championId)
-  const cacheKey = `${dataSet.dataVersion}:champion-augment-stats:${normalizedChampionId}`
+  const cacheKey = `${dataSet.locale}:${dataSet.dataVersion}:champion-augment-stats:${normalizedChampionId}`
   const cached = championAugmentStatsCache.get(cacheKey)
   if (cached) {
     return cached
@@ -1744,7 +2203,7 @@ export async function getChampionAugmentStats(championId: string | number): Prom
   const request = (async () => {
     const [detail, augmentBaseById] = await Promise.all([
       loadChampionDetailPayload(normalizedChampionId),
-      loadAugmentDetail(),
+      loadAugmentDetail(dataSet.locale),
     ])
     const augments = Array.isArray(detail?.augments) ? detail.augments : []
 
@@ -1779,6 +2238,8 @@ export function clearCache(): void {
   augmentDetailCache.clear()
   championAugmentStatsCache.clear()
   championAugmentStatsPending.clear()
-  activeDataSetPromise = null
-  activeDataSetCache = null
+  activeDataSetPromises.clear()
+  activeDataSetCaches.clear()
+  activeDataSetRefreshPromises.clear()
+  backgroundRefreshErrors.clear()
 }

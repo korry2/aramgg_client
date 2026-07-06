@@ -104,6 +104,7 @@ export async function getVersionInfo() {
     updateFeedUrl: clientConfig.updateFeedUrl || '',
     minimumVersion,
     dataVersion: config?.dataVersion || '',
+    locale: config?.locale || '',
     gamePatch: config?.gamePatch || '',
     apiRelease: config?.apiRelease ?? null,
     generatedAt: config?.generatedAt || '',

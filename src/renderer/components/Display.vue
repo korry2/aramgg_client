@@ -36,8 +36,25 @@
                         <div>
                             <span>数据版本</span>
                             <strong>{{ dataVersionLabel }}</strong>
-                            <small v-if="versionInfo?.gamePatch">LOL {{ versionInfo.gamePatch }}</small>
+                            <small>{{ dataLocaleStatusLabel }}</small>
                         </div>
+                        <label class="locale-select-card">
+                            <span>数据语言</span>
+                            <select
+                                v-model="selectedLocale"
+                                :disabled="localeLoading"
+                                @change="changeLocale"
+                            >
+                                <option
+                                    v-for="localeOption in supportedLocales"
+                                    :key="localeOption.code"
+                                    :value="localeOption.code"
+                                >
+                                    {{ localeOption.nativeLabel }}
+                                </option>
+                            </select>
+                            <small>{{ localeLoading ? '切换中' : selectedLocaleLabel }}</small>
+                        </label>
                         <div class="lcu-status-card">
                             <span>LCU 连接</span>
                             <strong>自动发现</strong>
@@ -376,6 +393,13 @@ const showAdvancedLcuConfig = ref(false)
 const manualLolPath = ref('')
 const manualPathStatus = ref(null)
 const manualPathLoading = ref(false)
+const selectedLocale = ref('zh-CN')
+const supportedLocales = ref([
+    { code: 'zh-CN', label: 'Simplified Chinese', nativeLabel: '简体中文' },
+    { code: 'en-US', label: 'English', nativeLabel: 'English' },
+    { code: 'zh-TW', label: 'Traditional Chinese', nativeLabel: '繁體中文' },
+])
+const localeLoading = ref(false)
 const ARAMGG_HOME_URL = 'https://aramgg.com'
 const ARAMGG_HOME_LABEL = 'aramgg.com'
 const DATA_API_URL = 'https://data.dtodo.cn'
@@ -385,6 +409,7 @@ const FEEDBACK_URL = `mailto:${FEEDBACK_EMAIL}`
 const GITHUB_URL = 'https://github.com/valkia/aramgg_client'
 let removeQuitConfirmListener = null
 let removeAppUpdateListener = null
+let removeLocaleChangedListener = null
 let removePostGameShareListener = null
 let removeGameEndedListener = null
 let removeEndOfGameListener = null
@@ -399,6 +424,22 @@ const clientVersionLabel = computed(() => {
 })
 
 const dataVersionLabel = computed(() => versionInfo.value?.dataVersion || '-')
+
+const selectedLocaleLabel = computed(() => {
+    return supportedLocales.value.find((locale) => locale.code === selectedLocale.value)?.nativeLabel || selectedLocale.value
+})
+
+const dataLocaleStatusLabel = computed(() => {
+    const parts = []
+    if (versionInfo.value?.gamePatch) {
+        parts.push(`LOL ${versionInfo.value.gamePatch}`)
+    }
+    if (versionInfo.value?.locale) {
+        parts.push(versionInfo.value.locale)
+    }
+
+    return parts.join(' · ') || '-'
+})
 
 const versionHint = computed(() => {
     if (!versionInfo.value) {
@@ -591,6 +632,46 @@ const loadVersionInfo = async () => {
         }
     } catch (error) {
         console.warn('Failed to load version info:', error)
+    }
+}
+
+const loadLocale = async () => {
+    try {
+        const result = await electronAPI.locale.get()
+        if (result?.supportedLocales?.length) {
+            supportedLocales.value = result.supportedLocales
+        }
+        if (result?.locale) {
+            selectedLocale.value = result.locale
+        }
+    } catch (error) {
+        console.warn('Failed to load locale:', error)
+    }
+}
+
+const changeLocale = async () => {
+    localeLoading.value = true
+    try {
+        const result = await electronAPI.locale.set(selectedLocale.value)
+        if (result?.supportedLocales?.length) {
+            supportedLocales.value = result.supportedLocales
+        }
+        if (result?.locale) {
+            selectedLocale.value = result.locale
+        }
+        await loadVersionInfo()
+        testStatus.value = {
+            type: 'success',
+            message: `数据语言已切换为 ${selectedLocaleLabel.value}`,
+        }
+    } catch (error) {
+        console.warn('Failed to change locale:', error)
+        testStatus.value = {
+            type: 'error',
+            message: '切换数据语言失败：' + (error.message || error),
+        }
+    } finally {
+        localeLoading.value = false
     }
 }
 
@@ -1093,12 +1174,19 @@ const quitApp = async () => {
 }
 
 onMounted(() => {
+    loadLocale()
     loadVersionInfo()
     loadAppUpdateState()
     loadManualLolPath()
     removeQuitConfirmListener = electronAPI.events.on('quit-confirm-requested', confirmQuitApp)
     removeAppUpdateListener = electronAPI.events.on('app-update-status-changed', (state) => {
         appUpdateState.value = state
+    })
+    removeLocaleChangedListener = electronAPI.events.on('locale-changed', ({ locale } = {}) => {
+        if (locale) {
+            selectedLocale.value = locale
+            loadVersionInfo()
+        }
     })
     removePostGameShareListener = electronAPI.events.on('post-game-share-ready', (poster) => {
         applyPostGamePoster(poster, true)
@@ -1117,6 +1205,8 @@ onBeforeUnmount(() => {
     removeQuitConfirmListener = null
     removeAppUpdateListener?.()
     removeAppUpdateListener = null
+    removeLocaleChangedListener?.()
+    removeLocaleChangedListener = null
     removePostGameShareListener?.()
     removePostGameShareListener = null
     removeGameEndedListener?.()
@@ -1354,11 +1444,12 @@ onBeforeUnmount(() => {
 
 .status-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
 }
 
-.status-grid div {
+.status-grid > div,
+.locale-select-card {
     min-width: 0;
     min-height: 62px;
     padding: 8px 7px;
@@ -1380,6 +1471,34 @@ onBeforeUnmount(() => {
     margin-top: 3px;
     color: #859491;
     font-size: 10px;
+}
+
+.locale-select-card {
+    display: block;
+}
+
+.locale-select-card select {
+    width: 100%;
+    height: 22px;
+    margin-top: 3px;
+    padding: 0 20px 0 6px;
+    border: 1px solid rgba(226, 192, 143, 0.24);
+    border-radius: 4px;
+    background: rgba(4, 15, 24, 0.82);
+    color: #e2c08f;
+    font-size: 12px;
+    font-weight: 800;
+    outline: none;
+}
+
+.locale-select-card select:focus {
+    border-color: rgba(226, 192, 143, 0.58);
+    box-shadow: 0 0 0 2px rgba(194, 156, 109, 0.12);
+}
+
+.locale-select-card select:disabled {
+    color: #859491;
+    cursor: wait;
 }
 
 .version-download {

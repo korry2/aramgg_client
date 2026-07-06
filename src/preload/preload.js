@@ -20,6 +20,7 @@ const validEvents = new Set([
     'post-game-share-ready',
     'quit-confirm-requested',
     'app-update-status-changed',
+    'locale-changed',
 ])
 
 const on = (channel, callback) => {
@@ -71,6 +72,10 @@ const electronAPI = {
         getStatus: () => ipcRenderer.invoke('analytics-get-status'),
         setEnabled: (enabled) => ipcRenderer.invoke('analytics-set-enabled', enabled),
         track: (name, properties) => ipcRenderer.invoke('analytics-track', name, properties),
+    },
+    locale: {
+        get: () => ipcRenderer.invoke('locale-get'),
+        set: (locale) => ipcRenderer.invoke('locale-set', locale),
     },
     screenshot: {
         capture: () => ipcRenderer.invoke('screenshot-capture'),

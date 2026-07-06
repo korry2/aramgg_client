@@ -50,10 +50,18 @@ import {
     inspectLeagueInstallDirectory,
     isLeagueInstallDirectory,
 } from './lol-path.ts'
+import {
+    DEFAULT_DATA_LOCALE,
+    SUPPORTED_DATA_LOCALES,
+    getDataLocale,
+    normalizeDataLocale,
+    setDataLocale,
+} from '../data-loader.ts'
 
 const TEST_AUGMENT_COUNT = 3
 const TEST_BENCH_CHAMPION_COUNT = 8
 const LCU_MANUAL_LEAGUE_PATH_KEY = 'lolPath'
+const APP_LOCALE_KEY = 'app.locale'
 const BROADCAST_CHANNELS = new Set([
     'fromMain',
     'for-popup',
@@ -72,6 +80,7 @@ const BROADCAST_CHANNELS = new Set([
     'game-ended',
     'end-of-game',
     'post-game-share-ready',
+    'locale-changed',
 ])
 const championDataLoadRequests = new Map()
 let quitRequested = false
@@ -401,6 +410,12 @@ async function buildRandomBenchRecommendation(currentChampionId = null) {
 }
 
 export function registerIpcHandlers(isDev) {
+    const startupLocale = normalizeDataLocale(store.get(APP_LOCALE_KEY) || DEFAULT_DATA_LOCALE)
+    setDataLocale(startupLocale)
+    if (!store.get(APP_LOCALE_KEY)) {
+        store.set(APP_LOCALE_KEY, startupLocale)
+    }
+
     ipcMain.handle('store-get', (_event, key) => {
         return store.get(key)
     })
@@ -411,6 +426,29 @@ export function registerIpcHandlers(isDev) {
 
     ipcMain.handle('store-delete', (_event, key) => {
         store.delete(key)
+    })
+
+    ipcMain.handle('locale-get', () => {
+        return {
+            locale: getDataLocale(),
+            supportedLocales: SUPPORTED_DATA_LOCALES,
+        }
+    })
+
+    ipcMain.handle('locale-set', (_event, locale) => {
+        const normalizedLocale = normalizeDataLocale(locale)
+        setDataLocale(normalizedLocale)
+        store.set(APP_LOCALE_KEY, normalizedLocale)
+        void notifyAllWindows('locale-changed', { locale: normalizedLocale })
+
+        logger.info('[locale] data locale changed', {
+            locale: normalizedLocale,
+        })
+
+        return {
+            locale: normalizedLocale,
+            supportedLocales: SUPPORTED_DATA_LOCALES,
+        }
     })
 
     ipcMain.on('broadcast', (ev, data) => {

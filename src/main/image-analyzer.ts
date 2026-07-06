@@ -17,12 +17,21 @@
  */
 
 import sharp from 'sharp'
+import https from 'https'
+import axios from 'axios'
 import path from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { loadAugmentBase } from './data-loader.ts'
+import {
+    DEFAULT_DATA_LOCALE,
+    SUPPORTED_DATA_LOCALES,
+    getDataLocale,
+    loadAugmentBaseForLocale,
+    tryNormalizeDataLocale,
+} from './data-loader.ts'
 import logger from './modules/logger.ts'
 import { ensureOnnxruntimeNativeDllPath } from './modules/onnxruntime-native-path.ts'
+import { discoverLcuAuthFromProcess } from './services/lcu/process-auth-discovery.ts'
 
 // ES Module 中获取 __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -64,10 +73,229 @@ const AUGMENT_COLORS = {
 
 // 加载完整的海克斯数据库
 let AUGMENT_DATABASE = null
+let cachedGameOcrLocaleHint = null
+let gameOcrLocaleHintExpiresAt = 0
+let gameOcrLocaleHintPromise = null
+
+const GAME_OCR_LOCALE_HINT_TTL_MS = 60 * 1000
+const GAME_OCR_LOCALE_HINT_FAILURE_TTL_MS = 2 * 60 * 1000
+const RIOT_CLIENT_REGION_LOCALE_ENDPOINT = '/riotclient/region-locale'
+const riotClientLocaleHttpsAgent = new https.Agent({ rejectUnauthorized: false })
+const AUGMENT_RARITY_MAP = {
+    'kSilver': 'silver',
+    'kGold': 'gold',
+    'kPrismatic': 'prismatic',
+}
+
+function getSupportedOcrLocales() {
+    const locales = SUPPORTED_DATA_LOCALES.map(locale => locale.code)
+    return [DEFAULT_DATA_LOCALE, ...locales.filter(locale => locale !== DEFAULT_DATA_LOCALE)]
+}
+
+function extractRiotLocaleHintDetail(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return {
+            locale: tryNormalizeDataLocale(payload),
+            sourceKey: 'value',
+            rawValue: String(payload || '').slice(0, 80),
+        }
+    }
+
+    for (const key of ['locale', 'webLanguage', 'language', 'gameLocale']) {
+        const locale = tryNormalizeDataLocale(payload[key])
+        if (locale) {
+            return {
+                locale,
+                sourceKey: key,
+                rawValue: String(payload[key] || '').slice(0, 80),
+            }
+        }
+    }
+
+    return {
+        locale: null,
+        sourceKey: null,
+        rawValue: null,
+    }
+}
+
+function summarizeRiotLocalePayload(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return {
+            type: typeof payload,
+            value: String(payload || '').slice(0, 80),
+        }
+    }
+
+    return {
+        type: Array.isArray(payload) ? 'array' : 'object',
+        keys: Object.keys(payload).slice(0, 20),
+        locale: payload.locale || null,
+        webLanguage: payload.webLanguage || null,
+        language: payload.language || null,
+        gameLocale: payload.gameLocale || null,
+    }
+}
+
+async function resolveGameOcrLocaleHint() {
+    const now = Date.now()
+    if (now < gameOcrLocaleHintExpiresAt) {
+        logger.debug('[augment-ocr] Riot client locale hint cache hit', {
+            locale: cachedGameOcrLocaleHint,
+            ttlMs: gameOcrLocaleHintExpiresAt - now,
+        })
+        return cachedGameOcrLocaleHint
+    }
+
+    if (gameOcrLocaleHintPromise) {
+        logger.debug('[augment-ocr] Riot client locale hint request joined')
+        return gameOcrLocaleHintPromise
+    }
+
+    gameOcrLocaleHintPromise = (async () => {
+        try {
+            const [token, port] = await discoverLcuAuthFromProcess()
+            let locale = null
+            let endpointStatus = null
+            let localeDetail = {
+                locale: null,
+                sourceKey: null,
+                rawValue: null,
+            }
+            let payloadSummary = null
+
+            logger.debug('[augment-ocr] Riot client locale auth discovery', {
+                found: !!(token && port),
+                port: port || null,
+            })
+
+            if (token && port) {
+                const result = await axios.get(`https://127.0.0.1:${port}${RIOT_CLIENT_REGION_LOCALE_ENDPOINT}`, {
+                    auth: {
+                        username: 'riot',
+                        password: token,
+                    },
+                    httpsAgent: riotClientLocaleHttpsAgent,
+                    validateStatus: status => status < 500,
+                    timeout: 1200,
+                })
+                endpointStatus = result?.status || null
+                payloadSummary = summarizeRiotLocalePayload(result?.data)
+                localeDetail = endpointStatus && endpointStatus < 400
+                    ? extractRiotLocaleHintDetail(result.data)
+                    : localeDetail
+                locale = localeDetail.locale
+            }
+
+            cachedGameOcrLocaleHint = locale
+            gameOcrLocaleHintExpiresAt = Date.now() + (locale
+                ? GAME_OCR_LOCALE_HINT_TTL_MS
+                : GAME_OCR_LOCALE_HINT_FAILURE_TTL_MS)
+
+            logger.info('[augment-ocr] Riot client locale hint probe completed', {
+                locale,
+                sourceKey: localeDetail.sourceKey,
+                rawValue: localeDetail.rawValue,
+                endpoint: token && port ? RIOT_CLIENT_REGION_LOCALE_ENDPOINT : null,
+                status: endpointStatus,
+                port: port || null,
+                hasAuth: !!(token && port),
+                payload: payloadSummary,
+                cacheTtlMs: locale ? GAME_OCR_LOCALE_HINT_TTL_MS : GAME_OCR_LOCALE_HINT_FAILURE_TTL_MS,
+            })
+
+            return locale
+        } catch (error) {
+            cachedGameOcrLocaleHint = null
+            gameOcrLocaleHintExpiresAt = Date.now() + GAME_OCR_LOCALE_HINT_FAILURE_TTL_MS
+            logger.debug('[augment-ocr] Riot client locale hint unavailable:', error.message)
+            return null
+        } finally {
+            gameOcrLocaleHintPromise = null
+        }
+    })()
+
+    return gameOcrLocaleHintPromise
+}
+
+function buildOcrLocalePriority(localeHint) {
+    const locales = getSupportedOcrLocales()
+    const ordered = []
+
+    if (localeHint && locales.includes(localeHint)) {
+        ordered.push(localeHint)
+    }
+
+    for (const locale of locales) {
+        if (!ordered.includes(locale)) {
+            ordered.push(locale)
+        }
+    }
+
+    return ordered
+}
+
+function getLocalePriority(locale, localePriority) {
+    const index = localePriority.indexOf(locale)
+    return index === -1 ? localePriority.length : index
+}
+
+function createAugmentOcrRecord(augment) {
+    return {
+        id: augment.id,
+        name: augment.name,
+        rarity: AUGMENT_RARITY_MAP[augment.rarity] || 'unknown',
+        iconPath: augment.iconPath,
+        localizedNames: {},
+        ocrNames: [],
+    }
+}
+
+function mergeAugmentBaseRecord(database, augment, locale) {
+    const id = String(augment?.id || '')
+    const name = String(augment?.name || '').trim()
+    if (!id || !name) {
+        return false
+    }
+
+    let record = database[id]
+    if (!record) {
+        record = createAugmentOcrRecord({
+            ...augment,
+            id,
+            name,
+        })
+        database[id] = record
+    } else if (locale === DEFAULT_DATA_LOCALE) {
+        record.name = name
+        record.rarity = AUGMENT_RARITY_MAP[augment.rarity] || record.rarity || 'unknown'
+        record.iconPath = augment.iconPath || record.iconPath
+    } else {
+        record.name = record.name || name
+        record.rarity = record.rarity || AUGMENT_RARITY_MAP[augment.rarity] || 'unknown'
+        record.iconPath = record.iconPath || augment.iconPath
+    }
+
+    const normalizedName = normalizeOcrText(name)
+    if (!normalizedName) {
+        return false
+    }
+
+    record.localizedNames[locale] = name
+    if (!record.ocrNames.some(entry => entry.normalizedName === normalizedName)) {
+        record.ocrNames.push({
+            locale,
+            name,
+            normalizedName,
+        })
+    }
+
+    return true
+}
 
 /**
  * 初始化海克斯数据库
- * 从远端数据 API 加载完整列表并建立名称索引
+ * 从远端数据 API 加载多语言海克斯列表并建立 OCR 名称索引。
  */
 async function initAugmentDatabase() {
     // 如果数据库已加载且不为空，直接返回
@@ -85,36 +313,42 @@ async function initAugmentDatabase() {
     logger.info(`📚 正在初始化海克斯数据库...`)
 
     try {
-        const augmentsData = await loadAugmentBase()
-        logger.info(`   远端海克斯数据加载成功: ${augmentsData.length} 条原始数据`)
-
-        // 建立按名称索引的数据库（用于快速查找）
         AUGMENT_DATABASE = {}
         AUGMENT_MATCH_ENTRIES = null
         let invalidCount = 0
-        for (const augment of augmentsData) {
-            if (!augment.id || !augment.name) {
-                invalidCount++
+        let loadedLocaleCount = 0
+        let ocrNameCount = 0
+        const localeResults = await Promise.allSettled(
+            getSupportedOcrLocales().map(async locale => ({
+                locale,
+                augments: await loadAugmentBaseForLocale(locale),
+            }))
+        )
+
+        for (const result of localeResults) {
+            if (result.status !== 'fulfilled') {
+                logger.warn('[augment-ocr] locale augment data unavailable', {
+                    error: result.reason?.message || String(result.reason),
+                })
                 continue
             }
 
-            // 稀有度映射
-            const rarityMap = {
-                'kSilver': 'silver',
-                'kGold': 'gold',
-                'kPrismatic': 'prismatic'
-            }
+            const { locale, augments } = result.value
+            loadedLocaleCount++
+            logger.info(`   ${locale} 海克斯数据加载成功: ${augments.length} 条原始数据`)
 
-            AUGMENT_DATABASE[augment.id] = {
-                id: augment.id,
-                name: augment.name,
-                rarity: rarityMap[augment.rarity] || 'unknown',
-                iconPath: augment.iconPath
+            for (const augment of augments) {
+                const added = mergeAugmentBaseRecord(AUGMENT_DATABASE, augment, locale)
+                if (added) {
+                    ocrNameCount++
+                } else {
+                    invalidCount++
+                }
             }
         }
 
         const totalCount = Object.keys(AUGMENT_DATABASE).length
-        logger.info(`📚 海克斯数据库已加载: ${totalCount} 个有效海克斯 (跳过 ${invalidCount} 条无效数据)`)
+        logger.info(`📚 海克斯数据库已加载: ${totalCount} 个有效海克斯, ${ocrNameCount} 个 OCR 名称, ${loadedLocaleCount} 个语言 (跳过 ${invalidCount} 条无效数据)`)
 
         if (totalCount === 0) {
             logger.error(`❌ 警告: 数据库为空！请检查数据文件内容`)
@@ -1125,7 +1359,7 @@ async function buildOrderedTitleAugmentResult(slotTexts, rowFingerprints, groupR
 
 export function isLikelyTitleSlotText(rawText, match) {
     const normalizedText = normalizeOcrText(rawText)
-    const normalizedName = normalizeOcrText(match?.name)
+    const normalizedName = normalizeOcrText(match?.matchName || match?.name)
 
     if (!normalizedText || !normalizedName) {
         return false
@@ -1625,36 +1859,56 @@ function getAugmentMatchEntries(database) {
         return AUGMENT_MATCH_ENTRIES
     }
 
-    const sortedAugments = Object.values(database).sort((a, b) => {
-        const aLen = normalizeOcrText(a.name).length
-        const bLen = normalizeOcrText(b.name).length
+    const entries = Object.values(database).flatMap(augmentData => {
+        const names = Array.isArray(augmentData.ocrNames) && augmentData.ocrNames.length > 0
+            ? augmentData.ocrNames
+            : [{
+                locale: DEFAULT_DATA_LOCALE,
+                name: augmentData.name,
+                normalizedName: normalizeOcrText(augmentData.name),
+            }]
+
+        return names.map(nameEntry => ({
+            augmentData,
+            locale: nameEntry.locale || DEFAULT_DATA_LOCALE,
+            matchName: nameEntry.name || augmentData.name,
+            normalizedName: nameEntry.normalizedName || normalizeOcrText(nameEntry.name || augmentData.name),
+        }))
+    })
+
+    const sortedEntries = entries.sort((a, b) => {
+        const aLen = a.normalizedName.length
+        const bLen = b.normalizedName.length
         if (bLen !== aLen) {
             return bLen - aLen
         }
-        return getAugmentVersionPriority(b) - getAugmentVersionPriority(a)
+        return getAugmentVersionPriority(b.augmentData) - getAugmentVersionPriority(a.augmentData)
     })
 
     const scannedNames = new Set()
     AUGMENT_MATCH_ENTRIES = []
 
-    for (const augmentData of sortedAugments) {
-        const normalizedName = normalizeOcrText(augmentData.name)
+    for (const entry of sortedEntries) {
+        const normalizedName = entry.normalizedName
+        const matchName = entry.matchName
 
-        if (MATCH_BLACKLIST.has(augmentData.name) || MATCH_BLACKLIST.has(normalizedName)) {
-            continue
-        }
-        if (scannedNames.has(normalizedName)) {
+        if (!normalizedName || MATCH_BLACKLIST.has(matchName) || MATCH_BLACKLIST.has(normalizedName)) {
             continue
         }
 
-        scannedNames.add(normalizedName)
+        const scannedKey = `${entry.augmentData.id}:${normalizedName}`
+        if (scannedNames.has(scannedKey)) {
+            continue
+        }
+
+        scannedNames.add(scannedKey)
         AUGMENT_MATCH_ENTRIES.push({
-            augmentData,
+            ...entry,
             normalizedName,
         })
     }
 
-    logger.debug(`Augment match entries cached: ${AUGMENT_MATCH_ENTRIES.length}/${sortedAugments.length}`)
+    logger.debug(`Augment match entries cached: ${AUGMENT_MATCH_ENTRIES.length}/${sortedEntries.length}`)
     return AUGMENT_MATCH_ENTRIES
 }
 
@@ -1683,14 +1937,23 @@ export async function matchAugmentDatabase(recognizedText) {
     const normalizedText = normalizeOcrText(recognizedText)
     logger.debug(`Normalized OCR text: "${normalizedText.substring(0, 100)}..." (${normalizedText.length} chars)`)
 
+    const localeHint = await resolveGameOcrLocaleHint()
+    const localePriority = buildOcrLocalePriority(localeHint)
     const matchEntries = getAugmentMatchEntries(database)
-    logger.debug(`📊 海克斯匹配索引已就绪，最长名称: "${matchEntries[0]?.augmentData.name}" (${matchEntries[0]?.normalizedName.length} 字符)`)
+    logger.debug('[augment-ocr] OCR locale priority selected', {
+        localeHint,
+        localePriority,
+        dataLocale: getDataLocale(),
+        databaseSize,
+        matchEntryCount: matchEntries.length,
+    })
+    logger.debug(`📊 海克斯匹配索引已就绪，最长名称: "${matchEntries[0]?.matchName || matchEntries[0]?.augmentData.name}" (${matchEntries[0]?.normalizedName.length} 字符), localePriority=${localePriority.join('>')}`)
 
     // 收集所有候选匹配，再按重叠范围筛选，避免长名称被短名称拆分。
     const candidates = []
     let matchedCount = 0
 
-    for (const { augmentData, normalizedName } of matchEntries) {
+    for (const { augmentData, locale, matchName, normalizedName } of matchEntries) {
 
         // 使用模糊匹配查找
         const match = fuzzyFind(normalizedText, normalizedName)
@@ -1698,9 +1961,11 @@ export async function matchAugmentDatabase(recognizedText) {
         if (match) {
             matchedCount++
             const aliasText = match.alias ? `, OCR别名: ${match.alias}` : ''
-            logger.debug(`Augment match [#${matchedCount}]: "${augmentData.name}" (id: ${augmentData.id}, index: ${match.index}, distance: ${match.distance}${aliasText})`)
+            logger.debug(`Augment match [#${matchedCount}]: "${matchName}" (id: ${augmentData.id}, locale: ${locale}, index: ${match.index}, distance: ${match.distance}${aliasText})`)
             candidates.push({
                 augmentData,
+                matchName,
+                matchLocale: locale,
                 match,
                 start: match.index,
                 end: match.index + match.matchLen,
@@ -1718,6 +1983,11 @@ export async function matchAugmentDatabase(recognizedText) {
         if (a.matchLen !== b.matchLen) {
             return b.matchLen - a.matchLen
         }
+        const localePriorityDiff =
+            getLocalePriority(a.matchLocale, localePriority) - getLocalePriority(b.matchLocale, localePriority)
+        if (localePriorityDiff !== 0) {
+            return localePriorityDiff
+        }
         const priorityDiff = getAugmentVersionPriority(b.augmentData) - getAugmentVersionPriority(a.augmentData)
         if (priorityDiff !== 0) {
             return priorityDiff
@@ -1728,7 +1998,7 @@ export async function matchAugmentDatabase(recognizedText) {
     const selectedCandidates = []
     for (const candidate of candidates) {
         if (selectedCandidates.some(selected => rangesOverlap(candidate, selected))) {
-            logger.debug(`⚠️ 跳过重叠候选: "${candidate.augmentData.name}" @${candidate.start}-${candidate.end}`)
+            logger.debug(`⚠️ 跳过重叠候选: "${candidate.matchName}" @${candidate.start}-${candidate.end}`)
             continue
         }
 
@@ -1739,7 +2009,7 @@ export async function matchAugmentDatabase(recognizedText) {
     selectedCandidates.sort((a, b) => a.start - b.start)
     logger.debug(`📊 筛选重叠候选后数量: ${selectedCandidates.length}`)
     selectedCandidates.forEach((c, i) => {
-        logger.debug(`   [#${i + 1}] "${c.augmentData.name}" @位置 ${c.start}`)
+        logger.debug(`   [#${i + 1}] "${c.matchName}" (${c.matchLocale}) @位置 ${c.start}`)
     })
 
     // 选择前 3 个（海克斯选择界面固定是 3 张卡片）
@@ -1748,7 +2018,10 @@ export async function matchAugmentDatabase(recognizedText) {
         const confidence = candidate.match.distance === 0 ? 0.95 : 0.80
         augments.push({
             id: candidate.augmentData.id,
-            name: candidate.augmentData.name,
+            name: candidate.matchName || candidate.augmentData.name,
+            displayName: candidate.augmentData.name,
+            matchName: candidate.matchName || candidate.augmentData.name,
+            matchLocale: candidate.matchLocale || DEFAULT_DATA_LOCALE,
             rarity: candidate.augmentData.rarity,
             confidence,
         })
