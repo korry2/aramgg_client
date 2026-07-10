@@ -249,14 +249,14 @@
 - 数字、时间、数据来源以及带多语言字段的装备/海克斯说明按当前 renderer locale 格式化。
 - 新增资源键一致性、locale 归一化和界面/数据派生文案同步单测。
 - 语言提交成功后立即结束局部 loading；远端版本信息改为后台刷新并丢弃旧 locale 响应，不再把接口等待串到切换主链路。
-- 语言选择框使用局部旋转进度和状态文案，不再设置 `cursor: wait`，其余主界面在准备期间保持可交互。
+- 语言入口使用状态栏右上角的主题化菜单和局部旋转进度，状态区恢复客户端版本、数据版本、LCU 连接一行三列；不再显示“自动监听”徽标或设置 `cursor: wait`，其余主界面在准备期间保持可交互。
 
 ## 测试与 CI 缺口
 
 修复后以下命令均通过：
 
 ```text
-npm run test:unit     # 18 个测试文件，51 个测试通过
+npm run test:unit     # 24 个测试文件，86 个测试通过
 npm run lint
 npm run type-check
 npm run build
@@ -281,7 +281,7 @@ npx -p npm@10 npm ci --ignore-scripts
 
 - 真实 `npm run prepare:client-data` 三语言成功验证。
 - `npm run pack` 和解包目录三语言资源检查。
-- 24 个单测文件共 85 项测试、lint、type-check、build 和隔离 OCR fixtures 通过。
+- 24 个单测文件共 86 项测试、lint、type-check、build 和隔离 OCR fixtures 通过。
 
 仍需执行安装版断网启动、语言切换、英雄详情和 OCR 人工验收。
 

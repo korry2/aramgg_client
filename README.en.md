@@ -130,8 +130,8 @@ Older implementation summaries, plans, and completion reports have been archived
 
 ## UI, Installation, and Runtime Data
 
-- The main window's "Interface and data language" setting supports `zh-CN`, `en-US`, and `zh-TW`. A successful switch updates the main window, champion details, bench recommendations, Augment overlays, the right-side recommendation list, and the post-game poster together.
-- Locale changes are transactional: the target dataset is prepared first, and `locale-changed` updates Vue i18n only after an exact locale match is ready. A failed preparation leaves both the interface and data on the previous locale.
+- The language menu in the upper-right corner of the main status header supports `zh-CN`, `en-US`, and `zh-TW`; the row below remains a three-column client version, data version, and LCU connection summary. A successful switch updates the main window, champion details, bench recommendations, Augment overlays, the right-side recommendation list, and the post-game poster together.
+- Locale changes are transactional: the target dataset is prepared first, and `locale-changed` updates Vue i18n only after an exact locale match is ready. Only the language control shows local progress while preparing; the post-commit remote version refresh runs in the background, and a failed preparation leaves both the interface and data on the previous locale.
 - Renderer messages live in `src/renderer/i18n/messages.ts`. New user-visible copy must include all three locales and preserve message-key parity.
 - The main window is shown on the right side of the primary display work area by default. The champion detail window, top Augment overlay, and right-side recommendation list are still positioned by the main process.
 - The main window's window preference controls can decide whether to close the champion detail page when entering a match, whether to show the top Augment overlay, and whether to show the right-side Augment recommendation list.

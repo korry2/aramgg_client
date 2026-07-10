@@ -120,7 +120,7 @@
 - [x] OCR fixtures 改用临时固定名称库，不再读取用户缓存、LCU 或线上赛季数据。
 - [x] manifest 路径与资源 origin 使用运行时/打包共享校验；renderer origin、导航和 IPC sender 统一收紧。
 - [x] 自动更新增加本地 feed origin 与 Windows publisher 信任根；当前列表为空且安装包未签名，因此继续保持关闭。
-- [x] 验证通过：24 个文件、85 项 `npm run test:unit`，以及 `npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`；完整 `npm audit` 为 0。
+- [x] 验证通过：24 个文件、86 项 `npm run test:unit`，以及 `npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`；完整 `npm audit` 为 0。
 
 ### 2026-05-31
 

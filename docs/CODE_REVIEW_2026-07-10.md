@@ -334,11 +334,11 @@ renderer 只使用 Firebase App 和 Analytics，但 `firebase` 被列为生产�
 | --- | --- | --- |
 | `npm run lint` | 通过 | 覆盖 JavaScript、TypeScript 和 Vue，warning 为 0 |
 | `npm run type-check` | 通过 | `@ts-nocheck` 已降至 4 个文件、约 27.3% TypeScript 行；其中 Analytics 暂不处理 |
-| `npm run test:unit` | 通过 | 23 个文件、82 个测试 |
+| `npm run test:unit` | 通过 | 24 个文件、86 个测试 |
 | `npm run test:augment-ocr` | 通过 | 3 个 fixture；使用隔离临时目录和固定数据 |
 | `node tests/electron/test-aram-bench-recommendation.js` | 通过 | ARAM 推荐专项 |
 | `node tests/electron/test-data-loader.js` | 通过 | 写用户日志时受审查沙箱限制 |
-| `npm run build` | 通过 | renderer 主入口约 383.1 kB，Display、浮窗等已拆成独立 chunk |
+| `npm run build` | 通过 | renderer 主入口约 567.4 kB，Display 约 406.7 kB，浮窗等仍保持独立 chunk |
 | 完整 `npm run pack` | 通过 | 三语言数据、NSIS 安装包、blockmap 和原生依赖重建全部完成 |
 | Authenticode 检查 | 未签名 | 安装包状态为 `NotSigned`，自动更新必须继续关闭 |
 | `npm audit` | 通过 | 生产及开发依赖均为 0 已知漏洞 |
