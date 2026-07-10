@@ -50,6 +50,7 @@ import {
     shouldShowAugmentSidePanel,
     shouldShowAugmentTopOverlay,
 } from './user-preferences.ts'
+import { GameSessionCoordinator } from '../services/game-session/game-session-machine.ts'
 
 const __dirname = import.meta.dirname
 
@@ -1176,7 +1177,7 @@ async function initGameFlowMonitor() {
             logger.debug('LCU Token 获取成功')
         }
 
-        let lastPhase = null
+        const gameSessionCoordinator = new GameSessionCoordinator()
         let lastTokenRefreshAt = Date.now()
         let websocketConnected = false
         let websocketLastEventAt = 0
@@ -1191,24 +1192,23 @@ async function initGameFlowMonitor() {
             autoScreenshotService.setGameflowPhase(phase)
             setAppUpdateGamePhase(phase)
 
-            if (phase && phase !== lastPhase) {
-                const prevPhase = lastPhase
-                lastPhase = phase
+            const transition = gameSessionCoordinator.transition(phase, source)
+            if (transition.changed) {
+                const prevPhase = transition.previous.phase
+                const currentPhase = transition.current.phase
                 logger.info(`游戏阶段变化(${source}): ${prevPhase || 'unknown'} → ${phase}`)
-                notifyAllWindows('game-phase-changed', { phase, prevPhase })
-                clearAugmentOverlayForPhase(phase)
-                void logReadOnlyGameApiDiagnostics(lcuService, phase, `phase-change:${source}`, true)
+                notifyAllWindows('game-phase-changed', { phase: currentPhase, prevPhase })
+                clearAugmentOverlayForPhase(currentPhase)
+                void logReadOnlyGameApiDiagnostics(lcuService, currentPhase, `phase-change:${source}`, true)
 
-                // 特定阶段处理
-                switch (phase) {
-                    case 'Lobby':
-                    case 'Matchmaking':
-                    case 'ReadyCheck':
+                // 状态机只决定阶段入口效果，Electron/LCU 副作用仍由主进程执行。
+                switch (transition.entryEffect) {
+                    case 'RESET_IDLE_SERVICES':
                         lastAutoAppliedItemSetChampionId = null
-                        resetChampSelectItemSetState(`LCU phase ${phase}`)
-                        stopAutoScreenshotForGame(`LCU phase ${phase}`)
+                        resetChampSelectItemSetState(`LCU phase ${currentPhase}`)
+                        stopAutoScreenshotForGame(`LCU phase ${currentPhase}`)
                         break
-                    case 'ChampSelect':
+                    case 'ENTER_CHAMP_SELECT':
                         logger.info('进入选人阶段 - 暂停游戏内海克斯 OCR')
                         resetPostGameShareSnapshot('LCU phase ChampSelect')
                         setPopupWindowAlwaysOnTop(true)
@@ -1218,7 +1218,7 @@ async function initGameFlowMonitor() {
                         await showChampionInsightForChampSelect(lcuService)
                         stopAutoScreenshotForGame('LCU phase ChampSelect')
                         break
-                    case 'GameStart':
+                    case 'ENTER_GAME_START':
                         logger.info('游戏开始加载')
                         resetPostGameShareSnapshot('LCU phase GameStart')
                         allowChampionInsightInBackground('LCU phase GameStart')
@@ -1226,7 +1226,7 @@ async function initGameFlowMonitor() {
                         resetChampSelectItemSetState('LCU phase GameStart')
                         stopAutoScreenshotForGame('LCU phase GameStart')
                         break
-                    case 'InProgress':
+                    case 'ENTER_IN_PROGRESS':
                         logger.info('游戏进行中 - 启动自动截图来检测海克斯选择')
                         allowChampionInsightInBackground('LCU phase InProgress')
                         notifyAllWindows('game-in-progress', {})
@@ -1235,20 +1235,20 @@ async function initGameFlowMonitor() {
                         void capturePostGameShareSnapshot(lcuService, 'LCU phase InProgress')
                         await startAutoScreenshotForGame('LCU phase InProgress')
                         break
-                    case 'WaitingForStats':
+                    case 'ENTER_WAITING_FOR_STATS':
                         logger.info('游戏已结束')
                         notifyAllWindows('game-ended', {})
                         void prepareAndNotifyPostGameShare(lcuService, 'LCU phase WaitingForStats')
                         resetChampSelectItemSetState('LCU phase WaitingForStats')
                         stopAutoScreenshotForGame('LCU phase WaitingForStats')
                         break
-                    case 'PreEndOfGame':
+                    case 'ENTER_PRE_END_OF_GAME':
                         logger.info('游戏结束统计阶段')
                         void prepareAndNotifyPostGameShare(lcuService, 'LCU phase PreEndOfGame')
                         resetChampSelectItemSetState('LCU phase PreEndOfGame')
                         stopAutoScreenshotForGame('LCU phase PreEndOfGame')
                         break
-                    case 'EndOfGame':
+                    case 'ENTER_END_OF_GAME':
                         logger.info('游戏完全结束')
                         notifyAllWindows('end-of-game', {})
                         void prepareAndNotifyPostGameShare(lcuService, 'LCU phase EndOfGame')
@@ -1379,7 +1379,7 @@ async function initGameFlowMonitor() {
                     }
                 }
 
-                if (lastPhase === 'ChampSelect') {
+                if (gameSessionCoordinator.getState().phase === 'ChampSelect') {
                     await pollChampSelectSnapshot(lcuService, 'champ-select-poll')
                 }
             } catch (error) {

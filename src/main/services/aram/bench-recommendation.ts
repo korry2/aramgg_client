@@ -1,21 +1,51 @@
-// @ts-nocheck
+import type {
+  AramBenchRecommendation,
+  AramRecommendationCandidate,
+  GameflowPhase,
+} from '../../../shared/ipc-contract.ts'
+
+type CandidateSource = 'current' | 'bench' | 'teammate'
+
+interface RecommendationSnapshot {
+  status?: string
+  reason?: string | null
+  gameflowPhase?: GameflowPhase | null
+  selfChampionId?: unknown
+  localPlayerCellId?: unknown
+  benchEnabled?: boolean
+  benchChampions?: Array<{ championId?: unknown }>
+  myTeam?: Array<{ cellId?: unknown; championId?: unknown }>
+}
+
+interface ChampionStats {
+  nameCN?: string
+  name?: string
+  alias?: string
+  nameEN?: string
+  iconUrl?: string
+  tier?: unknown
+  [key: string]: unknown
+}
+
+type ChampionStatsById = Map<number | string, ChampionStats> | Record<string, ChampionStats>
+
 const READY_STATUS = 'ready'
 const INACTIVE_STATUS = 'inactive'
 const NO_CURRENT_STATUS = 'no-current-champion'
 const NO_BENCH_STATUS = 'no-bench'
 const NO_CANDIDATES_STATUS = 'no-candidates'
-const CANDIDATE_SOURCE_LABELS = {
+const CANDIDATE_SOURCE_LABELS: Record<CandidateSource, string> = {
   current: '当前',
   bench: '席位',
   teammate: '队友',
 }
 
-function toPositiveInteger(value) {
+function toPositiveInteger(value: unknown): number | null {
   const numberValue = Number(value)
   return Number.isInteger(numberValue) && numberValue > 0 ? numberValue : null
 }
 
-function toInteger(value) {
+function toInteger(value: unknown): number | null {
   if (value == null || value === '') {
     return null
   }
@@ -24,7 +54,7 @@ function toInteger(value) {
   return Number.isInteger(numberValue) ? numberValue : null
 }
 
-function toNullableNumber(value) {
+function toNullableNumber(value: unknown): number | null {
   if (value == null || value === '') {
     return null
   }
@@ -33,7 +63,7 @@ function toNullableNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null
 }
 
-function normalizeRate(value) {
+function normalizeRate(value: unknown): number | null {
   const numberValue = toNullableNumber(value)
   if (numberValue == null) {
     return null
@@ -42,11 +72,11 @@ function normalizeRate(value) {
   return numberValue > 1 ? numberValue / 100 : numberValue
 }
 
-function clamp01(value) {
+function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
 
-function getStatsField(stats, fields) {
+function getStatsField(stats: ChampionStats | null, fields: string[]): unknown {
   for (const field of fields) {
     if (stats?.[field] != null) {
       return stats[field]
@@ -56,7 +86,10 @@ function getStatsField(stats, fields) {
   return null
 }
 
-function getChampionStats(championStatsById, championId) {
+function getChampionStats(
+  championStatsById: ChampionStatsById | null | undefined,
+  championId: number,
+): ChampionStats | null {
   if (!championStatsById) {
     return null
   }
@@ -68,7 +101,7 @@ function getChampionStats(championStatsById, championId) {
   return championStatsById[championId] || championStatsById[String(championId)] || null
 }
 
-function getChampionDisplayName(championId, stats) {
+function getChampionDisplayName(championId: number, stats: ChampionStats | null): string {
   return (
     stats?.nameCN ||
     stats?.name ||
@@ -78,7 +111,7 @@ function getChampionDisplayName(championId, stats) {
   )
 }
 
-function getAvailableStatsFields(stats) {
+function getAvailableStatsFields(stats: ChampionStats | null): string[] {
   if (!stats) {
     return []
   }
@@ -86,11 +119,11 @@ function getAvailableStatsFields(stats) {
   return ['winRate', 'pickRate', 'numGames', 'tier', 'iconUrl'].filter((field) => stats[field] != null)
 }
 
-function getCandidateSourceLabel(source) {
-  return CANDIDATE_SOURCE_LABELS[source] || '候选'
+function getCandidateSourceLabel(source: CandidateSource): string {
+  return CANDIDATE_SOURCE_LABELS[source]
 }
 
-function scoreChampionStats(stats) {
+function scoreChampionStats(stats: ChampionStats | null) {
   const winRate = normalizeRate(getStatsField(stats, ['winRate', 'win_rate']))
   const pickRate = normalizeRate(getStatsField(stats, ['pickRate', 'pick_rate']))
   const games = toNullableNumber(getStatsField(stats, ['numGames', 'games', 'playCount', 'num_games']))
@@ -123,7 +156,12 @@ function scoreChampionStats(stats) {
   }
 }
 
-function buildCandidate(championId, source, snapshot, championStatsById) {
+function buildCandidate(
+  championId: number,
+  source: CandidateSource,
+  snapshot: RecommendationSnapshot,
+  championStatsById: ChampionStatsById,
+): AramRecommendationCandidate {
   const stats = getChampionStats(championStatsById, championId)
   const scoredStats = scoreChampionStats(stats)
   const isCurrent = championId === toPositiveInteger(snapshot.selfChampionId)
@@ -163,7 +201,7 @@ function buildCandidate(championId, source, snapshot, championStatsById) {
   }
 }
 
-function sortCandidates(candidates) {
+function sortCandidates(candidates: AramRecommendationCandidate[]): AramRecommendationCandidate[] {
   return [...candidates].sort((a, b) => {
     if (b.score !== a.score) {
       return b.score - a.score
@@ -177,9 +215,9 @@ function sortCandidates(candidates) {
   })
 }
 
-function collectUniqueChampionIds(values) {
-  const championIds = []
-  const seenChampionIds = new Set()
+function collectUniqueChampionIds(values: unknown[]): number[] {
+  const championIds: number[] = []
+  const seenChampionIds = new Set<number>()
 
   values.forEach((value) => {
     const championId = toPositiveInteger(value)
@@ -194,7 +232,7 @@ function collectUniqueChampionIds(values) {
   return championIds
 }
 
-function collectBenchChampionIds(snapshot) {
+function collectBenchChampionIds(snapshot: RecommendationSnapshot): number[] {
   if (!Array.isArray(snapshot?.benchChampions)) {
     return []
   }
@@ -202,15 +240,15 @@ function collectBenchChampionIds(snapshot) {
   return collectUniqueChampionIds(snapshot.benchChampions.map((benchChampion) => benchChampion?.championId))
 }
 
-function collectTeammateChampionIds(snapshot) {
+function collectTeammateChampionIds(snapshot: RecommendationSnapshot): number[] {
   if (!Array.isArray(snapshot?.myTeam)) {
     return []
   }
 
   const localPlayerCellId = toInteger(snapshot.localPlayerCellId)
   const selfChampionId = toPositiveInteger(snapshot.selfChampionId)
-  const championIds = []
-  const seenChampionIds = new Set()
+  const championIds: number[] = []
+  const seenChampionIds = new Set<number>()
 
   snapshot.myTeam.forEach((member) => {
     const cellId = toInteger(member?.cellId)
@@ -238,7 +276,7 @@ function collectTeammateChampionIds(snapshot) {
   return championIds
 }
 
-function getCandidateFocusName(candidate) {
+function getCandidateFocusName(candidate: AramRecommendationCandidate | null): string {
   if (!candidate) {
     return '候选英雄'
   }
@@ -254,7 +292,11 @@ function getCandidateFocusName(candidate) {
   return candidate.name
 }
 
-function buildBaseRecommendation(snapshot, status, reason) {
+function buildBaseRecommendation(
+  snapshot: RecommendationSnapshot | null,
+  status: string,
+  reason: string | null,
+): AramBenchRecommendation {
   return {
     readOnly: true,
     status,
@@ -271,14 +313,14 @@ function buildBaseRecommendation(snapshot, status, reason) {
   }
 }
 
-export function collectAramCandidateChampionIds(snapshot) {
+export function collectAramCandidateChampionIds(snapshot: RecommendationSnapshot | null): number[] {
   if (!snapshot || snapshot.gameflowPhase !== 'ChampSelect') {
     return []
   }
 
-  const championIds = []
-  const seenChampionIds = new Set()
-  const addChampionId = (value) => {
+  const championIds: number[] = []
+  const seenChampionIds = new Set<number>()
+  const addChampionId = (value: unknown) => {
     const championId = toPositiveInteger(value)
     if (!championId || seenChampionIds.has(championId)) {
       return
@@ -296,11 +338,14 @@ export function collectAramCandidateChampionIds(snapshot) {
   return championIds
 }
 
-export function createEmptyAramBenchRecommendation(reason = 'lcu-unavailable') {
+export function createEmptyAramBenchRecommendation(reason = 'lcu-unavailable'): AramBenchRecommendation {
   return buildBaseRecommendation(null, INACTIVE_STATUS, reason)
 }
 
-export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
+export function getAramBenchRecommendation(
+  snapshot: RecommendationSnapshot | null,
+  championStatsById: ChampionStatsById = {},
+): AramBenchRecommendation {
   if (!snapshot || snapshot.gameflowPhase !== 'ChampSelect') {
     return buildBaseRecommendation(
       snapshot,
@@ -317,7 +362,7 @@ export function getAramBenchRecommendation(snapshot, championStatsById = {}) {
     return buildBaseRecommendation(snapshot, NO_CANDIDATES_STATUS, 'no-champion-candidates')
   }
 
-  const candidatesById = new Map()
+  const candidatesById = new Map<number, AramRecommendationCandidate>()
 
   if (currentChampionId) {
     candidatesById.set(

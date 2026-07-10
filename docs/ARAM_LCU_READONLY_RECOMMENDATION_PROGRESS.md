@@ -29,7 +29,8 @@
 - 主进程 LCU 服务：[src/main/services/lcu/lcu-service.ts](../src/main/services/lcu/lcu-service.ts)
 - LCU IPC handlers：[src/main/services/lcu/ipc-handlers.ts](../src/main/services/lcu/ipc-handlers.ts)
 - 渲染进程 LCU 代理：[src/renderer/services/lcu/lcu-client.ts](../src/renderer/services/lcu/lcu-client.ts)
-- 游戏流程监控：[src/renderer/service/game-flow-monitor.ts](../src/renderer/service/game-flow-monitor.ts)
+- 游戏流程编排：[src/main/modules/app-config.ts](../src/main/modules/app-config.ts)
+- 游戏会话纯状态机：[src/main/services/game-session/game-session-machine.ts](../src/main/services/game-session/game-session-machine.ts)
 - 自动截图服务：[src/main/auto-screenshot-service.ts](../src/main/auto-screenshot-service.ts)
 - 海克斯浮窗：[src/renderer/components/AugmentFloatingOverlay.vue](../src/renderer/components/AugmentFloatingOverlay.vue)
 - 英雄详情窗口：[src/renderer/components/AugmentWinrateOverlay.vue](../src/renderer/components/AugmentWinrateOverlay.vue)
@@ -216,6 +217,11 @@
 
 - [x] UI 命名统一：主应用为 ARAMGG助手，选人/英雄数据窗口为英雄详情，游戏内强化结果窗口为海克斯浮窗。
 - [x] 主进程相关文件迁移为 TypeScript 后，本文档同步 `.ts` 源码路径。
+
+### 2026-07-10
+
+- [x] gameflow phase 接入 `GameSessionCoordinator`，统一生命周期映射并去重重复阶段入口效果。
+- [x] 新增连续对局、重复事件、未知阶段和完整生命周期单元测试；推荐链路仍保持只读。
 
 ## 后续注意事项
 

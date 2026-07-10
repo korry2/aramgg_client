@@ -277,8 +277,8 @@ ipcMain.handle('store-clear', () => {
 |------|------|----------|
 | `postcss-import` 未声明为依赖 | `postcss.config.js` | 已完成：删除旧 `postcss.config.js` |
 | `radix-vue` 与 `reka-ui` 共存 | `package.json` | 已完成：移除未引用的 `radix-vue` |
-| ESLint 未配置 TypeScript 支持 | `eslint.config.js` | 安装配置 `typescript-eslint` |
-| lint 脚本未覆盖 `.ts` 文件 | `package.json` scripts | 改为 `eslint src` |
+| ESLint 未配置 TypeScript 支持 | `eslint.config.js` | 已完成：接入 `typescript-eslint` |
+| lint 脚本未覆盖 `.ts` 文件 | `package.json` scripts | 已完成：`eslint src` 覆盖 `.ts` |
 | `emptyOutDir: true` main 和 preload 共享 `dist-electron` | `electron.vite.config.mjs` | 改为构建脚本中统一清理 |
 | `nodeBuiltinsPlugin` 与 `externalizeDepsPlugin` 功能重叠 | `electron.vite.config.mjs` | 删除 `nodeBuiltinsPlugin` |
 | tsconfig 根配置包含 DOM 类型 | `tsconfig.json` | 根配置只作为项目引用入口 |
@@ -369,3 +369,4 @@ ipcMain.handle('store-clear', () => {
 | 2026-05-31 | ShowDetail apply 失败无用户反馈 | 已完成 | 添加应用中/成功/失败状态提示，应用中禁用当前按钮 |
 | 2026-05-31 | `electron-store` 多实例 | 已完成 | 新增 `src/main/modules/app-store.ts` 共享单例，主进程模块统一复用 |
 | 2026-07-10 | ESLint 未覆盖 TypeScript | 已完成 | `npm run lint` 覆盖 `.js`、`.ts`、`.vue`；TypeScript 使用 `typescript-eslint` parser，IPC 注册文件启用 `no-undef` |
+| 2026-07-10 | IPC 类型边界宽泛且核心模块跳过检查 | 已完成 | 新增共享 IPC 契约和 typed preload，拆分 preferences/system handlers，并移除核心 IPC 与 ARAM 推荐模块的 `@ts-nocheck` |

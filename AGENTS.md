@@ -7,7 +7,9 @@ This is an Electron + Vue app built with `electron-vite`. Source code lives unde
 - `src/main/`: Electron main process, window management, IPC handlers, data loading, screenshots, OCR, and LCU services.
 - `src/preload/`: sandboxed preload bridge exposing `window.electronAPI`.
 - `src/renderer/`: Vue renderer app, routes, services, shared utilities, UI components, styles, and assets.
+- `src/shared/`: contracts shared across the main, preload, and renderer type boundaries.
 - `public/`: static assets copied to the renderer build.
+- `tests/unit/`: focused Vitest coverage for pure utilities and state transitions.
 - `tests/electron/`: Node/Electron integration-style test scripts.
 - `legacy/`: reserved for archived legacy material only; do not add new source code there.
 
@@ -55,6 +57,8 @@ Older clients see future app release notes through the remote `/api/client/v1/co
 ## Security & Configuration Tips
 
 Renderer code must not assume Node access. Use the preload bridge and IPC APIs. Keep `contextIsolation`, `sandbox`, and `webSecurity` enabled unless a change explicitly justifies otherwise.
+
+Define new preload methods and pushed events in `src/shared/ipc-contract.ts` first, then implement the typed preload bridge and main-process handler. Renderer-writable electron-store keys must remain allowlisted in `src/main/ipc/preferences-handlers.ts`.
 
 ARAM champ-select recommendation code must remain read-only. Do not connect `pickOrBan`, `benchSwap`, `action`, `acceptTrade`, or `declineTrade` to recommendation flows; keep executable LCU writes isolated to their existing feature areas such as rune pages.
 

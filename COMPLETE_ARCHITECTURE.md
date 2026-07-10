@@ -17,6 +17,9 @@ src/preload/
 
 src/renderer/
   Vue renderer：主界面、浮窗、配置、展示组件
+
+src/shared/
+  main、preload、renderer 共用的 IPC 类型契约
 ```
 
 Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload 中白名单化的 `electronAPI`。
@@ -26,15 +29,17 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | 能力 | 关键位置 | 说明 |
 |------|----------|------|
 | 窗口管理 | `src/main/modules/window-manager.ts` | 主窗口、海克斯详情弹窗、席位推荐弹窗、游戏内浮窗 |
-| IPC 注册 | `src/main/modules/ipc-handlers.ts`、`src/main/services/lcu/ipc-handlers.ts` | Store、截图、数据、LCU 等业务通道 |
+| IPC 注册 | `src/main/modules/ipc-handlers.ts`、`src/main/ipc/`、`src/main/services/lcu/ipc-handlers.ts` | 聚合注册并按 system、preferences、LCU 等领域组织业务通道 |
+| IPC 契约 | `src/shared/ipc-contract.ts` | 统一 preload API、主进程推送事件、LCU 返回值和 renderer 可写配置 key |
 | LCU 服务 | `src/main/services/lcu/` | LCU token、gameflow、champ-select、符文页 |
+| 游戏会话状态机 | `src/main/services/game-session/game-session-machine.ts` | 规范化 gameflow 生命周期、去重阶段入口并选择副作用 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
 | 数据加载与语言切换 | `src/main/data-loader.ts`、`src/main/modules/data-locale-controller.ts` | 按语言隔离的远端/本地数据、打包兜底数据，以及先准备再提交的语言切换事务 |
 | 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
 | 自动截图 | `src/main/auto-screenshot-service.ts` | 串行截图和 OCR 队列，受 gameflow 阶段控制 |
 | 图像分析 | `src/main/image-analyzer.ts` | 海克斯 OCR 和匹配 |
 | 运行时数据目录 | `src/main/modules/app-paths.ts` | 配置、日志、远端数据缓存、OCR 调试截图 |
-| Preload API | `src/preload/preload.js` | 暴露 `store`、`windows`、`screenshot`、`winrate`、`lcu` 等业务 API |
+| Preload API | `src/preload/preload.ts` | 按共享 IPC 契约暴露 `store`、`windows`、`screenshot`、`winrate`、`lcu` 等业务 API |
 | Renderer API 代理 | `src/renderer/native/electron-api.js` | Renderer 侧统一调用入口 |
 
 ## LCU 凭据发现
@@ -89,6 +94,8 @@ LCU gameflow + champ-select session
 
 ```text
 LCU gameflow InProgress
+  -> GameSessionCoordinator 规范化并去重阶段入口
+  -> app-config.ts 执行窗口、截图和 OCR 副作用
   -> autoScreenshotService.start(...)
   -> captureScreenshot()
   -> analyzeScreenshot()
@@ -167,7 +174,7 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
 - `sandbox: true`
 - `webSecurity: true`
 
-Renderer 代码不能直接导入或调用 Node/Electron 模块。新增主进程能力时，先在 `src/preload/preload.js` 白名单暴露业务方法，再在 `src/renderer/native/electron-api.js` 代理。
+Renderer 代码不能直接导入或调用 Node/Electron 模块。新增主进程能力时，先在 `src/shared/ipc-contract.ts` 定义契约，再在 `src/preload/preload.ts` 白名单暴露业务方法，并通过 `src/renderer/native/electron-api.js` 代理。Renderer 可读写的配置 key 由 `src/main/ipc/preferences-handlers.ts` 明确允许，系统级操作由 `src/main/ipc/system-handlers.ts` 集中校验和注册。
 
 ## LCU 写入边界
 

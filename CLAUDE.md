@@ -11,9 +11,11 @@
 
 - 项目是 Electron + Vue 3 + electron-vite。
 - 主进程代码在 `src/main/`，preload 在 `src/preload/`，renderer 在 `src/renderer/`。
+- `src/shared/ipc-contract.ts` 是 main、preload 与 renderer 之间 Electron API 和事件载荷的类型事实源。
 - `legacy/` 仅保留归档材料，不再包含旧 React 源码；新功能不要放到这里。
 - `dist/`、`dist-electron/`、`build/` 是生成产物，不要作为源码编辑。
 - Renderer 不能假设 Node 能力；只能通过 `window.electronAPI` 走 preload/IPC。
+- 游戏阶段入口由 `GameSessionCoordinator` 去重并选择效果，Electron 窗口、LCU、OCR 和截图副作用仍由 `app-config.ts` 执行。
 - 运行时可变数据统一走 `src/main/modules/app-paths.ts`：安装版优先写入安装目录旁的 `aramgg_client-data/`，不可写时回退到 Electron `userData`。
 - 客户端英雄、海克斯、装备数据前台读取必须本地优先：完整缓存或打包兜底数据先渲染英雄详情和海克斯弹窗；远端 `dataVersion` 检查和新版本下载只在后台进行，且必须等必需文件完整后再激活。
 - 客户端数据按语言隔离：默认 `zh-CN` 保留扁平指针和版本目录，非默认语言使用语言级指针和版本目录；非默认 `config` / `manifest` 必须显式匹配请求语言，打包和运行时都不能把默认中文归类成英文或繁中。
@@ -62,8 +64,11 @@ node tests/electron/test-augment-ocr-fixtures.js
 - ARAM 席位推荐：`src/renderer/components/AramBenchRecommendation.vue`，嵌在英雄详情窗口 `/augment-overlay` 顶部
 - 截图和 OCR：`src/main/auto-screenshot-service.ts`、`src/main/image-analyzer.ts`
 - 运行时目录和日志/缓存位置：`src/main/modules/app-paths.ts`
-- Preload API：`src/preload/preload.js`
+- 共享 IPC 契约：`src/shared/ipc-contract.ts`
+- 通用领域 IPC：`src/main/ipc/`
+- Preload API：`src/preload/preload.ts`
 - Renderer IPC 代理：`src/renderer/native/electron-api.js`
+- 游戏会话纯状态机：`src/main/services/game-session/game-session-machine.ts`
 - Vue UI 组件：`src/renderer/components/`
 
 业务逻辑优先放 services，不要塞进 Vue template。新增源码、服务、工具、IPC 契约和测试优先使用 TypeScript；只有延续既有 JS 模块或工具边界确实不方便时才新增 `.js`。新增测试脚本放 `tests/electron/test-<feature>.js`。
@@ -72,6 +77,7 @@ node tests/electron/test-augment-ocr-fixtures.js
 
 - `/lol-gameflow/v1/gameflow-phase` 的 `ChampSelect` 表示选人阶段。
 - `/lol-gameflow/v1/gameflow-phase` 的 `InProgress` 表示实际对局阶段，不是 champ-select session 内部 timer 状态。
+- 同一 gameflow phase 的重复事件不得重复执行阶段入口副作用；新阶段行为先扩展纯状态机，再由主进程编排层执行效果。
 - LCU 凭据发现优先走运行中的 League Client 进程；`lolPath` / 主界面「游戏目录」只是高级手动兜底，不要把它重新做成必填配置或推荐链路前置条件。
 - 自动截图/OCR 只应在实际对局 `InProgress` 阶段运行；`ChampSelect`、`Lobby`、`EndOfGame` 等阶段要避免展示过期海克斯结果。
 - 只读选人快照入口是 `LCUService.getChampSelectSnapshot()` 和 IPC `lcu-get-champ-select-snapshot`。
@@ -92,3 +98,4 @@ node tests/electron/test-augment-ocr-fixtures.js
 - 客户端数据 API：`docs/client-api-strategy.md`
 - 客户端多语言数据专项审查：`docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md`
 - Electron 更新方案：`docs/ELECTRON_APP_UPDATE_STRATEGY.md`
+- 项目改进建议与实施进度：`docs/PROJECT_RECOMMENDATIONS_2026-07-10.md`

@@ -5,8 +5,9 @@
 项目已接入 TypeScript 类型检查，源码结构遵循 electron-vite 三段式目录：
 
 - `src/main/`：Electron 主进程，当前源码以 `.ts` 为主。
-- `src/preload/`：sandbox preload，目前入口仍是 `.js`，类型边界由 renderer 侧声明补齐。
+- `src/preload/`：sandbox preload，入口为 `preload.ts`，显式实现共享 `ElectronAPI` 契约。
 - `src/renderer/`：Vue 3 渲染进程，支持 `.ts`、`.js`、`.vue`。
+- `src/shared/`：main、preload 与 renderer 共用的跨进程类型契约。
 
 类型检查命令：
 
@@ -25,7 +26,7 @@ ESLint 同时覆盖 `src/` 下的 `.js`、`.ts` 和 `.vue`：
 npm run lint
 ```
 
-TypeScript 文件通过 `typescript-eslint` parser 解析；类型正确性仍由 `npm run type-check` 负责。高风险 IPC 注册文件额外启用 `no-undef`，避免 `@ts-nocheck` 遮蔽未导入符号。
+TypeScript 文件通过 `typescript-eslint` parser 解析；类型正确性仍由 `npm run type-check` 负责。核心 IPC 注册和 ARAM 推荐模块已移除 `@ts-nocheck`，跨进程参数和返回值由共享契约参与检查。
 
 ## 新代码规则
 
@@ -38,12 +39,16 @@ TypeScript 文件通过 `typescript-eslint` parser 解析；类型正确性仍�
 
 | 范围 | 文件 |
 |------|------|
+| 共享 Electron API 与事件契约 | `src/shared/ipc-contract.ts` |
+| Typed preload bridge | `src/preload/preload.ts` |
+| 通用领域 IPC handlers | `src/main/ipc/*.ts` |
 | Electron LCU 服务 | `src/main/services/lcu/*.ts` |
 | Renderer LCU 代理 | `src/renderer/services/lcu/*.ts` |
 | 主进程数据加载 | `src/main/data-loader.ts` |
 | Electron API renderer 声明 | `src/renderer/native/electron-api.d.ts` |
 | App path/logger/store 运行时模块 | `src/main/modules/{app-paths,app-store,logger}.ts` |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` |
+| 游戏会话状态机 | `src/main/services/game-session/game-session-machine.ts` |
 
 ## 编写规范
 
@@ -78,6 +83,8 @@ function processSnapshot(snapshot: any) {
 2. 共享业务类型放到对应服务目录的 `types.ts`。
 3. 为既有 `.js` 模块补类型时，放同目录 `.d.ts`。
 4. 第三方库缺类型时，优先安装或引用 `@types/*`。
+
+跨进程 API 不在 renderer 侧重复手写一套宽泛声明。新增方法或事件时，先更新 `src/shared/ipc-contract.ts`，由 preload 显式实现，再同步主进程 handler 和调用方。
 
 ## 提交前检查
 

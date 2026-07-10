@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, nativeImage, shell } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, type OpenDialogOptions } from 'electron'
 import { writeFile } from 'fs/promises'
 import path from 'path'
 import { captureScreenshot } from '../screenshot.ts'
@@ -17,31 +16,16 @@ import {
     applyFloatingWindowLayout,
     applyPopupWindowLayout,
     getAugmentSidePanelWindow,
-    allowMainWindowClose,
     createPopupWindow,
     getFloatingWindow,
     getMainWindow,
     getPopupWindow,
-    notifyAllWindows,
     raiseOverlayWindow,
     setPopupWindowAlwaysOnTop,
-    toggleMainWindow,
 } from './window-manager.ts'
 import logger from './logger.ts'
 import store from './app-store.ts'
 import { getAppDataDir } from './app-paths.ts'
-import { logDiagnosticSnapshot } from './diagnostic-logger.ts'
-import {
-    getAnalyticsStatus,
-    setAnalyticsEnabled,
-    trackAnalyticsEvent,
-} from '../services/analytics-service.ts'
-import {
-    checkForAppUpdate,
-    downloadAppUpdate,
-    getAppUpdateState,
-    installDownloadedAppUpdate,
-} from '../app-update-service.ts'
 import {
     shouldShowAugmentSidePanel,
     shouldShowAugmentTopOverlay,
@@ -52,19 +36,14 @@ import {
     isLeagueInstallDirectory,
 } from './lol-path.ts'
 import {
-    DEFAULT_DATA_LOCALE,
-    SUPPORTED_DATA_LOCALES,
     getDataLocale,
-    normalizeDataLocale,
-    prepareDataLocale,
-    setDataLocale,
 } from '../data-loader.ts'
-import { changeDataLocale } from './data-locale-controller.ts'
+import { registerPreferencesIpcHandlers } from '../ipc/preferences-handlers.ts'
+import { registerSystemIpcHandlers } from '../ipc/system-handlers.ts'
 
 const TEST_AUGMENT_COUNT = 3
 const TEST_BENCH_CHAMPION_COUNT = 8
 const LCU_MANUAL_LEAGUE_PATH_KEY = 'lolPath'
-const APP_LOCALE_KEY = 'app.locale'
 const BROADCAST_CHANNELS = new Set([
     'fromMain',
     'for-popup',
@@ -85,16 +64,18 @@ const BROADCAST_CHANNELS = new Set([
     'post-game-share-ready',
     'locale-changed',
 ])
-const championDataLoadRequests = new Map()
-let quitRequested = false
-let startupDataLocalePromise = Promise.resolve()
+const championDataLoadRequests = new Map<string, Promise<unknown>>()
 const MAX_POSTER_DATA_URL_LENGTH = 24 * 1024 * 1024
 
-function getElapsedMs(startedAt) {
+function getElapsedMs(startedAt: number): number {
     return Date.now() - startedAt
 }
 
-function suppressManualAugmentOverlayReshow(reason, source) {
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
+}
+
+function suppressManualAugmentOverlayReshow(reason: unknown, source: string): void {
     if (reason !== 'manual') {
         return
     }
@@ -102,56 +83,11 @@ function suppressManualAugmentOverlayReshow(reason, source) {
     try {
         autoScreenshotService.suppressCurrentAugmentOverlay(source)
     } catch (error) {
-        logger.warn('[overlay] failed to suppress manual augment reshow:', error.message)
+        logger.warn('[overlay] failed to suppress manual augment reshow:', getErrorMessage(error))
     }
 }
 
-function requestAppQuit(reason) {
-    if (quitRequested) {
-        return
-    }
-
-    quitRequested = true
-    logger.info('[app] quit requested', { reason })
-
-    try {
-        globalShortcut.unregisterAll()
-    } catch (error) {
-        logger.warn('[app] failed to unregister shortcuts before quit:', error.message)
-    }
-
-    try {
-        autoScreenshotService.stop(`app quit: ${reason}`)
-    } catch (error) {
-        logger.warn('[app] failed to stop auto screenshot before quit:', error.message)
-    }
-
-    allowMainWindowClose()
-
-    const forceExitTimer = setTimeout(() => {
-        logger.warn('[app] force exiting after quit timeout')
-        for (const window of BrowserWindow.getAllWindows()) {
-            if (!window.isDestroyed()) {
-                window.destroy()
-            }
-        }
-        app.exit(0)
-    }, 1500)
-
-    forceExitTimer.unref?.()
-    app.quit()
-}
-
-function assertSafeExternalUrl(url) {
-    const parsedUrl = new URL(url)
-    if (!['http:', 'https:', 'mailto:'].includes(parsedUrl.protocol)) {
-        throw new Error(`Unsupported external URL protocol: ${parsedUrl.protocol}`)
-    }
-
-    return parsedUrl.toString()
-}
-
-function getPosterPngBuffer(dataUrl) {
+function getPosterPngBuffer(dataUrl: unknown): Buffer {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
         throw new Error('Invalid poster image format')
     }
@@ -169,8 +105,8 @@ function getPosterPngBuffer(dataUrl) {
     return buffer
 }
 
-function getPosterSavePath(filePath) {
-    if (!filePath) {
+function getPosterSavePath(filePath: unknown): string {
+    if (typeof filePath !== 'string' || !filePath) {
         return ''
     }
 
@@ -179,7 +115,7 @@ function getPosterSavePath(filePath) {
         : `${filePath}.png`
 }
 
-async function validateLolDirectory(lolPath) {
+async function validateLolDirectory(lolPath: unknown) {
     const normalizedInput = typeof lolPath === 'string' ? lolPath.trim() : ''
 
     if (!normalizedInput) {
@@ -286,9 +222,9 @@ async function validateLolDirectory(lolPath) {
     }
 }
 
-function sampleItems(items, count) {
+function sampleItems<T>(items: T[], count: number): T[] {
     const pool = [...items]
-    const selected = []
+    const selected: T[] = []
 
     while (pool.length > 0 && selected.length < count) {
         const index = Math.floor(Math.random() * pool.length)
@@ -298,11 +234,12 @@ function sampleItems(items, count) {
     return selected
 }
 
-function getChampionDisplayName(champion) {
-    return champion?.nameCN || champion?.nameEN || champion?.alias || `英雄 ${champion?.championId || ''}`
+function getChampionDisplayName(champion: Record<string, unknown> | null | undefined): string {
+    const name = champion?.nameCN || champion?.nameEN || champion?.alias
+    return typeof name === 'string' && name ? name : `英雄 ${String(champion?.championId || '')}`
 }
 
-function sendPopupError(message) {
+function sendPopupError(message: string): void {
     const popupWindow = getPopupWindow()
     if (!popupWindow || popupWindow.isDestroyed()) {
         return
@@ -371,7 +308,7 @@ async function buildRandomAugmentPreviewData(context = 'random-augment-preview')
     throw new Error('没有可用英雄海克斯数据')
 }
 
-async function buildRandomBenchRecommendation(currentChampionId = null) {
+async function buildRandomBenchRecommendation(currentChampionId: number | null = null) {
     const { loadChampionRoster } = await import('../data-loader.ts')
     const { getAramBenchRecommendation } = await import('../services/aram/bench-recommendation.ts')
     const champions = await loadChampionRoster()
@@ -413,66 +350,9 @@ async function buildRandomBenchRecommendation(currentChampionId = null) {
     )
 }
 
-export function registerIpcHandlers(isDev) {
-    const startupLocale = normalizeDataLocale(store.get(APP_LOCALE_KEY) || DEFAULT_DATA_LOCALE)
-    setDataLocale(DEFAULT_DATA_LOCALE)
-    startupDataLocalePromise = prepareDataLocale(startupLocale)
-        .then((prepared) => {
-            setDataLocale(prepared.locale)
-            store.set(APP_LOCALE_KEY, prepared.locale)
-            logger.info('[locale] startup data locale activated', prepared)
-        })
-        .catch((error) => {
-            setDataLocale(DEFAULT_DATA_LOCALE)
-            store.set(APP_LOCALE_KEY, DEFAULT_DATA_LOCALE)
-            logger.warn('[locale] stored data locale unavailable; reset to default:', {
-                requestedLocale: startupLocale,
-                locale: DEFAULT_DATA_LOCALE,
-                error: error.message,
-            })
-        })
-
-    ipcMain.handle('store-get', (_event, key) => {
-        return store.get(key)
-    })
-
-    ipcMain.handle('store-set', (_event, key, value) => {
-        store.set(key, value)
-    })
-
-    ipcMain.handle('store-delete', (_event, key) => {
-        store.delete(key)
-    })
-
-    ipcMain.handle('locale-get', async () => {
-        await startupDataLocalePromise
-        return {
-            locale: getDataLocale(),
-            supportedLocales: SUPPORTED_DATA_LOCALES,
-        }
-    })
-
-    ipcMain.handle('locale-set', async (_event, locale) => {
-        await startupDataLocalePromise
-        const normalizedLocale = normalizeDataLocale(locale)
-        const prepared = await changeDataLocale(normalizedLocale, {
-            prepare: prepareDataLocale,
-            persist: (preparedLocale) => store.set(APP_LOCALE_KEY, preparedLocale),
-            activate: setDataLocale,
-            notify: (payload) => notifyAllWindows('locale-changed', payload),
-        })
-
-        logger.info('[locale] data locale changed', {
-            locale: prepared.locale,
-            dataVersion: prepared.dataVersion,
-        })
-
-        return {
-            locale: prepared.locale,
-            dataVersion: prepared.dataVersion,
-            supportedLocales: SUPPORTED_DATA_LOCALES,
-        }
-    })
+export function registerIpcHandlers(isDev: boolean): void {
+    registerPreferencesIpcHandlers()
+    registerSystemIpcHandlers()
 
     ipcMain.on('broadcast', (ev, data) => {
         if (!data || !BROADCAST_CHANNELS.has(data.channel)) {
@@ -597,7 +477,7 @@ export function registerIpcHandlers(isDev) {
             return { success: true }
         } catch (error) {
             logger.error('Failed to test floating window:', error)
-            return { success: false, error: error.message }
+            return { success: false, error: getErrorMessage(error) }
         }
     })
 
@@ -641,7 +521,7 @@ export function registerIpcHandlers(isDev) {
             return { success: true, data }
         } catch (error) {
             logger.error('Failed to show random floating test:', error)
-            return { success: false, error: error.message }
+            return { success: false, error: getErrorMessage(error) }
         }
     })
 
@@ -696,8 +576,8 @@ export function registerIpcHandlers(isDev) {
             return { success: true, data, benchRecommendation }
         } catch (error) {
             logger.error('Failed to show random popup test:', error)
-            sendPopupError(error.message)
-            return { success: false, error: error.message }
+            sendPopupError(getErrorMessage(error))
+            return { success: false, error: getErrorMessage(error) }
         }
     })
 
@@ -741,79 +621,7 @@ export function registerIpcHandlers(isDev) {
             return { success: true, recommendation }
         } catch (error) {
             logger.error('Failed to show random bench recommendation:', error)
-            return { success: false, error: error.message }
-        }
-    })
-
-    ipcMain.on('toggle-main-window', () => {
-        toggleMainWindow()
-    })
-
-    ipcMain.handle('confirm-quit-app', async () => {
-        requestAppQuit('user confirmed quit')
-        return { success: true, quit: true }
-    })
-
-    ipcMain.on('restart-app', () => {
-        app.relaunch()
-        app.exit()
-    })
-
-    ipcMain.handle('get-version-info', async () => {
-        try {
-            const { getVersionInfo } = await import('../version-checker.ts')
-            return {
-                success: true,
-                data: await getVersionInfo(),
-            }
-        } catch (error) {
-            logger.warn('Failed to load version info:', error.message)
-            return {
-                success: false,
-                error: error.message,
-            }
-        }
-    })
-
-    ipcMain.handle('app-update-get-state', async () => {
-        return {
-            success: true,
-            data: getAppUpdateState(),
-        }
-    })
-
-    ipcMain.handle('app-update-check', async () => {
-        return checkForAppUpdate('manual')
-    })
-
-    ipcMain.handle('app-update-download', async () => {
-        return downloadAppUpdate()
-    })
-
-    ipcMain.handle('app-update-install', async () => {
-        return installDownloadedAppUpdate()
-    })
-
-    ipcMain.handle('open-log-directory', async () => {
-        try {
-            await logDiagnosticSnapshot('open-log-directory')
-            const logDir = logger.getLogDir()
-            const openError = await shell.openPath(logDir)
-            if (openError) {
-                throw new Error(openError)
-            }
-
-            return {
-                success: true,
-                path: logDir,
-                currentLogFile: logger.getCurrentLogFile(),
-            }
-        } catch (error) {
-            logger.warn('Failed to open log directory:', error.message)
-            return {
-                success: false,
-                error: error.message,
-            }
+            return { success: false, error: getErrorMessage(error) }
         }
     })
 
@@ -836,12 +644,12 @@ export function registerIpcHandlers(isDev) {
                 configuredPath,
             }
         } catch (error) {
-            logger.warn('[lcu] failed to read manual League path:', error.message)
+            logger.warn('[lcu] failed to read manual League path:', getErrorMessage(error))
             return {
                 success: false,
                 path: '',
                 valid: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -849,7 +657,7 @@ export function registerIpcHandlers(isDev) {
     ipcMain.handle('lcu-select-manual-league-path', async () => {
         try {
             const mainWindow = getMainWindow()
-            const dialogOptions = {
+            const dialogOptions: OpenDialogOptions = {
                 properties: ['openDirectory'],
                 title: '选择英雄联盟游戏目录',
                 message: '请选择英雄联盟安装目录',
@@ -869,12 +677,12 @@ export function registerIpcHandlers(isDev) {
 
             return validateLolDirectory(result.filePaths[0])
         } catch (error) {
-            logger.warn('[lcu] manual League path selection failed:', error.message)
+            logger.warn('[lcu] manual League path selection failed:', getErrorMessage(error))
             return {
                 success: false,
                 path: '',
                 valid: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -883,13 +691,13 @@ export function registerIpcHandlers(isDev) {
         try {
             return await validateLolDirectory(lolPath)
         } catch (error) {
-            logger.warn('[lcu] manual League path validation failed:', error.message)
+            logger.warn('[lcu] manual League path validation failed:', getErrorMessage(error))
             return {
                 success: false,
                 valid: false,
                 reason: 'validation-error',
-                message: error.message || '目录校验失败，请重试。',
-                error: error.message,
+                message: getErrorMessage(error) || '目录校验失败，请重试。',
+                error: getErrorMessage(error),
             }
         }
     })
@@ -909,7 +717,7 @@ export function registerIpcHandlers(isDev) {
                 const auth = await getLCUServiceInstance().getAuthToken(true)
                 connected = Boolean(auth)
             } catch (error) {
-                logger.debug('[lcu] manual League path saved but auth refresh failed:', error.message)
+                logger.debug('[lcu] manual League path saved but auth refresh failed:', getErrorMessage(error))
             }
 
             logger.info('[lcu] manual League path fallback saved', {
@@ -924,12 +732,12 @@ export function registerIpcHandlers(isDev) {
                 connected,
             }
         } catch (error) {
-            logger.warn('[lcu] failed to save manual League path:', error.message)
+            logger.warn('[lcu] failed to save manual League path:', getErrorMessage(error))
             return {
                 success: false,
                 valid: false,
-                error: error.message,
-                message: error.message || '保存目录失败',
+                error: getErrorMessage(error),
+                message: getErrorMessage(error) || '保存目录失败',
             }
         }
     })
@@ -945,38 +753,12 @@ export function registerIpcHandlers(isDev) {
                 reason: 'cleared',
             }
         } catch (error) {
-            logger.warn('[lcu] failed to clear manual League path:', error.message)
+            logger.warn('[lcu] failed to clear manual League path:', getErrorMessage(error))
             return {
                 success: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
-    })
-
-    ipcMain.handle('analytics-get-status', async () => {
-        try {
-            return { success: true, data: await getAnalyticsStatus() }
-        } catch (error) {
-            return { success: false, error: error.message }
-        }
-    })
-
-    ipcMain.handle('analytics-set-enabled', async (_event, enabled) => {
-        try {
-            return { success: true, data: await setAnalyticsEnabled(enabled) }
-        } catch (error) {
-            return { success: false, error: error.message }
-        }
-    })
-
-    ipcMain.handle('analytics-track', async (_event, name, properties = {}) => {
-        return trackAnalyticsEvent(name, properties)
-    })
-
-    ipcMain.handle('shell-open-external', async (_event, url) => {
-        const safeUrl = assertSafeExternalUrl(url)
-        await shell.openExternal(safeUrl)
-        return { success: true }
     })
 
     ipcMain.handle('post-game-share-get-latest', async () => {
@@ -984,11 +766,11 @@ export function registerIpcHandlers(isDev) {
             const lcuService = getLCUServiceInstance()
             return await getLatestPostGameSharePosterData(lcuService, 'renderer-request')
         } catch (error) {
-            logger.warn('[post-game-share] failed to get latest poster data:', error.message)
+            logger.warn('[post-game-share] failed to get latest poster data:', getErrorMessage(error))
             return {
                 success: false,
                 data: null,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -998,11 +780,11 @@ export function registerIpcHandlers(isDev) {
             const lcuService = getLCUServiceInstance()
             return await preparePostGameSharePosterData(lcuService, 'renderer-refresh')
         } catch (error) {
-            logger.warn('[post-game-share] failed to refresh poster data:', error.message)
+            logger.warn('[post-game-share] failed to refresh poster data:', getErrorMessage(error))
             return {
                 success: false,
                 data: null,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1011,11 +793,11 @@ export function registerIpcHandlers(isDev) {
         try {
             return await createMockPostGameSharePosterData()
         } catch (error) {
-            logger.warn('[post-game-share] failed to create mock poster data:', error.message)
+            logger.warn('[post-game-share] failed to create mock poster data:', getErrorMessage(error))
             return {
                 success: false,
                 data: null,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1031,10 +813,10 @@ export function registerIpcHandlers(isDev) {
             clipboard.writeImage(image)
             return { success: true }
         } catch (error) {
-            logger.warn('[post-game-share] failed to copy poster image:', error.message)
+            logger.warn('[post-game-share] failed to copy poster image:', getErrorMessage(error))
             return {
                 success: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1069,10 +851,10 @@ export function registerIpcHandlers(isDev) {
                 filePath,
             }
         } catch (error) {
-            logger.warn('[post-game-share] failed to save poster image:', error.message)
+            logger.warn('[post-game-share] failed to save poster image:', getErrorMessage(error))
             return {
                 success: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1085,8 +867,15 @@ export function registerIpcHandlers(isDev) {
         return analyzeScreenshot(imagePath)
     })
 
-    ipcMain.handle('get-winrate', async (_event, data = {}) => {
-        const { championId, augmentIds, requestStartedAt, requestSource } = data
+    ipcMain.handle('get-winrate', async (_event, data: unknown = {}) => {
+        const request = data && typeof data === 'object'
+            ? data as Record<string, unknown>
+            : {}
+        const { requestStartedAt, requestSource } = request
+        const championId = typeof request.championId === 'number' || typeof request.championId === 'string'
+            ? request.championId
+            : ''
+        const augmentIds = Array.isArray(request.augmentIds) ? request.augmentIds : []
         const requestLocale = getDataLocale()
         const startedAt = Date.now()
         const rendererRequestStartedAt = Number(requestStartedAt)
@@ -1110,12 +899,14 @@ export function registerIpcHandlers(isDev) {
             const { getChampionAugmentStats } = await import('../data-loader.ts')
             let augmentStats = await getChampionAugmentStats(championId, requestLocale)
 
-            if (augmentIds && augmentIds.length > 0) {
+            if (augmentIds.length > 0) {
                 const orderedAugmentIds = augmentIds
-                    .map((id) => parseInt(id))
-                    .filter((id) => Number.isFinite(id))
-                const augmentIdSet = new Set(orderedAugmentIds)
-                const augmentOrder = new Map(orderedAugmentIds.map((id, index) => [id, index]))
+                    .map((id: unknown) => Number.parseInt(String(id), 10))
+                    .filter((id: number) => Number.isFinite(id))
+                const augmentIdSet = new Set<number>(orderedAugmentIds)
+                const augmentOrder = new Map<number, number>(
+                    orderedAugmentIds.map((id: number, index: number) => [id, index])
+                )
 
                 augmentStats = augmentStats.filter((augment) => {
                     const augmentId = Number(augment.augmentId ?? augment.id)
@@ -1124,7 +915,8 @@ export function registerIpcHandlers(isDev) {
                 augmentStats.sort((a, b) => {
                     const leftId = Number(a.augmentId ?? a.id)
                     const rightId = Number(b.augmentId ?? b.id)
-                    return augmentOrder.get(leftId) - augmentOrder.get(rightId)
+                    return (augmentOrder.get(leftId) ?? Number.MAX_SAFE_INTEGER) -
+                        (augmentOrder.get(rightId) ?? Number.MAX_SAFE_INTEGER)
                 })
             }
 
@@ -1145,7 +937,7 @@ export function registerIpcHandlers(isDev) {
                 success: false,
                 championId,
                 augments: [],
-                error: error.message,
+                error: getErrorMessage(error),
                 timing: buildTiming(completedAt),
             }
         } finally {
@@ -1201,7 +993,7 @@ export function registerIpcHandlers(isDev) {
                 logger.error('Champion data load error:', error)
                 return {
                     success: false,
-                    error: error.message,
+                    error: getErrorMessage(error),
                 }
             } finally {
                 logger.debug('[champion-data] load finished', {
@@ -1258,12 +1050,12 @@ export function registerIpcHandlers(isDev) {
             const { getAramItemSetInstallStatus } = await import('../services/item-sets/item-set-installer.ts')
             return await getAramItemSetInstallStatus()
         } catch (error) {
-            logger.warn('[item-set] failed to read ARAM item set status:', error.message)
+            logger.warn('[item-set] failed to read ARAM item set status:', getErrorMessage(error))
             return {
                 success: false,
                 installed: false,
                 installedCount: 0,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1284,7 +1076,7 @@ export function registerIpcHandlers(isDev) {
             logger.error('[item-set] failed to install ARAM item set:', error)
             return {
                 success: false,
-                error: error.message,
+                error: getErrorMessage(error),
             }
         }
     })
@@ -1368,8 +1160,8 @@ export function registerIpcHandlers(isDev) {
             logger.error('Remote data load test failed:', error)
             return {
                 success: false,
-                error: error.message,
-                stack: error.stack,
+                error: getErrorMessage(error),
+                stack: error instanceof Error ? error.stack : undefined,
             }
         }
     })

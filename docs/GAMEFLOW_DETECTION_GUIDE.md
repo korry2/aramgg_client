@@ -36,6 +36,7 @@ GET /lol-gameflow/v1/gameflow-phase
 ## 当前实现位置
 
 - 主进程 gameflow 监控：`src/main/modules/app-config.ts`
+- 纯状态转换与阶段入口去重：`src/main/services/game-session/game-session-machine.ts`
 - LCU 服务：`src/main/services/lcu/lcu-service.ts`
 - LCU WAMP WebSocket：`src/main/services/lcu/lcu-wamp-socket.ts`
 - LCU IPC：`src/main/services/lcu/ipc-handlers.ts`
@@ -45,7 +46,9 @@ GET /lol-gameflow/v1/gameflow-phase
 - 海克斯右侧推荐列表：`src/main/modules/window-manager.ts` 的 `createAugmentSidePanelWindow()` 和 renderer 路由 `/augment-side-panel`
 - 窗口偏好：主界面 `OverlayPreferences` 写入 electron-store，由 `src/main/modules/user-preferences.ts` 读取
 - 席位推荐组件：`src/renderer/components/AramBenchRecommendation.vue`
-- Renderer 事件监听：`src/preload/preload.js`、`src/renderer/native/electron-api.js`
+- Renderer 事件监听：`src/preload/preload.ts`、`src/renderer/native/electron-api.js`
+
+`app-config.ts` 将每次 LCU phase 输入 `GameSessionCoordinator`。状态机先映射为 `client-ready`、`champ-select`、`game-loading`、`in-progress` 或 `post-game`，再返回需要执行的阶段入口效果；同一 phase 的重复事件不会重复启动服务、创建窗口或清理状态。窗口、LCU、截图和 OCR 调用仍留在主进程副作用层，状态转换本身不依赖 Electron。
 
 ## Renderer 查询示例
 
@@ -62,6 +65,12 @@ console.log(snapshotResult.snapshot)
 不要在 renderer 中直接导入主进程 LCU 服务，也不要使用 `window.ipcRenderer`。
 
 ## 验证方式
+
+先运行状态机单元测试：
+
+```bash
+npm run test:unit -- tests/unit/game-session-machine.test.ts
+```
 
 1. 启动 League Client。
 2. 默认等待应用自动发现运行中的 League Client；如果失败，展开主界面「游戏目录」选择英雄联盟安装目录作为高级兜底。

@@ -16,7 +16,7 @@
 - `npm run type-check`、`npm run lint`、`npm run build` 当前均通过。
 - Windows 安装包已切换为 NSIS 引导式安装，支持选择安装目录并归一化到应用子目录；运行时可变数据统一由 `src/main/modules/app-paths.ts` 管理。
 - Electron 依赖已升级到 `electron@42.2.0`，electron-builder 已升级到 `^26.11.1`。
-- 主进程源码已迁移为 TypeScript；preload 入口仍保持 `.js`，通过 renderer 侧声明补齐类型边界。
+- 主进程和 preload 入口均已迁移为 TypeScript；`src/shared/ipc-contract.ts` 统一约束 preload 与 renderer 的类型边界。
 
 ## 优先级
 
@@ -109,6 +109,9 @@
 ### 2026-07-10
 
 - [x] `npm run lint` 覆盖 `src/` 下的 JavaScript、TypeScript 和 Vue 文件。
+- [x] preload 入口迁移为 `src/preload/preload.ts`，并由 `src/shared/ipc-contract.ts` 统一约束 preload 与 renderer 的 Electron API 类型。
+- [x] 将偏好设置和系统操作拆分到 `src/main/ipc/`，限制 renderer 可访问的 store key，并移除核心 IPC 与 ARAM 推荐模块的 `@ts-nocheck`。
+- [x] gameflow phase 接入可独立测试的 `GameSessionCoordinator`，重复阶段事件不再重复执行入口副作用。
 - [x] 新增多语言数据构建、运行时 locale 契约、语言切换事务和 OCR 非阻塞单元测试。
 - [x] 验证通过：`npm run test:unit`、`npm run lint`、`npm run type-check`、`npm run build`。
 

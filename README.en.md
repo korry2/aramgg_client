@@ -18,6 +18,8 @@ The application UI is Simplified Chinese by default. This English README is prov
 - `src/main/`: Electron main process code for windows, IPC, LCU integration, screenshots, OCR, and data loading.
 - `src/preload/`: sandboxed preload bridge exposing the minimal `window.electronAPI` surface.
 - `src/renderer/`: Vue renderer app, pages, components, services, and styles.
+- `src/shared/`: IPC contracts shared across the main, preload, and renderer type boundaries.
+- `tests/unit/`: focused Vitest coverage for pure utilities and state transitions.
 - `tests/electron/`: Electron/Node-side test scripts.
 - `docs/`: current feature guides, troubleshooting notes, architecture progress, and archived documentation.
 - `legacy/`: archived material only. Do not add new source code here.
@@ -92,6 +94,7 @@ Do not create lightweight tags manually instead of using the release scripts. If
 
 - Prefer TypeScript for new source files, services, utilities, IPC contracts, and tests. Add `.js` only when extending an existing JavaScript module or when a dependency/tooling boundary makes TypeScript impractical.
 - Keep Vue UI in single-file components. Move business logic into services or utilities where possible.
+- When adding or changing an Electron API, update `src/shared/ipc-contract.ts` first, then keep the main handler, preload bridge, and renderer callers in sync.
 - TypeScript migration and troubleshooting details are documented in [TypeScript Integration Summary](./docs/TYPESCRIPT_INTEGRATION.md).
 
 ## Data API
@@ -114,6 +117,7 @@ Client display data uses a locale-isolated, local-first strategy. Default Chines
 - [Electron Client Update Strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite Architecture Migration Progress](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript Development Conventions](./docs/TYPESCRIPT_INTEGRATION.md)
+- [Project Recommendations and Implementation Progress](./docs/PROJECT_RECOMMENDATIONS_2026-07-10.md)
 - [Requirements](./docs/requirements.md)
 
 Older implementation summaries, plans, and completion reports have been archived under [docs/archive/2026-01-legacy](./docs/archive/2026-01-legacy/). They are kept only for historical context. The documents listed above and the current source code are the source of truth.

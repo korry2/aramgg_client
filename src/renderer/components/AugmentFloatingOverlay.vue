@@ -76,6 +76,7 @@ import {
   mergeWinrateWithDetectedSlots
 } from '../service/augment-display.js'
 import { getAugmentIconUrl } from '../service/cdn'
+import { formatPercent } from '../service/overlay-formatters.ts'
 
 const visible = ref(false)
 const loading = ref(false)
@@ -90,14 +91,6 @@ const previewAugments = computed(() => displayAugments.value.slice(0, 3))
 const topPickKey = computed(() => getTopPickKey(previewAugments.value))
 
 const isTopPick = (augment, index) => getAugmentKey(augment, index) === topPickKey.value
-
-/**
- * 格式化百分比
- */
-const formatPercent = (value) => {
-  if (value == null || isNaN(value)) return '--'
-  return `${(value * 100).toFixed(1)}%`
-}
 
 /**
  * 格式化分数

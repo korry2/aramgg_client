@@ -359,8 +359,9 @@ import ItemSetInstaller from './ItemSetInstaller.vue'
 import OverlayPreferences from './OverlayPreferences.vue'
 import ChampionMonitor from './ChampionMonitor.vue'
 import PostGameShareModal from './PostGameShareModal.vue'
+import { useAppUpdate } from '../composables/use-app-update.ts'
+import { usePostGameShare } from '../composables/use-post-game-share.ts'
 import { electronAPI } from '../native/electron-api.js'
-import { trackAnalyticsEvent } from '../services/analytics.ts'
 import {
     ChevronRight,
     ClipboardList,
@@ -382,13 +383,8 @@ import {
 
 const testStatus = ref(null)
 const versionInfo = ref(null)
-const appUpdateState = ref(null)
-const updateActionPending = ref(false)
 const showQuitConfirm = ref(false)
 const showChangelog = ref(false)
-const showPostGameShare = ref(false)
-const postGamePoster = ref(null)
-const postGameShareLoading = ref(false)
 const showAdvancedLcuConfig = ref(false)
 const manualLolPath = ref('')
 const manualPathStatus = ref(null)
@@ -409,12 +405,7 @@ const FEEDBACK_EMAIL = 'djlinguge@gmail.com'
 const FEEDBACK_URL = `mailto:${FEEDBACK_EMAIL}`
 const GITHUB_URL = 'https://github.com/valkia/aramgg_client'
 let removeQuitConfirmListener = null
-let removeAppUpdateListener = null
 let removeLocaleChangedListener = null
-let removePostGameShareListener = null
-let removeGameEndedListener = null
-let removeEndOfGameListener = null
-let postGameShareTimer = null
 
 const clientVersionLabel = computed(() => {
     if (!versionInfo.value) {
@@ -458,120 +449,23 @@ const versionHint = computed(() => {
     return versionInfo.value.statusText + ' ' + versionInfo.value.latestVersion
 })
 
-const manualUpdateDownloadUrl = computed(() => {
-    return appUpdateState.value?.manualDownloadUrl || versionInfo.value?.downloadUrl || ''
-})
-
-const updatePhase = computed(() => appUpdateState.value?.phase || 'uninitialized')
-const updateDownloadDeferred = computed(() => Boolean(appUpdateState.value?.downloadDeferred))
-
-const updatePanelClass = computed(() => `phase-${updatePhase.value}`)
-
-const updateLatestVersion = computed(() => {
-    return appUpdateState.value?.latestVersion || versionInfo.value?.latestVersion || ''
-})
-
-const updateTitle = computed(() => {
-    const latestVersion = updateLatestVersion.value
-    const versionSuffix = latestVersion ? ` v${String(latestVersion).replace(/^v/i, '')}` : ''
-
-    if (updatePhase.value === 'checking') {
-        return '正在检查'
-    }
-
-    if (updatePhase.value === 'available' && updateDownloadDeferred.value) {
-        return `等待下载${versionSuffix}`
-    }
-
-    if (updatePhase.value === 'available' || updatePhase.value === 'downloading') {
-        return `下载中${versionSuffix}`
-    }
-
-    if (updatePhase.value === 'downloaded') {
-        return `已下载${versionSuffix}`
-    }
-
-    if (updatePhase.value === 'installing') {
-        return '正在安装'
-    }
-
-    if (updatePhase.value === 'not-available') {
-        return '已是最新'
-    }
-
-    if (updatePhase.value === 'no-feed') {
-        return manualUpdateDownloadUrl.value ? '手动下载' : '未配置更新源'
-    }
-
-    if (updatePhase.value === 'disabled') {
-        return '暂未支持自动更新'
-    }
-
-    if (updatePhase.value === 'error') {
-        return '更新异常'
-    }
-
-    return versionInfo.value?.isNewer && latestVersion ? `可更新${versionSuffix}` : '自动更新'
-})
-
-const updateIsChecking = computed(() => updatePhase.value === 'checking')
-
-const canCheckUpdate = computed(() => {
-    return Boolean(appUpdateState.value?.canCheck) && !updateActionPending.value
-})
-
-const canInstallUpdate = computed(() => {
-    return Boolean(appUpdateState.value?.canInstall) && !updateActionPending.value
-})
-
-const showCheckUpdateAction = computed(() => {
-    return !['downloaded', 'installing'].includes(updatePhase.value)
-})
-
-const showInstallUpdateAction = computed(() => {
-    return ['downloaded', 'installing'].includes(updatePhase.value)
-})
-
-const installUpdateTitle = computed(() => {
-    if (updateActionPending.value || updatePhase.value === 'installing') {
-        return '正在处理'
-    }
-
-    return '重启安装'
-})
-
-const showManualDownloadLink = computed(() => {
-    return Boolean(manualUpdateDownloadUrl.value) && !showInstallUpdateAction.value
-})
-
-const updateProgressPercent = computed(() => {
-    const percent = Number(appUpdateState.value?.progress?.percent)
-    return Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) : 0
-})
-
-const updateProgressWidth = computed(() => `${updateProgressPercent.value}%`)
-
-const showUpdateProgress = computed(() => {
-    return updatePhase.value === 'downloading' || updatePhase.value === 'downloaded'
-})
-
-const formatBytesPerSecond = (value) => {
-    const bytesPerSecond = Number(value)
-    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
-        return ''
-    }
-
-    if (bytesPerSecond >= 1024 * 1024) {
-        return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`
-    }
-
-    return `${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`
-}
-
-const updateProgressText = computed(() => {
-    const speed = formatBytesPerSecond(appUpdateState.value?.progress?.bytesPerSecond)
-    return speed ? `${updateProgressPercent.value}% · ${speed}` : `${updateProgressPercent.value}%`
-})
+const {
+    manualUpdateDownloadUrl,
+    updatePanelClass,
+    updateTitle,
+    updateIsChecking,
+    canCheckUpdate,
+    canInstallUpdate,
+    showCheckUpdateAction,
+    showInstallUpdateAction,
+    installUpdateTitle,
+    showManualDownloadLink,
+    updateProgressWidth,
+    showUpdateProgress,
+    updateProgressText,
+    checkAppUpdate,
+    installAppUpdate,
+} = useAppUpdate(versionInfo)
 
 const changelogEntries = computed(() => {
     return Array.isArray(versionInfo.value?.changelog) ? versionInfo.value.changelog : []
@@ -579,51 +473,16 @@ const changelogEntries = computed(() => {
 
 const hasChangelog = computed(() => changelogEntries.value.length > 0)
 
-const hasPostGameStats = (poster) => {
-    const stats = poster?.stats
-    if (!stats) {
-        return false
-    }
-
-    return [stats.kills, stats.deaths, stats.assists].every((value) => {
-        if (value == null) {
-            return false
-        }
-
-        if (typeof value === 'string' && !value.trim()) {
-            return false
-        }
-
-        return Number.isFinite(Number(value))
-    })
-}
-
-const shouldShowPostGameFloatingShare = computed(() => hasPostGameStats(postGamePoster.value))
-
-const postGameShareFloatingLabel = computed(() => {
-    if (postGameShareLoading.value) {
-        return '生成中'
-    }
-
-    return '分享战报'
-})
-
-const getPostGameShareAnalyticsParams = (poster = postGamePoster.value, extra = {}) => ({
-    status: poster?.status || 'unknown',
-    result: poster?.result || 'unknown',
-    champion_id: poster?.champion?.id ?? null,
-    augment_count: Array.isArray(poster?.augments) ? poster.augments.length : 0,
-    has_stats: hasPostGameStats(poster),
-    ...extra,
-})
-
-const trackPostGameShareEvent = (name, params = {}) => {
-    try {
-        trackAnalyticsEvent(name, getPostGameShareAnalyticsParams(postGamePoster.value, params))
-    } catch (error) {
-        console.warn('Failed to track post-game share event:', error)
-    }
-}
+const {
+    showPostGameShare,
+    postGamePoster,
+    postGameShareLoading,
+    shouldShowPostGameFloatingShare,
+    postGameShareFloatingLabel,
+    closePostGameShare,
+    openPostGameShareFromFloatingButton,
+    createMockPostGameSharePoster,
+} = usePostGameShare(testStatus)
 
 const loadVersionInfo = async () => {
     try {
@@ -677,55 +536,6 @@ const changeLocale = async () => {
         }
     } finally {
         localeLoading.value = false
-    }
-}
-
-const loadAppUpdateState = async () => {
-    try {
-        const result = await electronAPI.appUpdate.getState()
-        if (result?.success) {
-            appUpdateState.value = result.data
-        }
-    } catch (error) {
-        console.warn('Failed to load app update state:', error)
-    }
-}
-
-const checkAppUpdate = async () => {
-    if (!canCheckUpdate.value) {
-        return
-    }
-
-    updateActionPending.value = true
-    try {
-        const result = await electronAPI.appUpdate.check()
-        if (result?.data) {
-            appUpdateState.value = result.data
-        }
-    } catch (error) {
-        console.warn('Failed to check app update:', error)
-    } finally {
-        updateActionPending.value = false
-    }
-}
-
-const installAppUpdate = async () => {
-    if (!canInstallUpdate.value) {
-        return
-    }
-
-    updateActionPending.value = true
-    try {
-        const result = await electronAPI.appUpdate.install()
-        if (result?.data) {
-            appUpdateState.value = result.data
-        }
-        if (!result?.success) {
-            throw new Error(result?.error || '重启安装失败')
-        }
-    } catch (error) {
-        updateActionPending.value = false
-        console.warn('Failed to install app update:', error)
     }
 }
 
@@ -922,118 +732,6 @@ const closeChangelog = () => {
     showChangelog.value = false
 }
 
-const closePostGameShare = () => {
-    showPostGameShare.value = false
-}
-
-const openPostGameShareFromFloatingButton = () => {
-    trackPostGameShareEvent('post_game_share_button_click', {
-        button: 'floating_share',
-    })
-    requestPostGameSharePoster({ openOnReady: true, analyticsTrigger: 'floating_share' })
-}
-
-const applyPostGamePoster = (poster, openOnReady = true) => {
-    if (!poster || poster.status === 'unavailable') {
-        return false
-    }
-
-    const canSharePoster = hasPostGameStats(poster)
-    postGamePoster.value = poster
-    if (openOnReady && canSharePoster) {
-        showPostGameShare.value = true
-    }
-    return canSharePoster
-}
-
-const requestPostGameSharePoster = async ({
-    openOnReady = true,
-    refresh = false,
-    silent = false,
-    analyticsTrigger = '',
-} = {}) => {
-    if (postGameShareLoading.value) {
-        return
-    }
-
-    postGameShareLoading.value = true
-    try {
-        const result = refresh
-            ? await electronAPI.postGameShare.refresh()
-            : await electronAPI.postGameShare.getLatest()
-
-        if (applyPostGamePoster(result?.data, openOnReady)) {
-            if (openOnReady && analyticsTrigger) {
-                trackPostGameShareEvent('post_game_share_modal_open', {
-                    trigger: analyticsTrigger,
-                })
-            }
-            return
-        }
-
-        if (!silent) {
-            testStatus.value = {
-                type: 'info',
-                message: result?.error ? `赛后海报暂不可用：${result.error}` : '暂未捕获到可分享的最近对局。',
-            }
-        }
-    } catch (error) {
-        console.warn('Failed to request post-game share poster:', error)
-        if (!silent) {
-            testStatus.value = {
-                type: 'error',
-                message: '生成赛后海报失败：' + (error.message || error),
-            }
-        }
-    } finally {
-        postGameShareLoading.value = false
-    }
-}
-
-const createMockPostGameSharePoster = async () => {
-    if (postGameShareLoading.value) {
-        return
-    }
-
-    trackPostGameShareEvent('post_game_share_button_click', {
-        button: 'mock_generate',
-    })
-    postGameShareLoading.value = true
-    try {
-        const result = await electronAPI.postGameShare.createMock()
-        if (applyPostGamePoster(result?.data, true)) {
-            trackAnalyticsEvent('post_game_share_mock_success', getPostGameShareAnalyticsParams(result?.data, {
-                trigger: 'mock_generate',
-            }))
-            return
-        }
-
-        throw new Error(result?.error || '模拟海报生成失败')
-    } catch (error) {
-        console.warn('Failed to create mock post-game share poster:', error)
-        trackPostGameShareEvent('post_game_share_mock_failure', {
-            error_message: error?.message || String(error || 'unknown'),
-        })
-        testStatus.value = {
-            type: 'error',
-            message: '模拟生成失败：' + (error.message || error),
-        }
-    } finally {
-        postGameShareLoading.value = false
-    }
-}
-
-const schedulePostGameSharePosterRequest = () => {
-    if (postGameShareTimer) {
-        clearTimeout(postGameShareTimer)
-    }
-
-    postGameShareTimer = setTimeout(() => {
-        postGameShareTimer = null
-        requestPostGameSharePoster({ openOnReady: true, silent: true })
-    }, 1200)
-}
-
 const formatChangelogVersion = (entry) => {
     const version = String(entry?.version || '').trim()
     if (!version) {
@@ -1180,12 +878,8 @@ const quitApp = async () => {
 
 onMounted(() => {
     void loadLocale().finally(() => loadVersionInfo())
-    loadAppUpdateState()
     loadManualLolPath()
     removeQuitConfirmListener = electronAPI.events.on('quit-confirm-requested', confirmQuitApp)
-    removeAppUpdateListener = electronAPI.events.on('app-update-status-changed', (state) => {
-        appUpdateState.value = state
-    })
     removeLocaleChangedListener = electronAPI.events.on('locale-changed', ({ locale } = {}) => {
         if (locale) {
             selectedLocale.value = locale
@@ -1193,31 +887,13 @@ onMounted(() => {
             loadVersionInfo()
         }
     })
-    removePostGameShareListener = electronAPI.events.on('post-game-share-ready', (poster) => {
-        applyPostGamePoster(poster, true)
-    })
-    removeGameEndedListener = electronAPI.events.on('game-ended', schedulePostGameSharePosterRequest)
-    removeEndOfGameListener = electronAPI.events.on('end-of-game', schedulePostGameSharePosterRequest)
-    requestPostGameSharePoster({ openOnReady: false, silent: true })
 })
 
 onBeforeUnmount(() => {
-    if (postGameShareTimer) {
-        clearTimeout(postGameShareTimer)
-        postGameShareTimer = null
-    }
     removeQuitConfirmListener?.()
     removeQuitConfirmListener = null
-    removeAppUpdateListener?.()
-    removeAppUpdateListener = null
     removeLocaleChangedListener?.()
     removeLocaleChangedListener = null
-    removePostGameShareListener?.()
-    removePostGameShareListener = null
-    removeGameEndedListener?.()
-    removeGameEndedListener = null
-    removeEndOfGameListener?.()
-    removeEndOfGameListener = null
 })
 </script>
 

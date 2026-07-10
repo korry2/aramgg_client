@@ -45,7 +45,7 @@ export default defineConfig({
       target: 'node24',
       sourcemap: false,
       lib: {
-        entry: 'src/preload/preload.js',
+        entry: 'src/preload/preload.ts',
         formats: ['cjs']
       },
       rollupOptions: {

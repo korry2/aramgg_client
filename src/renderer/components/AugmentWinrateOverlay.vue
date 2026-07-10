@@ -367,7 +367,17 @@ import { ExternalLink, Minus, PackageCheck, PackagePlus, X } from 'lucide-vue-ne
 import { getChampionIconUrl, getChampionSquareIconUrl, getAugmentIconUrl, getItemIconUrl as getFallbackItemIconUrl } from '../service/cdn'
 import { electronAPI } from '../native/electron-api.js'
 import { sortAugmentsByDetectedOrder } from '../service/augment-order.js'
-import { createBuildRoutes, normalizeRateValue } from '../service/champion-build-routes.js'
+import { createBuildRoutes } from '../service/champion-build-routes.js'
+import {
+  formatDataSource,
+  formatNumber,
+  formatPercent,
+  formatTime,
+  getLocalizedText,
+  getWinRateClass,
+  handleImageError,
+} from '../service/overlay-formatters.ts'
+import { useAugmentTooltip } from '../composables/use-augment-tooltip.ts'
 import AramBenchRecommendation from './AramBenchRecommendation.vue'
 
 const props = defineProps({
@@ -406,7 +416,6 @@ const itemSetApplying = ref(false)
 const itemSetAutoEnabled = ref(true)
 const hideChampionInsightOnGameStart = ref(true)
 const itemSetToast = ref({ type: '', message: '' })
-const augmentTooltip = ref({ visible: false, augment: null, x: 0, y: 0 })
 const ITEM_SET_AUTO_KEY = 'itemSets.autoApplyAram'
 const HIDE_CHAMPION_INSIGHT_ON_GAME_START_KEY = 'championInsight.hideOnGameStart'
 const CHAMPION_DATA_CACHE_TTL_MS = 15000
@@ -633,6 +642,14 @@ const rarityOptions = [
   { key: 'kPrismatic', label: '棱彩' }
 ]
 
+const {
+  augmentTooltipDetail,
+  augmentTooltipStyle,
+  showAugmentTooltip,
+  moveAugmentTooltip,
+  hideAugmentTooltip,
+} = useAugmentTooltip(rarityOptions, getAugmentIconUrl)
+
 const setActiveTab = (key) => {
   if (!tabs.some(tab => tab.key === key)) {
     return
@@ -776,40 +793,6 @@ const selectBuildRoute = (index) => {
   hideAugmentTooltip()
 }
 
-const getLocalizedText = (value) => {
-  if (typeof value === 'string') {
-    return value
-  }
-
-  if (!value || typeof value !== 'object') {
-    return ''
-  }
-
-  return value.zh_CN || value.zh_cn || value.en_us || value.en_US || ''
-}
-
-const normalizeTooltipText = (value) => {
-  const raw = getLocalizedText(value)
-  if (!raw) {
-    return ''
-  }
-
-  return raw
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim()
-}
-
 const itemNameById = computed(() => {
   const records = Array.isArray(itemsData.value)
     ? itemsData.value
@@ -848,106 +831,6 @@ const itemIconById = computed(() => {
 
 const getItemName = (itemId) => itemNameById.value.get(String(itemId)) || `装备 ${itemId}`
 const getItemIconUrl = (itemId) => itemIconById.value.get(String(itemId)) || getFallbackItemIconUrl(itemId)
-
-const getTooltipPoint = (event) => {
-  const clientX = Number(event?.clientX)
-  const clientY = Number(event?.clientY)
-  if (event?.type !== 'focus' && Number.isFinite(clientX) && Number.isFinite(clientY)) {
-    return { x: clientX, y: clientY }
-  }
-
-  const rect = event?.currentTarget?.getBoundingClientRect?.()
-  if (rect) {
-    return { x: rect.right, y: rect.top }
-  }
-
-  return { x: 0, y: 0 }
-}
-
-const getAugmentTooltipText = (augment = {}) => {
-  return normalizeTooltipText(augment.description) ||
-    normalizeTooltipText(augment.tooltip) ||
-    normalizeTooltipText(augment.shortDesc) ||
-    normalizeTooltipText(augment.shortDescription)
-}
-
-const getAugmentRarityLabel = (augment = {}) => {
-  return augment.rarityDisplayName ||
-    augment.rarityName ||
-    rarityOptions.find(option => option.key === augment.rarity)?.label ||
-    ''
-}
-
-const augmentTooltipDetail = computed(() => {
-  if (!augmentTooltip.value.visible || !augmentTooltip.value.augment) {
-    return null
-  }
-
-  const augment = augmentTooltip.value.augment
-  const iconPath = augment.iconPath || augment.iconUrl || ''
-
-  return {
-    id: augment.augmentId || augment.id || '',
-    name: augment.name || '未知海克斯',
-    rarityLabel: getAugmentRarityLabel(augment),
-    iconUrl: iconPath ? getAugmentIconUrl(iconPath) : '',
-    description: getAugmentTooltipText(augment),
-  }
-})
-
-const augmentTooltipStyle = computed(() => {
-  const width = 300
-  const estimatedHeight = 220
-  const margin = 12
-  const offset = 14
-  let left = augmentTooltip.value.x + offset
-  let top = augmentTooltip.value.y + offset
-
-  if (typeof window !== 'undefined') {
-    if (left + width > window.innerWidth - margin) {
-      left = augmentTooltip.value.x - width - offset
-    }
-
-    if (top + estimatedHeight > window.innerHeight - margin) {
-      top = window.innerHeight - estimatedHeight - margin
-    }
-  }
-
-  return {
-    left: `${Math.max(margin, left)}px`,
-    top: `${Math.max(margin, top)}px`,
-  }
-})
-
-const showAugmentTooltip = (event, augment) => {
-  const point = getTooltipPoint(event)
-  augmentTooltip.value = {
-    visible: true,
-    augment,
-    x: point.x,
-    y: point.y,
-  }
-}
-
-const moveAugmentTooltip = (event) => {
-  if (!augmentTooltip.value.visible) {
-    return
-  }
-
-  const point = getTooltipPoint(event)
-  augmentTooltip.value = {
-    ...augmentTooltip.value,
-    x: point.x,
-    y: point.y,
-  }
-}
-
-const hideAugmentTooltip = () => {
-  augmentTooltip.value = {
-    ...augmentTooltip.value,
-    visible: false,
-  }
-}
 
 /**
  * 显示浮窗
@@ -1245,66 +1128,6 @@ const openChampionBlog = async (url) => {
   } catch (err) {
     console.warn('Failed to open champion blog:', err)
   }
-}
-
-/**
- * 格式化百分比（带空值保护）
- */
-const formatPercent = (value) => {
-  const normalized = normalizeRateValue(value)
-  if (normalized == null) return '--'
-  return `${(normalized * 100).toFixed(1)}%`
-}
-
-/**
- * 获取胜率样式类
- */
-const getWinRateClass = (winRate) => {
-  const normalized = normalizeRateValue(winRate)
-  if (!normalized) return ''
-  if (normalized >= 0.55) return 'high'
-  if (normalized >= 0.50) return 'medium'
-  return 'low'
-}
-
-/**
- * 格式化数字
- */
-const formatNumber = (num) => {
-  if (!num) return '--'
-  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  return String(num)
-}
-
-const formatDataSource = (source) => {
-  const labels = {
-    local: '本地',
-    remote: '远程数据',
-    pending: '加载中',
-    unavailable: '不可用',
-    test: '测试',
-    'auto-analysis': '自动识别',
-    'local-analysis': '本地识别',
-    fallback: '备用数据',
-  }
-
-  return labels[source] || source || '未知'
-}
-
-/**
- * 格式化时间
- */
-const formatTime = (ts) => {
-  if (!ts) return ''
-  const date = new Date(ts)
-  return date.toLocaleTimeString('zh-CN')
-}
-
-/**
- * 处理图片加载错误
- */
-const handleImageError = (e) => {
-  e.target.style.display = 'none'
 }
 
 const applyDataLocale = (locale) => {

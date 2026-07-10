@@ -16,6 +16,8 @@
 - `src/main/`：Electron 主进程，窗口、IPC、LCU、截图、OCR、数据加载。
 - `src/preload/`：sandbox preload，通过 `window.electronAPI` 暴露最小业务 API。
 - `src/renderer/`：Vue 渲染进程，页面、组件、服务和样式。
+- `src/shared/`：main、preload 与 renderer 共用的 IPC 类型契约。
+- `tests/unit/`：纯工具、状态转换等可独立运行的 Vitest 单元测试。
 - `tests/electron/`：Electron/Node 侧测试脚本。
 - `docs/`：当前功能指南、排障、架构进度和归档文档。
 - `legacy/`：仅保留归档材料，不再包含旧 React 源码；新功能不要放到这里。
@@ -90,6 +92,7 @@ npm run release:push
 
 - 新增源码、服务、工具、IPC 契约和测试优先使用 TypeScript；只有延续既有 JavaScript 模块或工具边界确实不方便时才新增 `.js`。
 - Vue 组件继续使用单文件组件，业务逻辑尽量放到 services 或 utilities。
+- 新增或修改 Electron API 时，先更新 `src/shared/ipc-contract.ts`，再同步 main handler、preload bridge 和 renderer 调用方。
 - TypeScript 迁移和排障细节见 [TypeScript 集成总结](./docs/TYPESCRIPT_INTEGRATION.md)。
 
 ## 数据 API
@@ -112,6 +115,7 @@ npm run release:push
 - [Electron 客户端版本更新方案](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite 架构整改进度](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript 开发约定](./docs/TYPESCRIPT_INTEGRATION.md)
+- [项目改进建议与实施进度](./docs/PROJECT_RECOMMENDATIONS_2026-07-10.md)
 - [需求规格](./docs/requirements.md)
 
 较早的实现总结、计划和完成报告已归档到 [docs/archive/2026-01-legacy](./docs/archive/2026-01-legacy/)，仅保留历史上下文；当前实现以本节列出的文档和源码为准。
