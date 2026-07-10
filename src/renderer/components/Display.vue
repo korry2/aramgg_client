@@ -23,9 +23,40 @@
                             <span class="section-kicker">{{ t('display.runningStatus') }}</span>
                             <h2>{{ t('display.console') }}</h2>
                         </div>
-                        <strong class="connection-pill">
-                            {{ t('display.autoMonitor') }}
-                        </strong>
+                        <label
+                            class="header-locale-control"
+                            :class="{ loading: localeLoading }"
+                            :title="t('display.appLanguage')"
+                        >
+                            <RefreshCw
+                                v-if="localeLoading"
+                                class="locale-loading-icon"
+                                aria-hidden="true"
+                            />
+                            <Languages v-else class="header-locale-icon" aria-hidden="true" />
+                            <select
+                                v-model="selectedLocale"
+                                :aria-label="t('display.appLanguage')"
+                                :disabled="localeLoading"
+                                @change="changeLocale"
+                            >
+                                <option
+                                    v-for="localeOption in supportedLocales"
+                                    :key="localeOption.code"
+                                    :value="localeOption.code"
+                                >
+                                    {{ localeOption.nativeLabel }}
+                                </option>
+                            </select>
+                            <ChevronDown
+                                v-if="!localeLoading"
+                                class="header-locale-chevron"
+                                aria-hidden="true"
+                            />
+                            <span class="locale-live-status" aria-live="polite">
+                                {{ localeLoading ? t('display.switching') : selectedLocaleLabel }}
+                            </span>
+                        </label>
                     </div>
                     <div class="status-grid">
                         <div>
@@ -38,30 +69,6 @@
                             <strong>{{ dataVersionLabel }}</strong>
                             <small>{{ dataLocaleStatusLabel }}</small>
                         </div>
-                        <label class="locale-select-card">
-                            <span>{{ t('display.appLanguage') }}</span>
-                            <select
-                                v-model="selectedLocale"
-                                :disabled="localeLoading"
-                                @change="changeLocale"
-                            >
-                                <option
-                                    v-for="localeOption in supportedLocales"
-                                    :key="localeOption.code"
-                                    :value="localeOption.code"
-                                >
-                                    {{ localeOption.nativeLabel }}
-                                </option>
-                            </select>
-                            <small class="locale-status" aria-live="polite">
-                                <RefreshCw
-                                    v-if="localeLoading"
-                                    class="locale-loading-icon"
-                                    aria-hidden="true"
-                                />
-                                <span>{{ localeLoading ? t('display.switching') : selectedLocaleLabel }}</span>
-                            </small>
-                        </label>
                         <div class="lcu-status-card">
                             <span>{{ t('display.lcuConnection') }}</span>
                             <strong>{{ t('display.autoDiscover') }}</strong>
@@ -371,12 +378,14 @@ import { usePostGameShare } from '../composables/use-post-game-share.ts'
 import { electronAPI } from '../native/electron-api.js'
 import { useI18n } from 'vue-i18n'
 import {
+    ChevronDown,
     ChevronRight,
     ClipboardList,
     Cpu,
     Database,
     Download,
     FolderSearch,
+    Languages,
     Minus,
     RefreshCw,
     RotateCw,
@@ -1111,49 +1120,95 @@ onBeforeUnmount(() => {
     letter-spacing: 0;
 }
 
-.connection-pill {
-    display: inline-flex;
+.header-locale-control {
+    width: 124px;
+    height: 32px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) 12px;
     align-items: center;
     flex: 0 0 auto;
-    gap: 8px;
-    padding: 7px 10px;
+    gap: 6px;
+    padding: 0 8px;
     color: var(--lol-primary-2);
     background: rgba(194, 156, 109, 0.1);
     border: 1px solid rgba(194, 156, 109, 0.22);
     border-radius: 4px;
-    font-size: 12px;
+    cursor: pointer;
+}
+
+.header-locale-control:hover {
+    border-color: rgba(226, 192, 143, 0.42);
+    background: rgba(194, 156, 109, 0.16);
+}
+
+.header-locale-control:focus-within {
+    border-color: rgba(226, 192, 143, 0.58);
+    box-shadow: 0 0 0 2px rgba(194, 156, 109, 0.12);
+}
+
+.header-locale-control.loading {
+    cursor: default;
+    opacity: 0.76;
+}
+
+.header-locale-control select {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    appearance: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #e2c08f;
+    cursor: inherit;
+    font-size: 11px;
     font-weight: 900;
 }
 
-.connection-pill::before {
-    content: '';
-    display: block;
-    width: 8px;
-    height: 8px;
-    border-radius: 4px;
-    background: #e2c08f;
-    box-shadow: 0 0 10px rgba(226, 192, 143, 0.85);
-}
-
-.connection-pill.muted {
+.header-locale-control select:disabled {
     color: #859491;
-    background: rgba(244, 236, 220, 0.05);
-    border-color: var(--lol-border-soft);
 }
 
-.connection-pill.muted::before {
-    background: #859491;
-    box-shadow: none;
+.header-locale-control option {
+    background: #111d26;
+    color: #e2c08f;
+}
+
+.header-locale-icon,
+.header-locale-chevron,
+.locale-loading-icon {
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.header-locale-chevron {
+    color: #859491;
+}
+
+.locale-loading-icon {
+    animation: update-spin 0.9s linear infinite;
+}
+
+.locale-live-status {
+    width: 1px;
+    height: 1px;
+    position: absolute;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .status-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
 }
 
-.status-grid > div,
-.locale-select-card {
+.status-grid > div {
     min-width: 0;
     min-height: 62px;
     padding: 8px 7px;
@@ -1175,49 +1230,6 @@ onBeforeUnmount(() => {
     margin-top: 3px;
     color: #859491;
     font-size: 10px;
-}
-
-.locale-select-card {
-    display: block;
-}
-
-.locale-select-card select {
-    width: 100%;
-    height: 22px;
-    margin-top: 3px;
-    padding: 0 20px 0 6px;
-    border: 1px solid rgba(226, 192, 143, 0.24);
-    border-radius: 4px;
-    background: rgba(4, 15, 24, 0.82);
-    color: #e2c08f;
-    font-size: 12px;
-    font-weight: 800;
-    outline: none;
-}
-
-.locale-select-card select:focus {
-    border-color: rgba(226, 192, 143, 0.58);
-    box-shadow: 0 0 0 2px rgba(194, 156, 109, 0.12);
-}
-
-.locale-select-card select:disabled {
-    color: #859491;
-    cursor: default;
-    opacity: 0.76;
-}
-
-.locale-status {
-    min-height: 13px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.locale-loading-icon {
-    width: 10px;
-    height: 10px;
-    flex: 0 0 auto;
-    animation: update-spin 0.9s linear infinite;
 }
 
 .version-download {
