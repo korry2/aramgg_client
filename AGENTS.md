@@ -70,6 +70,8 @@ Mutable runtime data, including electron-store config, logs, remote-data cache, 
 
 Client data loading must stay local-first for foreground views. Complete cached or bundled data should render hero detail and augment popup surfaces immediately; remote `dataVersion` checks and downloads should run in the background and only activate a new version after required files are complete.
 
+When both user-cache and bundled pointers are complete for one locale, select the newest compatible dataVersion rather than always preferring the writable cache. Keep foreground and OCR fixture tests isolated from real user data, LCU discovery, and live seasonal datasets.
+
 Client data must remain isolated by locale. Keep the legacy flat pointer and version path for default `zh-CN`; use locale-scoped pointers and version directories for non-default locales. Non-default config and manifest responses must explicitly match the requested locale, and packaging/CI must fail instead of relabeling default Chinese data.
 
 Augment OCR runs through the PaddleOCR Node backend and packaged `resources/paddleocr` ONNX models. Preserve left/center/right title-region ordering, transient-miss retention during reroll animations, and the title-region fast path/cache. Do not fill missing title slots with broad OCR fallbacks; keep unread slots empty so game order cannot be reshuffled by fallback text regions.

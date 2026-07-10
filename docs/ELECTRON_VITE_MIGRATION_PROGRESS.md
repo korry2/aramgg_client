@@ -113,7 +113,10 @@
 - [x] 将偏好设置和系统操作拆分到 `src/main/ipc/`，限制 renderer 可访问的 store key，并移除核心 IPC 与 ARAM 推荐模块的 `@ts-nocheck`。
 - [x] gameflow phase 接入可独立测试的 `GameSessionCoordinator`，重复阶段事件不再重复执行入口副作用。
 - [x] 新增多语言数据构建、运行时 locale 契约、语言切换事务和 OCR 非阻塞单元测试。
-- [x] 验证通过：`npm run test:unit`、`npm run lint`、`npm run type-check`、`npm run build`。
+- [x] 服务端三语言 `16.13.5` 发布后完成真实预加载和 `npm run pack`；解包目录中每种语言均包含 49 个文件和 44 个 champion shards。
+- [x] 打包数据下载增加文件/字节进度、活动文件和 heartbeat；本地候选按版本选择，旧用户缓存不再遮蔽新 bundled 数据。
+- [x] OCR fixtures 改用临时固定名称库，不再读取用户缓存、LCU 或线上赛季数据。
+- [x] 验证通过：60 项 `npm run test:unit`、`npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`。
 
 ### 2026-05-31
 

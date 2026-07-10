@@ -12,6 +12,10 @@ const REQUEST_TIMEOUT_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_T
 const REQUEST_RETRY_COUNT = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRIES, 5)
 const RETRY_BASE_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_DELAY_MS, 1500)
 const RETRY_MAX_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_MAX_DELAY_MS, 10000)
+const PROGRESS_LOG_INTERVAL_MS = parsePositiveInteger(
+  process.env.ARAMGG_CLIENT_DATA_PROGRESS_INTERVAL_MS,
+  15000
+)
 
 export const DEFAULT_CLIENT_DATA_LOCALE = 'zh-CN'
 export const SUPPORTED_CLIENT_DATA_LOCALES = ['zh-CN', 'en-US', 'zh-TW']
@@ -44,6 +48,24 @@ const localeAliases = new Map([
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value || '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0)
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
+function formatDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(Number(value || 0) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
 function tryNormalizeLocale(value) {
@@ -499,14 +521,49 @@ export async function bundleLocale(locale) {
   await mkdir(versionDir, { recursive: true })
   let downloadedCount = 0
   let reusedCount = 0
-  await runLimited(files, DOWNLOAD_CONCURRENCY, async (file) => {
-    const result = await downloadBundleFile(versionDir, file, manifestText)
-    if (result.reused) {
-      reusedCount += 1
-    } else {
-      downloadedCount += 1
-    }
-  })
+  let completedCount = 0
+  let completedBytes = 0
+  const activeFiles = new Set()
+  const totalBytes = files.reduce((sum, file) => sum + Math.max(0, file.bytes || 0), 0)
+
+  const logProgress = (reason, lastFile = '') => {
+    const countPercent = files.length > 0 ? (completedCount / files.length) * 100 : 100
+    const bytePercent = totalBytes > 0 ? (completedBytes / totalBytes) * 100 : countPercent
+    const active = [...activeFiles].join(', ') || 'none'
+    const last = lastFile ? ` last=${lastFile}` : ''
+    console.log(
+      `[client-data] [${locale}] progress ${completedCount}/${files.length} ` +
+        `(${bytePercent.toFixed(1)}%) ${formatBytes(completedBytes)}/${formatBytes(totalBytes)} ` +
+        `downloaded=${downloadedCount} reused=${reusedCount} active=${active} ` +
+        `elapsed=${formatDuration(Date.now() - startedAt)} reason=${reason}${last}`
+    )
+  }
+
+  logProgress('start')
+  const progressTimer = setInterval(() => logProgress('heartbeat'), PROGRESS_LOG_INTERVAL_MS)
+  try {
+    await runLimited(files, DOWNLOAD_CONCURRENCY, async (file) => {
+      activeFiles.add(file.path)
+      try {
+        const result = await downloadBundleFile(versionDir, file, manifestText)
+        if (result.reused) {
+          reusedCount += 1
+        } else {
+          downloadedCount += 1
+        }
+        completedCount += 1
+        completedBytes += Math.max(0, file.bytes || 0)
+        activeFiles.delete(file.path)
+        if (completedCount % 5 === 0 || completedCount === files.length) {
+          logProgress(result.reused ? 'reused' : 'downloaded', file.path)
+        }
+      } finally {
+        activeFiles.delete(file.path)
+      }
+    })
+  } finally {
+    clearInterval(progressTimer)
+  }
 
   if (!(await isExistingBundleComplete(versionDir, files))) {
     throw new Error(`Downloaded bundle for ${locale}/${dataVersion} is incomplete`)

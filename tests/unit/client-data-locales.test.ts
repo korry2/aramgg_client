@@ -50,10 +50,24 @@ async function seedOcrLocale(locale: string, dataVersion: string, augmentName: s
   })
 }
 
-async function seedCompleteChampionLocale(locale: string, dataVersion: string): Promise<void> {
-  const dataRoot = path.join(tempRoot, 'data')
-  const pointerName = `current.${locale}.json`
-  const versionDir = path.join(dataRoot, 'versions', locale, dataVersion)
+async function seedCompleteChampionLocale(
+  locale: string,
+  dataVersion: string,
+  options: {
+    dataRoot?: string
+    championName?: string
+    augmentName?: string
+  } = {}
+): Promise<void> {
+  const dataRoot = options.dataRoot || path.join(tempRoot, 'data')
+  const pointerName = locale === DEFAULT_CLIENT_DATA_LOCALE
+    ? 'current.json'
+    : `current.${locale}.json`
+  const versionDir = locale === DEFAULT_CLIENT_DATA_LOCALE
+    ? path.join(dataRoot, 'versions', dataVersion)
+    : path.join(dataRoot, 'versions', locale, dataVersion)
+  const championName = options.championName || 'Vladimir'
+  const augmentName = options.augmentName || 'Scoped Weapons'
   const files = [
     'manifest.json',
     'augments.json',
@@ -74,12 +88,12 @@ async function seedCompleteChampionLocale(locale: string, dataVersion: string): 
     files: files.map((filePath) => ({ path: filePath })),
   })
   await writeJson(path.join(versionDir, 'augments.json'), {
-    augments: [{ id: 1001, name: 'Scoped Weapons', rarity: 'gold' }],
+    augments: [{ id: 1001, name: augmentName, rarity: 'gold' }],
   })
   await writeJson(path.join(versionDir, 'champions.json'), {
     champions: [{
       id: 8,
-      name: 'Vladimir',
+      name: championName,
       alias: 'Vladimir',
       stats: { games: 100, wins: 55, winRate: 0.55, pickRate: 0.1 },
     }],
@@ -93,7 +107,7 @@ async function seedCompleteChampionLocale(locale: string, dataVersion: string): 
   await writeJson(path.join(versionDir, 'champion-shards', '0.json'), {
     champions: {
       8: {
-        champion: { id: 8, name: 'Vladimir', alias: 'Vladimir' },
+        champion: { id: 8, name: championName, alias: 'Vladimir' },
         builds: [{
           stats: { games: 100, wins: 55, winRate: 0.55 },
           coreItems: [{ items: [6653] }],
@@ -142,10 +156,14 @@ describe('packaged client data locale layout', () => {
 })
 
 describe('runtime client data locale validation', () => {
+  let originalCwd = ''
+
   beforeEach(async () => {
     vi.resetModules()
     vi.unstubAllGlobals()
+    originalCwd = process.cwd()
     tempRoot = await mkdtemp(path.join(os.tmpdir(), 'aramgg-locale-data-'))
+    process.chdir(tempRoot)
     vi.doMock('../../src/main/modules/app-paths.ts', () => ({
       getAppDataDir: () => tempRoot,
       getLogDir: () => path.join(tempRoot, 'logs'),
@@ -153,6 +171,7 @@ describe('runtime client data locale validation', () => {
   })
 
   afterEach(async () => {
+    process.chdir(originalCwd)
     vi.unstubAllGlobals()
     vi.resetModules()
     await rm(tempRoot, { recursive: true, force: true })
@@ -186,8 +205,69 @@ describe('runtime client data locale validation', () => {
       const result = await loadAugmentBaseForOcrLocale('en-US')
       expect(result.locale).toBe('en-US')
       expect(result.dataVersion).toBe('16.13.3-en')
+      expect(result.source).toBe('cache')
       expect(result.augments).toMatchObject([{ id: 1001, name: 'Scoped Weapons' }])
       expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      clearCache()
+    }
+  })
+
+  it('prefers newer bundled OCR data over an older complete user cache', async () => {
+    await seedOcrLocale('zh-CN', '16.11.4', 'Cached Old Name')
+    const bundledRoot = path.join(tempRoot, 'resources', 'client-data')
+    await writeJson(path.join(bundledRoot, 'current.json'), {
+      schemaVersion: 3,
+      locale: 'zh-CN',
+      dataVersion: '16.13.5',
+      generatedAt: '2026-07-10T04:29:42.362Z',
+    })
+    await writeJson(path.join(bundledRoot, 'versions', '16.13.5', 'manifest.json'), {
+      locale: 'zh-CN',
+      dataVersion: '16.13.5',
+      files: [{ path: 'augments.json' }],
+    })
+    await writeJson(path.join(bundledRoot, 'versions', '16.13.5', 'augments.json'), {
+      augments: [{ id: 1001, name: 'Bundled New Name', rarity: 'gold' }],
+    })
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      throw new Error(`Unexpected remote request: ${String(input)}`)
+    }))
+
+    const { loadAugmentBaseForOcrLocale, clearCache } = await import('../../src/main/data-loader.ts')
+    try {
+      const result = await loadAugmentBaseForOcrLocale('zh-CN')
+      expect(result).toMatchObject({
+        locale: 'zh-CN',
+        dataVersion: '16.13.5',
+        source: 'bundled',
+        augments: [{ id: 1001, name: 'Bundled New Name' }],
+      })
+    } finally {
+      clearCache()
+    }
+  })
+
+  it('prefers a newer complete bundled foreground dataset over an older user cache', async () => {
+    await seedCompleteChampionLocale('zh-CN', '16.11.4', {
+      championName: 'Cached Old Champion',
+      augmentName: 'Cached Old Augment',
+    })
+    await seedCompleteChampionLocale('zh-CN', '16.13.5', {
+      dataRoot: path.join(tempRoot, 'resources', 'client-data'),
+      championName: 'Bundled New Champion',
+      augmentName: 'Bundled New Augment',
+    })
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      throw new Error(`Background refresh unavailable: ${String(input)}`)
+    }))
+
+    const { getChampionDetailData, clearCache } = await import('../../src/main/data-loader.ts')
+    try {
+      const detail = await getChampionDetailData(8, 'zh-CN')
+      expect(detail.dataVersion).toBe('16.13.5')
+      expect(detail.championName.nameCN).toBe('Bundled New Champion')
+      expect(detail.augmentBase).toMatchObject([{ id: 1001, name: 'Bundled New Augment' }])
     } finally {
       clearCache()
     }

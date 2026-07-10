@@ -142,6 +142,14 @@ function summarizeRiotLocalePayload(payload) {
 }
 
 async function resolveGameOcrLocaleHint() {
+    const configuredLocale = tryNormalizeDataLocale(process.env.ARAMGG_OCR_LOCALE)
+    if (configuredLocale) {
+        logger.debug('[augment-ocr] using configured OCR locale hint', {
+            locale: configuredLocale,
+        })
+        return configuredLocale
+    }
+
     const now = Date.now()
     if (now < gameOcrLocaleHintExpiresAt) {
         logger.debug('[augment-ocr] Riot client locale hint cache hit', {
@@ -339,6 +347,7 @@ async function loadAugmentOcrLocale(locale) {
             logger.info('[augment-ocr] locale augment names loaded', {
                 locale,
                 dataVersion: result.dataVersion,
+                source: result.source,
                 augmentCount: result.augments.length,
                 ocrNameCount,
                 invalidCount,

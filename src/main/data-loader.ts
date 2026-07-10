@@ -69,6 +69,7 @@ type PreparedDataLocale = {
 
 type OcrAugmentLocaleData = PreparedDataLocale & {
   augments: any[]
+  source: 'cache' | 'bundled' | 'local-version' | 'remote'
 }
 
 export const DATA_API_ORIGIN =
@@ -548,7 +549,25 @@ async function readCurrentDataPointerCandidates(
   const bundledPointers = await readBundledCurrentDataPointers(locale)
   bundledPointers.forEach((pointer) => candidates.push({ pointer, source: 'bundled' }))
 
-  return candidates
+  return candidates.sort((left, right) => {
+    const versionComparison = compareDataVersions(
+      String(right.pointer?.dataVersion || ''),
+      String(left.pointer?.dataVersion || '')
+    )
+    if (versionComparison !== 0) {
+      return versionComparison
+    }
+
+    for (const field of ['generatedAt', 'activatedAt']) {
+      const leftTimestamp = Date.parse(String(left.pointer?.[field] || '')) || 0
+      const rightTimestamp = Date.parse(String(right.pointer?.[field] || '')) || 0
+      if (leftTimestamp !== rightTimestamp) {
+        return rightTimestamp - leftTimestamp
+      }
+    }
+
+    return left.source === right.source ? 0 : left.source === 'cache' ? -1 : 1
+  })
 }
 
 async function writeCurrentDataPointer(
@@ -1079,8 +1098,32 @@ async function loadCachedActiveDataSet(
     }
 
     const pointerLocale = getClientConfigLocale(current, requestedLocale)
+    if (pointerLocale !== requestedLocale) {
+      logger.warn('[data-loader] data pointer locale mismatch; skipping foreground use', {
+        requestedLocale,
+        pointerLocale,
+        dataVersion,
+        source: candidate.source,
+      })
+      continue
+    }
+
     const manifest = await readDataFileFromDisk(dataVersion, 'manifest.json', pointerLocale)
     if (!manifest) {
+      continue
+    }
+
+    const manifestLocale = tryNormalizeDataLocale(manifest.locale)
+    if (
+      (requestedLocale !== DEFAULT_DATA_LOCALE && manifestLocale !== requestedLocale) ||
+      (manifestLocale && manifestLocale !== requestedLocale)
+    ) {
+      logger.warn('[data-loader] manifest locale mismatch; skipping foreground use', {
+        requestedLocale,
+        manifestLocale: manifestLocale || null,
+        dataVersion,
+        source: candidate.source,
+      })
       continue
     }
 
@@ -2106,7 +2149,10 @@ export async function loadAugmentBaseForLocale(locale: unknown): Promise<any[]> 
 async function loadCachedOcrAugmentLocaleData(
   requestedLocale: SupportedDataLocale
 ): Promise<OcrAugmentLocaleData | null> {
-  const dataVersions: string[] = []
+  const dataVersions: Array<{
+    dataVersion: string
+    source: 'cache' | 'bundled' | 'local-version'
+  }> = []
   for (const candidate of await readCurrentDataPointerCandidates(requestedLocale)) {
     const current = candidate.pointer
     const dataVersion = String(current?.dataVersion || '')
@@ -2119,18 +2165,22 @@ async function loadCachedOcrAugmentLocaleData(
       continue
     }
 
-    if (!dataVersions.includes(dataVersion)) {
-      dataVersions.push(dataVersion)
+    if (!dataVersions.some((entry) => entry.dataVersion === dataVersion)) {
+      dataVersions.push({
+        dataVersion,
+        source: candidate.source === 'bundled' ? 'bundled' : 'cache',
+      })
     }
   }
 
   for (const dataVersion of await listLocalDataVersions(requestedLocale)) {
-    if (!dataVersions.includes(dataVersion)) {
-      dataVersions.push(dataVersion)
+    if (!dataVersions.some((entry) => entry.dataVersion === dataVersion)) {
+      dataVersions.push({ dataVersion, source: 'local-version' })
     }
   }
 
-  for (const dataVersion of dataVersions) {
+  for (const candidate of dataVersions) {
+    const { dataVersion, source } = candidate
     const manifest = await readDataFileFromDisk(dataVersion, 'manifest.json', requestedLocale)
     const declaredManifestLocale = tryNormalizeDataLocale(manifest?.locale)
     if (
@@ -2150,6 +2200,7 @@ async function loadCachedOcrAugmentLocaleData(
       locale: requestedLocale,
       dataVersion,
       augments: extractList(payload, 'augments').map(mapPublicAugmentBase),
+      source,
     }
   }
 
@@ -2194,6 +2245,7 @@ export async function loadAugmentBaseForOcrLocale(locale: unknown): Promise<OcrA
     locale: requestedLocale,
     dataVersion,
     augments: extractList(payload, 'augments').map(mapPublicAugmentBase),
+    source: 'remote',
   }
 }
 

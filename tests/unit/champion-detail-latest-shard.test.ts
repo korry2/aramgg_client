@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 
 let tempRoot = ''
+let originalCwd = ''
 
 async function writeJson(filePath: string, payload: any): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true })
@@ -127,7 +128,9 @@ describe('latest champion shard detail loading', () => {
   beforeEach(async () => {
     vi.resetModules()
     vi.unstubAllGlobals()
+    originalCwd = process.cwd()
     tempRoot = await mkdtemp(path.join(os.tmpdir(), 'aramgg-data-loader-'))
+    process.chdir(tempRoot)
     await seedData()
 
     vi.doMock('../../src/main/modules/app-paths.ts', () => ({
@@ -164,6 +167,7 @@ describe('latest champion shard detail loading', () => {
   })
 
   afterEach(async () => {
+    process.chdir(originalCwd)
     vi.unstubAllGlobals()
     vi.resetModules()
     if (tempRoot) {

@@ -53,6 +53,7 @@ describe('multi-locale client-data bundle preparation', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.resetModules()
     if (previousOrigin == null) {
@@ -69,6 +70,7 @@ describe('multi-locale client-data bundle preparation', () => {
   })
 
   it('writes independent pointers and version directories for every supported locale', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const localeVersions = new Map([
       ['zh-CN', '16.13.3-zh'],
       ['en-US', '16.13.3-en'],
@@ -117,5 +119,10 @@ describe('multi-locale client-data bundle preparation', () => {
       expect(JSON.parse(await readFile(path.join(versionDir, 'augments.json'), 'utf8')))
         .toMatchObject({ augments: [{ name: `${locale} augment` }] })
     }
+
+    const output = log.mock.calls.flat().join('\n')
+    expect(output).toContain('[client-data] [en-US] progress')
+    expect(output).toContain('[client-data] [zh-TW] progress 6/6 (100.0%)')
+    expect(output).toContain('reason=downloaded')
   })
 })
