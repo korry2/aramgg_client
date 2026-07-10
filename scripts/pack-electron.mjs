@@ -151,16 +151,26 @@ async function getPackageVersion() {
 }
 
 async function logPreparedClientData() {
-  try {
-    const currentJsonPath = path.join(process.cwd(), 'resources', 'client-data', 'current.json')
+  const localePointers = [
+    ['zh-CN', 'current.json'],
+    ['en-US', 'current.en-US.json'],
+    ['zh-TW', 'current.zh-TW.json'],
+  ]
+
+  for (const [locale, fileName] of localePointers) {
+    const currentJsonPath = path.join(process.cwd(), 'resources', 'client-data', fileName)
     const current = JSON.parse(await readFile(currentJsonPath, 'utf8'))
+    if (current.locale !== locale) {
+      throw new Error(
+        `[pack] client-data locale mismatch in ${fileName}: expected ${locale}, got ${current.locale || 'missing'}`
+      )
+    }
+
     console.log(
-      `[pack] client-data ready dataVersion=${current.dataVersion || 'unknown'} ` +
+      `[pack] client-data ready locale=${locale} dataVersion=${current.dataVersion || 'unknown'} ` +
         `gamePatch=${current.gamePatch || 'unknown'} generatedAt=${current.generatedAt || 'unknown'} ` +
         `files=${current.bundledFileCount ?? 'unknown'} shards=${current.bundledShardCount ?? 'unknown'}`
     )
-  } catch (error) {
-    console.warn(`[pack] client-data current.json is unavailable: ${error.message}`)
   }
 }
 

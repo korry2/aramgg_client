@@ -67,20 +67,43 @@ jobs:
           $env:ELECTRON_BUILDER_CACHE = Join-Path $env:RUNNER_TEMP 'electron-builder-cache'
           npm run pack
 
-          $clientDataCurrent = Join-Path $PWD 'build/win-unpacked/resources/client-data/current.json'
-          if (!(Test-Path $clientDataCurrent)) {
-            Write-Error "Packaged client-data current.json was not found at $clientDataCurrent"
-            exit 1
-          }
+          $localeBundles = @(
+            @{ Locale = 'zh-CN'; Pointer = 'current.json'; VersionPrefix = 'versions' },
+            @{ Locale = 'en-US'; Pointer = 'current.en-US.json'; VersionPrefix = 'versions/en-US' },
+            @{ Locale = 'zh-TW'; Pointer = 'current.zh-TW.json'; VersionPrefix = 'versions/zh-TW' }
+          )
 
-          $clientData = Get-Content $clientDataCurrent -Raw | ConvertFrom-Json
-          $shardDir = Join-Path $PWD "build/win-unpacked/resources/client-data/versions/$($clientData.dataVersion)/champion-shards"
-          $shardCount = @(Get-ChildItem $shardDir -Filter '*.json' -File | Where-Object { $_.Name -ne 'index.json' }).Count
-          Write-Host "Packaged client-data dataVersion=$($clientData.dataVersion) gamePatch=$($clientData.gamePatch) generatedAt=$($clientData.generatedAt) files=$($clientData.bundledFileCount) shards=$shardCount bytes=$($clientData.bundledBytes)"
+          foreach ($bundle in $localeBundles) {
+            $clientDataCurrent = Join-Path $PWD "build/win-unpacked/resources/client-data/$($bundle.Pointer)"
+            if (!(Test-Path $clientDataCurrent)) {
+              Write-Error "Packaged client-data pointer was not found: $clientDataCurrent"
+              exit 1
+            }
 
-          if ($shardCount -lt 40) {
-            Write-Error "Packaged client-data shard count is too low: $shardCount"
-            exit 1
+            $clientData = Get-Content $clientDataCurrent -Raw | ConvertFrom-Json
+            if ($clientData.locale -ne $bundle.Locale) {
+              Write-Error "Packaged client-data locale mismatch in $($bundle.Pointer): expected $($bundle.Locale), got $($clientData.locale)"
+              exit 1
+            }
+
+            $versionDir = Join-Path $PWD "build/win-unpacked/resources/client-data/$($bundle.VersionPrefix)/$($clientData.dataVersion)"
+            $requiredFiles = @('manifest.json', 'augments.json', 'champions.json', 'items.json', 'champion-shards/index.json')
+            foreach ($requiredFile in $requiredFiles) {
+              $requiredPath = Join-Path $versionDir $requiredFile
+              if (!(Test-Path $requiredPath)) {
+                Write-Error "Packaged $($bundle.Locale) client-data file was not found: $requiredPath"
+                exit 1
+              }
+            }
+
+            $shardDir = Join-Path $versionDir 'champion-shards'
+            $shardCount = @(Get-ChildItem $shardDir -Filter '*.json' -File | Where-Object { $_.Name -ne 'index.json' }).Count
+            Write-Host "Packaged client-data locale=$($bundle.Locale) dataVersion=$($clientData.dataVersion) gamePatch=$($clientData.gamePatch) files=$($clientData.bundledFileCount) shards=$shardCount bytes=$($clientData.bundledBytes)"
+
+            if ($shardCount -lt 40) {
+              Write-Error "Packaged $($bundle.Locale) client-data shard count is too low: $shardCount"
+              exit 1
+            }
           }
 
       - name: Upload workflow artifact

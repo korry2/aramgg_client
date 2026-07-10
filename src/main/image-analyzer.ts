@@ -26,7 +26,7 @@ import {
     DEFAULT_DATA_LOCALE,
     SUPPORTED_DATA_LOCALES,
     getDataLocale,
-    loadAugmentBaseForLocale,
+    loadAugmentBaseForOcrLocale,
     tryNormalizeDataLocale,
 } from './data-loader.ts'
 import logger from './modules/logger.ts'
@@ -73,12 +73,16 @@ const AUGMENT_COLORS = {
 
 // 加载完整的海克斯数据库
 let AUGMENT_DATABASE = null
+const loadedAugmentLocales = new Set()
+const augmentLocaleLoadPromises = new Map()
+const augmentLocaleRetryAfter = new Map()
 let cachedGameOcrLocaleHint = null
 let gameOcrLocaleHintExpiresAt = 0
 let gameOcrLocaleHintPromise = null
 
 const GAME_OCR_LOCALE_HINT_TTL_MS = 60 * 1000
 const GAME_OCR_LOCALE_HINT_FAILURE_TTL_MS = 2 * 60 * 1000
+const AUGMENT_LOCALE_RETRY_DELAY_MS = 30 * 1000
 const RIOT_CLIENT_REGION_LOCALE_ENDPOINT = '/riotclient/region-locale'
 const riotClientLocaleHttpsAgent = new https.Agent({ rejectUnauthorized: false })
 const AUGMENT_RARITY_MAP = {
@@ -293,76 +297,110 @@ function mergeAugmentBaseRecord(database, augment, locale) {
     return true
 }
 
-/**
- * 初始化海克斯数据库
- * 从远端数据 API 加载多语言海克斯列表并建立 OCR 名称索引。
- */
-async function initAugmentDatabase() {
-    // 如果数据库已加载且不为空，直接返回
-    if (AUGMENT_DATABASE !== null && Object.keys(AUGMENT_DATABASE).length > 0) {
-        logger.debug(`📚 海克斯数据库已缓存: ${Object.keys(AUGMENT_DATABASE).length} 个海克斯`)
-        return AUGMENT_DATABASE
+async function loadAugmentOcrLocale(locale) {
+    if (loadedAugmentLocales.has(locale)) {
+        return true
     }
 
-    // 如果之前加载失败得到了空对象，重置为 null 重新加载
-    if (AUGMENT_DATABASE !== null && Object.keys(AUGMENT_DATABASE).length === 0) {
-        logger.warn(`⚠️ 检测到空数据库缓存，强制重新加载...`)
-        AUGMENT_DATABASE = null
+    const pending = augmentLocaleLoadPromises.get(locale)
+    if (pending) {
+        return pending
     }
 
-    logger.info(`📚 正在初始化海克斯数据库...`)
+    const retryAt = augmentLocaleRetryAfter.get(locale) || 0
+    if (Date.now() < retryAt) {
+        return false
+    }
 
-    try {
-        AUGMENT_DATABASE = {}
-        AUGMENT_MATCH_ENTRIES = null
-        let invalidCount = 0
-        let loadedLocaleCount = 0
-        let ocrNameCount = 0
-        const localeResults = await Promise.allSettled(
-            getSupportedOcrLocales().map(async locale => ({
-                locale,
-                augments: await loadAugmentBaseForLocale(locale),
-            }))
-        )
-
-        for (const result of localeResults) {
-            if (result.status !== 'fulfilled') {
-                logger.warn('[augment-ocr] locale augment data unavailable', {
-                    error: result.reason?.message || String(result.reason),
-                })
-                continue
+    const request = (async () => {
+        try {
+            const result = await loadAugmentBaseForOcrLocale(locale)
+            if (result.locale !== locale) {
+                throw new Error(`requested ${locale}, received ${result.locale}`)
             }
 
-            const { locale, augments } = result.value
-            loadedLocaleCount++
-            logger.info(`   ${locale} 海克斯数据加载成功: ${augments.length} 条原始数据`)
+            if (!AUGMENT_DATABASE) {
+                AUGMENT_DATABASE = {}
+            }
 
-            for (const augment of augments) {
-                const added = mergeAugmentBaseRecord(AUGMENT_DATABASE, augment, locale)
-                if (added) {
+            let invalidCount = 0
+            let ocrNameCount = 0
+            for (const augment of result.augments) {
+                if (mergeAugmentBaseRecord(AUGMENT_DATABASE, augment, locale)) {
                     ocrNameCount++
                 } else {
                     invalidCount++
                 }
             }
+
+            loadedAugmentLocales.add(locale)
+            augmentLocaleRetryAfter.delete(locale)
+            AUGMENT_MATCH_ENTRIES = null
+            logger.info('[augment-ocr] locale augment names loaded', {
+                locale,
+                dataVersion: result.dataVersion,
+                augmentCount: result.augments.length,
+                ocrNameCount,
+                invalidCount,
+            })
+            return true
+        } catch (error) {
+            augmentLocaleRetryAfter.set(locale, Date.now() + AUGMENT_LOCALE_RETRY_DELAY_MS)
+            logger.warn('[augment-ocr] locale augment data unavailable; retry scheduled', {
+                locale,
+                retryDelayMs: AUGMENT_LOCALE_RETRY_DELAY_MS,
+                error: error?.message || String(error),
+            })
+            return false
         }
+    })().finally(() => {
+        augmentLocaleLoadPromises.delete(locale)
+    })
 
-        const totalCount = Object.keys(AUGMENT_DATABASE).length
-        logger.info(`📚 海克斯数据库已加载: ${totalCount} 个有效海克斯, ${ocrNameCount} 个 OCR 名称, ${loadedLocaleCount} 个语言 (跳过 ${invalidCount} 条无效数据)`)
+    augmentLocaleLoadPromises.set(locale, request)
+    return request
+}
 
-        if (totalCount === 0) {
-            logger.error(`❌ 警告: 数据库为空！请检查数据文件内容`)
-        }
-
-        return AUGMENT_DATABASE
-    } catch (error) {
-        logger.error(`❌ 加载海克斯数据库失败: ${error.message}`)
-        logger.error(`   错误详情:`, error)
-        // 使用空数据库作为备份，但标记为 null 以便下次重试
+/**
+ * Loads only the OCR names needed for the current frame. Other supported
+ * locales hydrate in the background and failures remain retryable.
+ */
+async function initAugmentDatabase(preferredLocale = null) {
+    if (!AUGMENT_DATABASE) {
         AUGMENT_DATABASE = {}
         AUGMENT_MATCH_ENTRIES = null
-        return AUGMENT_DATABASE
     }
+
+    const foregroundLocales = [
+        preferredLocale || getDataLocale(),
+        DEFAULT_DATA_LOCALE,
+    ]
+        .filter(locale => getSupportedOcrLocales().includes(locale))
+        .filter((locale, index, locales) => locales.indexOf(locale) === index)
+
+    await Promise.all(foregroundLocales.map(locale => loadAugmentOcrLocale(locale)))
+
+    const backgroundLocales = getSupportedOcrLocales().filter(
+        locale => !foregroundLocales.includes(locale) && !loadedAugmentLocales.has(locale)
+    )
+    for (const locale of backgroundLocales) {
+        void loadAugmentOcrLocale(locale)
+    }
+
+    const totalCount = Object.keys(AUGMENT_DATABASE).length
+    logger.debug('[augment-ocr] augment database ready', {
+        preferredLocale,
+        foregroundLocales,
+        loadedLocales: [...loadedAugmentLocales],
+        backgroundLocales,
+        totalCount,
+    })
+
+    if (totalCount === 0) {
+        logger.error('❌ 警告: 海克斯 OCR 数据库为空！请检查数据文件内容')
+    }
+
+    return AUGMENT_DATABASE
 }
 
 let paddleOcrService = null
@@ -1927,8 +1965,9 @@ export async function matchAugmentDatabase(recognizedText) {
         return []
     }
 
-    // 确保数据库已初始化
-    const database = await initAugmentDatabase()
+    const localeHint = await resolveGameOcrLocaleHint()
+    // 确保当前游戏语言优先可用，其他语言不会阻塞本帧 OCR。
+    const database = await initAugmentDatabase(localeHint)
     const databaseSize = Object.keys(database).length
     logger.debug(`Matching OCR text against augment database: size=${databaseSize}`)
     logger.debug(`📝 输入原文本长度: ${recognizedText.length} 字符`)
@@ -1937,7 +1976,6 @@ export async function matchAugmentDatabase(recognizedText) {
     const normalizedText = normalizeOcrText(recognizedText)
     logger.debug(`Normalized OCR text: "${normalizedText.substring(0, 100)}..." (${normalizedText.length} chars)`)
 
-    const localeHint = await resolveGameOcrLocaleHint()
     const localePriority = buildOcrLocalePriority(localeHint)
     const matchEntries = getAugmentMatchEntries(database)
     logger.debug('[augment-ocr] OCR locale priority selected', {
@@ -2214,6 +2252,11 @@ export const getConfidence = (analysisResult) => {
 
 export const shutdownImageAnalyzer = async () => {
     await resetPaddleOcrService()
+    AUGMENT_DATABASE = null
+    AUGMENT_MATCH_ENTRIES = null
+    loadedAugmentLocales.clear()
+    augmentLocaleLoadPromises.clear()
+    augmentLocaleRetryAfter.clear()
 }
 
 export default {

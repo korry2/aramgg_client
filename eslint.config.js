@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import globals from 'globals'
+import tseslint from 'typescript-eslint'
 import vue from 'eslint-plugin-vue'
 
 export default [
@@ -33,6 +34,31 @@ export default [
       'no-useless-assignment': 'off',
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'preserve-caught-error': 'off',
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+      globals: {
+        ...globals.node,
+        ...globals.es2022,
+      },
+    },
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      'no-useless-assignment': 'off',
+    },
+  },
+  {
+    files: ['src/main/modules/ipc-handlers.ts'],
+    rules: {
+      'no-undef': 'error',
     },
   },
   {

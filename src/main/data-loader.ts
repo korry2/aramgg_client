@@ -62,6 +62,15 @@ type ManifestLoadResult = {
   locale: SupportedDataLocale
 }
 
+type PreparedDataLocale = {
+  locale: SupportedDataLocale
+  dataVersion: string
+}
+
+type OcrAugmentLocaleData = PreparedDataLocale & {
+  augments: any[]
+}
+
 export const DATA_API_ORIGIN =
   process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
 export const DATA_API_PREFIX = '/api/client/v1'
@@ -885,10 +894,11 @@ export async function loadDataApiConfig(options: FetchJsonOptions = {}): Promise
         ...options,
         ttlMs: options.ttlMs ?? CONFIG_TTL_MS,
       })
-      const configLocale = getClientConfigLocale(config, locale)
+      const declaredLocale = tryNormalizeDataLocale(config?.locale)
+      const configLocale = declaredLocale || DEFAULT_DATA_LOCALE
       const normalizedConfig = normalizeClientConfig(config, configLocale)
 
-      if (locale === DEFAULT_DATA_LOCALE || configLocale === locale || !config?.locale) {
+      if (configLocale === locale && (locale === DEFAULT_DATA_LOCALE || declaredLocale)) {
         return normalizedConfig
       }
 
@@ -974,8 +984,9 @@ async function loadManifestForConfig(
         ttlMs: DATA_TTL_MS,
         timeoutMs: DATA_FETCH_TIMEOUT_MS,
       })
-      const manifestLocale = manifest?.locale ? normalizeDataLocale(manifest.locale) : locale
-      if (manifestLocale === locale || !manifest?.locale) {
+      const declaredLocale = tryNormalizeDataLocale(manifest?.locale)
+      const manifestLocale = declaredLocale || DEFAULT_DATA_LOCALE
+      if (manifestLocale === locale && (locale === DEFAULT_DATA_LOCALE || declaredLocale)) {
         await writeDataFileToDisk(dataVersion, 'manifest.json', manifest, locale)
         setVersionedDataCache(locale, dataVersion, 'manifest.json', manifest)
         return { manifest, locale }
@@ -999,7 +1010,7 @@ async function loadManifestForConfig(
   }
 
   if (fallbackManifest) {
-    const fallbackLocale = getClientConfigLocale(fallbackManifest, locale)
+    const fallbackLocale = tryNormalizeDataLocale(fallbackManifest?.locale) || DEFAULT_DATA_LOCALE
     await writeDataFileToDisk(dataVersion, 'manifest.json', fallbackManifest, fallbackLocale)
     setVersionedDataCache(fallbackLocale, dataVersion, 'manifest.json', fallbackManifest)
     logger.warn('[data-loader] requested manifest locale unavailable; using returned locale', {
@@ -1262,6 +1273,34 @@ async function getActiveDataSet(
   }
 
   return activeDataSetPromise
+}
+
+export async function prepareDataLocale(locale: unknown): Promise<PreparedDataLocale> {
+  const requestedLocale = normalizeDataLocale(locale)
+  const dataSet = await getActiveDataSet(requestedLocale)
+  if (dataSet.locale !== requestedLocale) {
+    activeDataSetCaches.delete(requestedLocale)
+    throw new Error(
+      `Requested data locale ${requestedLocale} is unavailable; effective locale is ${dataSet.locale}`
+    )
+  }
+
+  return {
+    locale: dataSet.locale,
+    dataVersion: dataSet.dataVersion,
+  }
+}
+
+export async function getActiveDataStatus(
+  locale: unknown = activeDataLocale
+): Promise<PreparedDataLocale & { gamePatch: string; generatedAt: string }> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(locale))
+  return {
+    locale: dataSet.locale,
+    dataVersion: dataSet.dataVersion,
+    gamePatch: dataSet.config.gamePatch || '',
+    generatedAt: dataSet.config.generatedAt || '',
+  }
 }
 
 async function loadDataFile(
@@ -1548,8 +1587,11 @@ async function loadCachedLatestChampionDetailPayload(
   return null
 }
 
-async function loadChampionDetailPayload(championId: string | number): Promise<any | null> {
-  const dataSet = await getActiveDataSet()
+async function loadChampionDetailPayload(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any | null> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(requestedLocale))
   const shardIndex = await loadChampionShardIndexForDataSet(dataSet)
   const shardPath = shardIndex ? findShardPathForChampion(shardIndex, championId) : null
 
@@ -1976,9 +2018,12 @@ function mapPublicItem(item: any): any {
   }
 }
 
-export async function loadChampionStats(championId: string | number): Promise<any> {
-  const championsPayload = await loadChampionsPayload()
-  const dataSet = await getActiveDataSet()
+export async function loadChampionStats(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(requestedLocale))
+  const championsPayload = await loadChampionsPayload(dataSet.locale)
   const champions = extractList(championsPayload, 'champions')
   const champion = findChampionInList(champions, championId)
 
@@ -1989,7 +2034,7 @@ export async function loadChampionStats(championId: string | number): Promise<an
     }
   }
 
-  const detail = await loadChampionDetailPayload(championId)
+  const detail = await loadChampionDetailPayload(championId, dataSet.locale)
   if (detail?.champion) {
     const stats = mapPublicChampionStats(detail.champion, getPayloadMeta(detail, dataSet.config))
     if (stats.championId) {
@@ -2000,9 +2045,13 @@ export async function loadChampionStats(championId: string | number): Promise<an
   throw new Error(`Champion stats not found for ID: ${championId}`)
 }
 
-export async function loadChampionName(championId: string | number): Promise<any> {
+export async function loadChampionName(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
   try {
-    const championsPayload = await loadChampionsPayload()
+    const locale = normalizeDataLocale(requestedLocale)
+    const championsPayload = await loadChampionsPayload(locale)
     const champions = extractList(championsPayload, 'champions')
     const champion = findChampionInList(champions, championId)
 
@@ -2010,7 +2059,7 @@ export async function loadChampionName(championId: string | number): Promise<any
       return mapPublicChampionName(champion)
     }
 
-    const detail = await loadChampionDetailPayload(championId)
+    const detail = await loadChampionDetailPayload(championId, locale)
     if (detail?.champion) {
       return mapPublicChampionName(detail.champion)
     }
@@ -2022,12 +2071,16 @@ export async function loadChampionName(championId: string | number): Promise<any
   }
 }
 
-export async function loadChampionLinks(championId: string | number): Promise<any> {
+export async function loadChampionLinks(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
   try {
-    const championsPayload = await loadChampionsPayload()
+    const locale = normalizeDataLocale(requestedLocale)
+    const championsPayload = await loadChampionsPayload(locale)
     const champions = extractList(championsPayload, 'champions')
     const champion = findChampionInList(champions, championId)
-    const detail = await loadChampionDetailPayload(championId)
+    const detail = await loadChampionDetailPayload(championId, locale)
     const relatedBlogs = getChampionRelatedBlogs(detail, detail?.champion, champion)
 
     return {
@@ -2050,6 +2103,100 @@ export async function loadAugmentBaseForLocale(locale: unknown): Promise<any[]> 
   return loadAugmentBase(normalizeDataLocale(locale))
 }
 
+async function loadCachedOcrAugmentLocaleData(
+  requestedLocale: SupportedDataLocale
+): Promise<OcrAugmentLocaleData | null> {
+  const dataVersions: string[] = []
+  for (const candidate of await readCurrentDataPointerCandidates(requestedLocale)) {
+    const current = candidate.pointer
+    const dataVersion = String(current?.dataVersion || '')
+    if (!dataVersion) {
+      continue
+    }
+
+    const pointerLocale = getClientConfigLocale(current, requestedLocale)
+    if (pointerLocale !== requestedLocale) {
+      continue
+    }
+
+    if (!dataVersions.includes(dataVersion)) {
+      dataVersions.push(dataVersion)
+    }
+  }
+
+  for (const dataVersion of await listLocalDataVersions(requestedLocale)) {
+    if (!dataVersions.includes(dataVersion)) {
+      dataVersions.push(dataVersion)
+    }
+  }
+
+  for (const dataVersion of dataVersions) {
+    const manifest = await readDataFileFromDisk(dataVersion, 'manifest.json', requestedLocale)
+    const declaredManifestLocale = tryNormalizeDataLocale(manifest?.locale)
+    if (
+      !manifest ||
+      (requestedLocale !== DEFAULT_DATA_LOCALE && declaredManifestLocale !== requestedLocale) ||
+      (declaredManifestLocale && declaredManifestLocale !== requestedLocale)
+    ) {
+      continue
+    }
+
+    const payload = await readDataFileFromDisk(dataVersion, 'augments.json', requestedLocale)
+    if (!payload) {
+      continue
+    }
+
+    return {
+      locale: requestedLocale,
+      dataVersion,
+      augments: extractList(payload, 'augments').map(mapPublicAugmentBase),
+    }
+  }
+
+  return null
+}
+
+export async function loadAugmentBaseForOcrLocale(locale: unknown): Promise<OcrAugmentLocaleData> {
+  const requestedLocale = normalizeDataLocale(locale)
+  const cached = await loadCachedOcrAugmentLocaleData(requestedLocale)
+  if (cached) {
+    return cached
+  }
+
+  const config = await loadDataApiConfig({ locale: requestedLocale })
+  const configLocale = getClientConfigLocale(config, DEFAULT_DATA_LOCALE)
+  if (configLocale !== requestedLocale) {
+    throw new Error(
+      `OCR augment locale ${requestedLocale} is unavailable; config locale is ${configLocale}`
+    )
+  }
+
+  const dataVersion = String(config.dataVersion || '')
+  if (!dataVersion) {
+    throw new Error(`OCR augment config for ${requestedLocale} is missing dataVersion`)
+  }
+
+  const manifestResult = await loadManifestForConfig(config, requestedLocale)
+  if (manifestResult.locale !== requestedLocale) {
+    throw new Error(
+      `OCR augment locale ${requestedLocale} is unavailable; manifest locale is ${manifestResult.locale}`
+    )
+  }
+
+  const payload = await fetchVersionedDataFile(
+    dataVersion,
+    'augments.json',
+    findManifestPath(manifestResult.manifest, 'augments.json'),
+    { locale: requestedLocale }
+  )
+
+  return {
+    locale: requestedLocale,
+    dataVersion,
+    augments: extractList(payload, 'augments').map(mapPublicAugmentBase),
+  }
+}
+
 export async function loadAugmentDetail(locale: SupportedDataLocale = activeDataLocale): Promise<Record<string, any>> {
   const dataSet = await getActiveDataSet(normalizeDataLocale(locale))
   const cacheKey = `${dataSet.locale}:${dataSet.dataVersion}:augment-detail`
@@ -2067,9 +2214,12 @@ export async function loadAugmentDetail(locale: SupportedDataLocale = activeData
   return detail
 }
 
-export async function loadChampionAugments(championId: string | number): Promise<Record<string, any>> {
+export async function loadChampionAugments(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<Record<string, any>> {
   try {
-    const detail = await loadChampionDetailPayload(championId)
+    const detail = await loadChampionDetailPayload(championId, normalizeDataLocale(requestedLocale))
 
     if (detail?.augments) {
       return (detail.augments as any[]).reduce((result: Record<string, any>, augment: any) => {
@@ -2088,11 +2238,15 @@ export async function loadChampionAugments(championId: string | number): Promise
   }
 }
 
-export async function loadChampionAugmentTrios(championId: string | number): Promise<any[]> {
+export async function loadChampionAugmentTrios(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any[]> {
   try {
+    const locale = normalizeDataLocale(requestedLocale)
     const [detail, augmentBaseById] = await Promise.all([
-      loadChampionDetailPayload(championId),
-      loadAugmentDetail(),
+      loadChampionDetailPayload(championId, locale),
+      loadAugmentDetail(locale),
     ])
 
     if (Array.isArray(detail?.augmentTrios)) {
@@ -2106,9 +2260,12 @@ export async function loadChampionAugmentTrios(championId: string | number): Pro
   }
 }
 
-export async function loadChampionBuild(championId: string | number): Promise<any> {
+export async function loadChampionBuild(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
   try {
-    const detail = await loadChampionDetailPayload(championId)
+    const detail = await loadChampionDetailPayload(championId, normalizeDataLocale(requestedLocale))
     return mapChampionBuilds(detail, championId)
   } catch (error: any) {
     logger.warn(`Failed to load build for champion ${championId}:`, error.message)
@@ -2116,14 +2273,18 @@ export async function loadChampionBuild(championId: string | number): Promise<an
   }
 }
 
-export async function loadItems(): Promise<any[]> {
-  const itemsPayload = await loadItemsPayload()
+export async function loadItems(
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any[]> {
+  const itemsPayload = await loadItemsPayload(normalizeDataLocale(requestedLocale))
   return extractList(itemsPayload, 'items').map(mapPublicItem)
 }
 
-export async function loadChampionRoster(): Promise<any[]> {
-  const championsPayload = await loadChampionsPayload()
-  const dataSet = await getActiveDataSet()
+export async function loadChampionRoster(
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any[]> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(requestedLocale))
+  const championsPayload = await loadChampionsPayload(dataSet.locale)
   const meta = getPayloadMeta(championsPayload, dataSet.config)
 
   return extractList(championsPayload, 'champions')
@@ -2131,22 +2292,28 @@ export async function loadChampionRoster(): Promise<any[]> {
     .filter((champion) => champion.championId && Number(champion.championId) > 0)
 }
 
-export async function getChampionDetailData(championId: string | number): Promise<any> {
-  const dataSet = await getActiveDataSet()
+export async function getChampionDetailData(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any> {
+  const locale = normalizeDataLocale(requestedLocale)
+  const dataSet = await getActiveDataSet(locale)
   const [stats, augmentBase, augmentDetail, augments, augmentTrios, buildData, items, championName, championLinks] =
     await Promise.all([
-      loadChampionStats(championId),
+      loadChampionStats(championId, dataSet.locale),
       loadAugmentBase(dataSet.locale),
       loadAugmentDetail(dataSet.locale),
-      loadChampionAugments(championId),
-      loadChampionAugmentTrios(championId),
-      loadChampionBuild(championId),
-      loadItems(),
-      loadChampionName(championId),
-      loadChampionLinks(championId),
+      loadChampionAugments(championId, dataSet.locale),
+      loadChampionAugmentTrios(championId, dataSet.locale),
+      loadChampionBuild(championId, dataSet.locale),
+      loadItems(dataSet.locale),
+      loadChampionName(championId, dataSet.locale),
+      loadChampionLinks(championId, dataSet.locale),
     ])
 
   return {
+    locale: dataSet.locale,
+    dataVersion: dataSet.dataVersion,
     stats: {
       ...stats,
       relatedBlogs: stats?.relatedBlogs?.length ? stats.relatedBlogs : championLinks?.relatedBlogs || [],
@@ -2167,9 +2334,10 @@ export async function getChampionDetailData(championId: string | number): Promis
 
 export async function getAugmentWinrate(
   championId: string | number,
-  augmentId: string | number
+  augmentId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
 ): Promise<any> {
-  const augments = await loadChampionAugments(championId)
+  const augments = await loadChampionAugments(championId, normalizeDataLocale(requestedLocale))
   const augmentIdStr = String(augmentId)
 
   if (!augments[augmentIdStr]) {
@@ -2186,8 +2354,11 @@ export async function getAugmentWinrate(
   }
 }
 
-export async function getChampionAugmentStats(championId: string | number): Promise<any[]> {
-  const dataSet = await getActiveDataSet()
+export async function getChampionAugmentStats(
+  championId: string | number,
+  requestedLocale: SupportedDataLocale = activeDataLocale
+): Promise<any[]> {
+  const dataSet = await getActiveDataSet(normalizeDataLocale(requestedLocale))
   const normalizedChampionId = String(championId)
   const cacheKey = `${dataSet.locale}:${dataSet.dataVersion}:champion-augment-stats:${normalizedChampionId}`
   const cached = championAugmentStatsCache.get(cacheKey)
@@ -2202,7 +2373,7 @@ export async function getChampionAugmentStats(championId: string | number): Prom
 
   const request = (async () => {
     const [detail, augmentBaseById] = await Promise.all([
-      loadChampionDetailPayload(normalizedChampionId),
+      loadChampionDetailPayload(normalizedChampionId, dataSet.locale),
       loadAugmentDetail(dataSet.locale),
     ])
     const augments = Array.isArray(detail?.augments) ? detail.augments : []

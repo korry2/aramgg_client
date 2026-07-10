@@ -10,7 +10,7 @@
     "build": "electron-vite build",
     "pack": "node scripts/pack-electron.mjs",
     "start": "electron .",
-    "lint": "eslint src --ext .js,.vue",
+    "lint": "eslint src --ext .js,.ts,.vue",
     "type-check": "vue-tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "type-check:watch": "vue-tsc -p tsconfig.renderer.json --noEmit --watch",
     "test": "vitest run",
@@ -38,7 +38,8 @@
     "afterPack": "scripts/after-pack.cjs",
     "electronLanguages": [
       "zh-CN",
-      "en-US"
+      "en-US",
+      "zh-TW"
     ],
     "files": [
       "dist/**/*",
@@ -131,6 +132,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
     "vitest": "^4.1.7",
     "vue": "^3.5.34",
     "vue-router": "^5.0.7",

@@ -1,15 +1,20 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
 const DATA_API_ORIGIN = process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
 const DATA_API_PREFIX = '/api/client/v1'
+const DATA_API_CONFIG_PATH = `${DATA_API_PREFIX}/config`
 const OUTPUT_DIR = process.env.ARAMGG_CLIENT_DATA_DIR || path.join('resources', 'client-data')
 const DOWNLOAD_CONCURRENCY = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_CONCURRENCY, 3)
 const REQUEST_TIMEOUT_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_TIMEOUT_MS, 120000)
 const REQUEST_RETRY_COUNT = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRIES, 5)
 const RETRY_BASE_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_DELAY_MS, 1500)
 const RETRY_MAX_DELAY_MS = parsePositiveInteger(process.env.ARAMGG_CLIENT_DATA_RETRY_MAX_DELAY_MS, 10000)
+
+export const DEFAULT_CLIENT_DATA_LOCALE = 'zh-CN'
+export const SUPPORTED_CLIENT_DATA_LOCALES = ['zh-CN', 'en-US', 'zh-TW']
 
 const REQUIRED_DATA_PATHS = new Set([
   'augments.json',
@@ -19,9 +24,35 @@ const REQUIRED_DATA_PATHS = new Set([
   'champion-shards/index.json',
 ])
 
+const localeAliases = new Map([
+  ['zh', 'zh-CN'],
+  ['zh-cn', 'zh-CN'],
+  ['zh-hans', 'zh-CN'],
+  ['zh-sg', 'zh-CN'],
+  ['cn', 'zh-CN'],
+  ['en', 'en-US'],
+  ['en-us', 'en-US'],
+  ['en-gb', 'en-US'],
+  ['us', 'en-US'],
+  ['zh-tw', 'zh-TW'],
+  ['zh-hant', 'zh-TW'],
+  ['zh-hk', 'zh-TW'],
+  ['zh-mo', 'zh-TW'],
+  ['tw', 'zh-TW'],
+])
+
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value || '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function tryNormalizeLocale(value) {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/_/g, '-')
+    .toLowerCase()
+
+  return localeAliases.get(normalized) || null
 }
 
 function getApiUrl(resourcePath) {
@@ -41,9 +72,45 @@ function sanitizePathPart(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
+function resolveVersionResourcePath(dataVersion, resourcePath) {
+  if (/^https?:\/\//i.test(resourcePath) || resourcePath.startsWith('/')) {
+    return resourcePath
+  }
+
+  return `${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}/${normalizeDataPath(resourcePath)}`
+}
+
 function isBundledDataPath(dataPath) {
   const normalizedPath = normalizeDataPath(dataPath)
   return REQUIRED_DATA_PATHS.has(normalizedPath) || normalizedPath.startsWith('champion-shards/')
+}
+
+export function getLocalePointerFileName(locale) {
+  return locale === DEFAULT_CLIENT_DATA_LOCALE ? 'current.json' : `current.${locale}.json`
+}
+
+export function getLocaleVersionRelativePath(locale, dataVersion) {
+  return locale === DEFAULT_CLIENT_DATA_LOCALE
+    ? path.join('versions', sanitizePathPart(dataVersion))
+    : path.join('versions', sanitizePathPart(locale), sanitizePathPart(dataVersion))
+}
+
+function getLocaleVersionsRoot(locale) {
+  return locale === DEFAULT_CLIENT_DATA_LOCALE
+    ? path.join(OUTPUT_DIR, 'versions')
+    : path.join(OUTPUT_DIR, 'versions', sanitizePathPart(locale))
+}
+
+function isLocaleDirectoryName(value) {
+  return tryNormalizeLocale(value) != null
+}
+
+export function shouldPruneVersionDirectory(locale, entryName, activeDataVersion) {
+  if (entryName === sanitizePathPart(activeDataVersion)) {
+    return false
+  }
+
+  return locale !== DEFAULT_CLIENT_DATA_LOCALE || !isLocaleDirectoryName(entryName)
 }
 
 function sleep(ms) {
@@ -68,13 +135,19 @@ async function fetchTextOnce(resourcePath) {
     })
 
     if (!response.ok) {
-      throw new Error(`${response.status} ${response.statusText}`)
+      const error = new Error(`${response.status} ${response.statusText}: ${url}`)
+      error.status = response.status
+      throw error
     }
 
     return await response.text()
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw new Error(`Timed out after ${REQUEST_TIMEOUT_MS}ms: ${url}`)
+    }
+
+    if (error?.status) {
+      throw error
     }
 
     throw new Error(`Failed to fetch ${url}: ${error.message}`)
@@ -102,6 +175,10 @@ async function fetchText(resourcePath, options = {}) {
       return content
     } catch (error) {
       lastError = error
+      if (error?.status === 404) {
+        break
+      }
+
       if (attempt < REQUEST_RETRY_COUNT) {
         const delay = getRetryDelay(attempt)
         console.warn(
@@ -138,22 +215,35 @@ function getManifestFileEntries(manifest) {
 
   if (manifest?.files && typeof manifest.files === 'object') {
     return Object.entries(manifest.files).map(([filePath, value]) => ({
-      ...(value && typeof value === 'object' ? value : {}),
       path: filePath,
+      ...(value && typeof value === 'object' ? value : {}),
     }))
   }
 
   return []
 }
 
-function findManifestPath(manifest, logicalPath) {
-  const normalizedPath = normalizeDataPath(logicalPath)
-  const entry = getManifestFileEntries(manifest).find((file) => {
-    const filePath = normalizeDataPath(file.path || file.url || '')
-    return filePath === normalizedPath || filePath.endsWith(`/${normalizedPath}`)
-  })
+function getManifestEntryLogicalPath(entry) {
+  const directPath = normalizeDataPath(entry?.path || entry?.logicalPath || '')
+  if (directPath) {
+    return directPath
+  }
 
-  return normalizeDataPath(entry?.path || normalizedPath)
+  const urlPath = normalizeDataPath(entry?.url || '')
+  for (const marker of ['champion-shards/', 'champions/']) {
+    const markerIndex = urlPath.indexOf(marker)
+    if (markerIndex >= 0) {
+      return urlPath.slice(markerIndex)
+    }
+  }
+
+  for (const fileName of ['augments.json', 'champions.json', 'items.json', 'manifest.json']) {
+    if (urlPath.endsWith(`/${fileName}`) || urlPath === fileName) {
+      return fileName
+    }
+  }
+
+  return urlPath
 }
 
 async function writeTextFile(filePath, content) {
@@ -176,9 +266,7 @@ async function isExistingFileComplete(filePath, file) {
 
 async function isExistingBundleComplete(versionDir, files) {
   for (const file of files) {
-    const filePath = path.join(versionDir, file.path)
-
-    if (!(await isExistingFileComplete(filePath, file))) {
+    if (!(await isExistingFileComplete(path.join(versionDir, file.path), file))) {
       return false
     }
   }
@@ -186,16 +274,16 @@ async function isExistingBundleComplete(versionDir, files) {
   return true
 }
 
-async function downloadBundleFile(versionDir, file, manifestDataPath, manifestText) {
+async function downloadBundleFile(versionDir, file, manifestText) {
   const filePath = path.join(versionDir, file.path)
 
   if (await isExistingFileComplete(filePath, file)) {
     return { reused: true }
   }
 
-  const content = file.path === manifestDataPath
+  const content = file.path === 'manifest.json'
     ? manifestText
-    : await fetchText(file.url || file.path, {
+    : await fetchText(file.url, {
         expectedBytes: file.bytes,
         label: file.path,
       })
@@ -204,8 +292,8 @@ async function downloadBundleFile(versionDir, file, manifestDataPath, manifestTe
   return { reused: false }
 }
 
-async function pruneInactiveVersions(activeDataVersion) {
-  const versionsRoot = path.join(OUTPUT_DIR, 'versions')
+async function pruneInactiveVersions(locale, activeDataVersion) {
+  const versionsRoot = getLocaleVersionsRoot(locale)
   const activeDirName = sanitizePathPart(activeDataVersion)
 
   let entries = []
@@ -220,7 +308,10 @@ async function pruneInactiveVersions(activeDataVersion) {
   }
 
   await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && entry.name !== activeDirName)
+    .filter((entry) => (
+      entry.isDirectory() &&
+      shouldPruneVersionDirectory(locale, entry.name, activeDirName)
+    ))
     .map((entry) => rm(path.join(versionsRoot, entry.name), { recursive: true, force: true })))
 }
 
@@ -237,36 +328,138 @@ async function runLimited(items, limit, worker) {
   await Promise.all(workers)
 }
 
-async function main() {
+function getConfigCandidates(locale) {
+  if (locale === DEFAULT_CLIENT_DATA_LOCALE) {
+    return [DATA_API_CONFIG_PATH]
+  }
+
+  return [
+    `${DATA_API_CONFIG_PATH}?locale=${encodeURIComponent(locale)}`,
+    `${DATA_API_CONFIG_PATH}?lang=${encodeURIComponent(locale)}`,
+    `${DATA_API_CONFIG_PATH}?language=${encodeURIComponent(locale)}`,
+    `${DATA_API_PREFIX}/${encodeURIComponent(locale)}/config`,
+    `${DATA_API_CONFIG_PATH}/${encodeURIComponent(locale)}`,
+  ]
+}
+
+async function loadLocaleConfig(locale) {
+  let lastError = null
+  let localeMismatchError = null
+
+  for (const configPath of getConfigCandidates(locale)) {
+    try {
+      const config = await fetchJson(configPath)
+      const declaredLocale = tryNormalizeLocale(config?.locale)
+      if (declaredLocale === locale || (locale === DEFAULT_CLIENT_DATA_LOCALE && !declaredLocale)) {
+        return config
+      }
+
+      localeMismatchError = new Error(
+        `Config locale mismatch for ${locale}: received ${declaredLocale || 'missing'}`
+      )
+    } catch (error) {
+      lastError = error
+      if (error?.status !== 404) {
+        throw error
+      }
+    }
+  }
+
+  throw localeMismatchError || lastError || new Error(`No client data config found for ${locale}`)
+}
+
+function getManifestCandidates(config, dataVersion, locale) {
+  const candidates = [config.manifest || '']
+  if (locale !== DEFAULT_CLIENT_DATA_LOCALE) {
+    candidates.push(
+      `${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}/${encodeURIComponent(locale)}/manifest.json`,
+      `${DATA_API_PREFIX}/data/${encodeURIComponent(locale)}/${encodeURIComponent(dataVersion)}/manifest.json`,
+      `${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}/manifest.${encodeURIComponent(locale)}.json`
+    )
+  }
+  candidates.push(`${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}/manifest.json`)
+  return [...new Set(candidates.filter(Boolean))]
+}
+
+async function loadLocaleManifest(config, dataVersion, locale) {
+  let lastError = null
+  let localeMismatchError = null
+
+  for (const manifestPath of getManifestCandidates(config, dataVersion, locale)) {
+    try {
+      const manifestText = await fetchText(manifestPath)
+      const manifest = JSON.parse(manifestText)
+      const declaredLocale = tryNormalizeLocale(manifest?.locale)
+      if (declaredLocale === locale || (locale === DEFAULT_CLIENT_DATA_LOCALE && !declaredLocale)) {
+        return { manifest, manifestText, manifestPath }
+      }
+
+      localeMismatchError = new Error(
+        `Manifest locale mismatch for ${locale}: received ${declaredLocale || 'missing'}`
+      )
+    } catch (error) {
+      lastError = error
+      if (error?.status !== 404) {
+        throw error
+      }
+    }
+  }
+
+  throw localeMismatchError || lastError || new Error(`No client data manifest found for ${locale}/${dataVersion}`)
+}
+
+function createPointer(config, locale, dataVersion, manifestPath, files, existingPointer) {
+  const shardCount = files.filter((file) => (
+    file.path.startsWith('champion-shards/') &&
+    file.path.endsWith('.json') &&
+    file.path !== 'champion-shards/index.json'
+  )).length
+  const totalBytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
+
+  return {
+    schemaVersion: 3,
+    locale,
+    dataVersion,
+    gamePatch: config.gamePatch || '',
+    generatedAt: config.generatedAt || '',
+    bundledFileCount: files.length,
+    bundledShardCount: shardCount,
+    bundledBytes: totalBytes,
+    manifest: config.manifest || manifestPath,
+    activatedAt: existingPointer?.activatedAt || new Date().toISOString(),
+  }
+}
+
+export async function bundleLocale(locale) {
   const startedAt = Date.now()
-  console.log(`[client-data] fetching config from ${getApiUrl(`${DATA_API_PREFIX}/config`)}`)
-  const config = await fetchJson(`${DATA_API_PREFIX}/config`)
+  const configPath = getConfigCandidates(locale)[0]
+  console.log(`[client-data] [${locale}] fetching config from ${getApiUrl(configPath)}`)
+  const config = await loadLocaleConfig(locale)
   const dataVersion = String(config?.dataVersion || '')
 
   if (!dataVersion) {
-    throw new Error('Remote client data config is missing dataVersion')
+    throw new Error(`Remote client data config for ${locale} is missing dataVersion`)
   }
 
-  const manifestPath = config.manifest || `${DATA_API_PREFIX}/data/${encodeURIComponent(dataVersion)}/manifest.json`
-  console.log(
-    `[client-data] remote config dataVersion=${dataVersion} ` +
-      `gamePatch=${config.gamePatch || 'unknown'} generatedAt=${config.generatedAt || 'unknown'}`
+  const { manifest, manifestText, manifestPath } = await loadLocaleManifest(
+    config,
+    dataVersion,
+    locale
   )
-  console.log(`[client-data] fetching manifest from ${getApiUrl(manifestPath)}`)
-  const manifestText = await fetchText(manifestPath)
-  const manifest = JSON.parse(manifestText)
-  const versionDir = path.join(OUTPUT_DIR, 'versions', sanitizePathPart(dataVersion))
-  const manifestDataPath = findManifestPath(manifest, 'manifest.json')
+  const versionDir = path.join(OUTPUT_DIR, getLocaleVersionRelativePath(locale, dataVersion))
   const entries = getManifestFileEntries(manifest)
-    .map((entry) => ({
-      path: normalizeDataPath(entry.path || entry.url || ''),
-      url: entry.url || entry.path || '',
-      bytes: Number(entry.bytes || 0),
-    }))
+    .map((entry) => {
+      const logicalPath = getManifestEntryLogicalPath(entry)
+      return {
+        path: logicalPath,
+        url: resolveVersionResourcePath(dataVersion, entry.url || entry.path || logicalPath),
+        bytes: Number(entry.bytes || 0),
+      }
+    })
     .filter((entry) => entry.path && isBundledDataPath(entry.path))
 
   const manifestEntry = {
-    path: manifestDataPath,
+    path: 'manifest.json',
     url: manifestPath,
     bytes: Buffer.byteLength(manifestText),
   }
@@ -276,52 +469,38 @@ async function main() {
   }
 
   const files = [...filesByPath.values()].sort((a, b) => a.path.localeCompare(b.path))
-  const existingPointer = await readJsonFile(path.join(OUTPUT_DIR, 'current.json'))
-  const shardCount = files.filter((file) =>
-    file.path.startsWith('champion-shards/') && file.path.endsWith('.json') && file.path !== 'champion-shards/index.json'
-  ).length
-  const totalBytes = files.reduce((sum, file) => sum + (file.bytes || 0), 0)
+  const pointerPath = path.join(OUTPUT_DIR, getLocalePointerFileName(locale))
+  const existingPointer = await readJsonFile(pointerPath)
+  const pointer = createPointer(
+    config,
+    locale,
+    dataVersion,
+    manifestPath,
+    files,
+    existingPointer
+  )
 
   console.log(
-    `[client-data] required bundle files=${files.length} shards=${shardCount} ` +
-      `bytes=${totalBytes} output=${path.resolve(OUTPUT_DIR)}`
-  )
-  console.log(
-    `[client-data] download concurrency=${DOWNLOAD_CONCURRENCY} ` +
-      `timeout=${REQUEST_TIMEOUT_MS}ms retries=${REQUEST_RETRY_COUNT}`
+    `[client-data] [${locale}] dataVersion=${dataVersion} files=${pointer.bundledFileCount} ` +
+      `shards=${pointer.bundledShardCount} bytes=${pointer.bundledBytes}`
   )
 
   if (
     String(existingPointer?.dataVersion || '') === dataVersion &&
+    existingPointer?.locale === locale &&
     await isExistingBundleComplete(versionDir, files)
   ) {
-    await writeTextFile(
-      path.join(OUTPUT_DIR, 'current.json'),
-      JSON.stringify({
-        schemaVersion: 3,
-        dataVersion,
-        gamePatch: config.gamePatch || '',
-        generatedAt: config.generatedAt || '',
-        bundledFileCount: files.length,
-        bundledShardCount: shardCount,
-        bundledBytes: totalBytes,
-        manifest: config.manifest || manifestPath,
-        activatedAt: existingPointer?.activatedAt || new Date().toISOString(),
-      })
-    )
-    console.log(
-      `[client-data] existing bundle for ${dataVersion} is complete; ` +
-        `skipped download in ${Date.now() - startedAt}ms`
-    )
-    return
+    await writeTextFile(pointerPath, JSON.stringify(pointer))
+    await pruneInactiveVersions(locale, dataVersion)
+    console.log(`[client-data] [${locale}] existing complete bundle reused`)
+    return pointer
   }
 
   await mkdir(versionDir, { recursive: true })
-
   let downloadedCount = 0
   let reusedCount = 0
   await runLimited(files, DOWNLOAD_CONCURRENCY, async (file) => {
-    const result = await downloadBundleFile(versionDir, file, manifestDataPath, manifestText)
+    const result = await downloadBundleFile(versionDir, file, manifestText)
     if (result.reused) {
       reusedCount += 1
     } else {
@@ -330,34 +509,45 @@ async function main() {
   })
 
   if (!(await isExistingBundleComplete(versionDir, files))) {
-    throw new Error(`Downloaded bundle for ${dataVersion} is incomplete`)
+    throw new Error(`Downloaded bundle for ${locale}/${dataVersion} is incomplete`)
   }
 
-  await writeTextFile(
-    path.join(OUTPUT_DIR, 'current.json'),
-    JSON.stringify({
-      schemaVersion: 3,
-      dataVersion,
-      gamePatch: config.gamePatch || '',
-      generatedAt: config.generatedAt || '',
-      bundledFileCount: files.length,
-      bundledShardCount: shardCount,
-      bundledBytes: totalBytes,
-      manifest: config.manifest || manifestPath,
-      activatedAt: new Date().toISOString(),
-    })
-  )
-  await pruneInactiveVersions(dataVersion)
+  await writeTextFile(pointerPath, JSON.stringify({
+    ...pointer,
+    activatedAt: new Date().toISOString(),
+  }))
+  await pruneInactiveVersions(locale, dataVersion)
 
   console.log(
-    `[client-data] bundled ${files.length} files for ${dataVersion} ` +
-      `with ${shardCount} shards (${(totalBytes / 1024 / 1024).toFixed(2)} MB) ` +
-      `downloaded=${downloadedCount} reused=${reusedCount} ` +
+    `[client-data] [${locale}] bundled ${(pointer.bundledBytes / 1024 / 1024).toFixed(2)} MB ` +
+      `downloaded=${downloadedCount} reused=${reusedCount} in ${Date.now() - startedAt}ms`
+  )
+  return pointer
+}
+
+async function main() {
+  const startedAt = Date.now()
+  console.log(
+    `[client-data] preparing locales=${SUPPORTED_CLIENT_DATA_LOCALES.join(',')} ` +
+      `concurrency=${DOWNLOAD_CONCURRENCY} timeout=${REQUEST_TIMEOUT_MS}ms retries=${REQUEST_RETRY_COUNT}`
+  )
+
+  const pointers = []
+  for (const locale of SUPPORTED_CLIENT_DATA_LOCALES) {
+    pointers.push(await bundleLocale(locale))
+  }
+
+  const totalBytes = pointers.reduce((sum, pointer) => sum + Number(pointer.bundledBytes || 0), 0)
+  console.log(
+    `[client-data] prepared ${pointers.length} locales (${(totalBytes / 1024 / 1024).toFixed(2)} MB) ` +
       `in ${Date.now() - startedAt}ms`
   )
 }
 
-main().catch((error) => {
-  console.error(`[client-data] ${error.message}`)
-  process.exit(1)
-})
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isMainModule) {
+  main().catch((error) => {
+    console.error(`[client-data] ${error.message}`)
+    process.exit(1)
+  })
+}

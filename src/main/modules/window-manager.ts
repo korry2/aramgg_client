@@ -594,6 +594,23 @@ export const getFloatingWindow = () => floatingWindow
 
 export const getAugmentSidePanelWindow = () => augmentSidePanelWindow
 
+export function notifyAllWindows(channel, data) {
+    for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed()) {
+            continue
+        }
+
+        try {
+            window.webContents.send(channel, data)
+        } catch (error) {
+            logger.warn('[window-manager] failed to notify renderer window:', {
+                channel,
+                error: error.message,
+            })
+        }
+    }
+}
+
 export const allowMainWindowClose = () => {
     mainWindowCloseAllowed = true
 }

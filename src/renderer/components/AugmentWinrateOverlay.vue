@@ -415,6 +415,8 @@ let itemSetToastTimer = null
 let championLoadSequence = 0
 let championDataRequest = null
 let championDataCache = null
+let lastOverlayPayload = null
+const activeDataLocale = ref('zh-CN')
 
 const contentVisible = computed(() => champSelectMode.value || !!championId.value || !!championStats.value)
 const isSidePanel = computed(() => props.variant === 'side-panel')
@@ -514,10 +516,11 @@ const loadChampionInsightPreference = async () => {
   }
 }
 
-const loadChampionDataOnce = async (requestedChampionId) => {
+const loadChampionDataOnce = async (requestedChampionId, requestedLocale = activeDataLocale.value) => {
   const now = Date.now()
   if (
     championDataCache?.championId === requestedChampionId &&
+    championDataCache?.locale === requestedLocale &&
     now - championDataCache.loadedAt < CHAMPION_DATA_CACHE_TTL_MS
   ) {
     return {
@@ -526,7 +529,10 @@ const loadChampionDataOnce = async (requestedChampionId) => {
     }
   }
 
-  if (championDataRequest?.championId === requestedChampionId) {
+  if (
+    championDataRequest?.championId === requestedChampionId &&
+    championDataRequest?.locale === requestedLocale
+  ) {
     return {
       result: await championDataRequest.promise,
       source: 'in-flight',
@@ -538,6 +544,7 @@ const loadChampionDataOnce = async (requestedChampionId) => {
       if (result?.success) {
         championDataCache = {
           championId: requestedChampionId,
+          locale: result.locale || requestedLocale,
           loadedAt: Date.now(),
           result,
         }
@@ -548,6 +555,7 @@ const loadChampionDataOnce = async (requestedChampionId) => {
 
   championDataRequest = {
     championId: requestedChampionId,
+    locale: requestedLocale,
     promise,
   }
 
@@ -945,6 +953,9 @@ const hideAugmentTooltip = () => {
  * 显示浮窗
  */
 const showOverlay = async (data) => {
+  if (data && !data.pending && !data.error) {
+    lastOverlayPayload = data
+  }
   const startedAt = Date.now()
   const loadSequence = ++championLoadSequence
   const wasVisible = visible.value
@@ -1041,10 +1052,18 @@ const showOverlay = async (data) => {
       championId: requestedChampionId,
     })
     const championLoadStartedAt = Date.now()
+    const requestedLocale = activeDataLocale.value
     championDataLoading.value = true
-    const { result, source: championDataSource } = await loadChampionDataOnce(requestedChampionId)
+    const { result, source: championDataSource } = await loadChampionDataOnce(
+      requestedChampionId,
+      requestedLocale
+    )
 
-    if (loadSequence !== championLoadSequence || Number(championId.value) !== requestedChampionId) {
+    if (
+      loadSequence !== championLoadSequence ||
+      Number(championId.value) !== requestedChampionId ||
+      requestedLocale !== activeDataLocale.value
+    ) {
       const currentChampionId = Number(championId.value) || null
       if (currentChampionId !== requestedChampionId || !visible.value) {
         logOverlayInfo('stale champion data ignored', {
@@ -1288,12 +1307,42 @@ const handleImageError = (e) => {
   e.target.style.display = 'none'
 }
 
+const applyDataLocale = (locale) => {
+  if (!locale || locale === activeDataLocale.value) {
+    return
+  }
+
+  activeDataLocale.value = locale
+  championDataCache = null
+  championDataRequest = null
+  championLoadSequence += 1
+  hideAugmentTooltip()
+
+  if (visible.value && lastOverlayPayload?.championId) {
+    void showOverlay({
+      ...lastOverlayPayload,
+      championName: '',
+    })
+  }
+}
+
 /**
  * 监听来自主进程的数据
  */
 onMounted(() => {
   logOverlayInfo('component mounted')
   void loadChampionInsightPreference()
+  void electronAPI.locale.get()
+    .then((result) => {
+      applyDataLocale(result?.locale)
+    })
+    .catch((err) => {
+      console.warn('Failed to load data locale:', err)
+    })
+
+  unsubscribeEvents.push(electronAPI.events.on('locale-changed', ({ locale } = {}) => {
+    applyDataLocale(locale)
+  }))
 
   unsubscribeEvents.push(electronAPI.events.on('for-popup', (data) => {
     logOverlayInfo('for-popup received', {

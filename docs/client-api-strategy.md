@@ -88,18 +88,20 @@ https://data.dtodo.cn/api/client/v1/config
 
 客户端启动和前台展示时：
 
-1. 先读取运行时 `data/current.json` 和打包内置 `resources/client-data/current.json`，找到完整可用的数据版本。
+1. 按当前数据语言读取运行时和打包内置指针；默认中文使用 `current.json`，非默认语言使用 `current.<locale>.json`。
 2. 英雄详情、海克斯弹窗和右侧推荐列表立即使用完整本地版本渲染，不等待远端版本检查。
 3. 后台读取远程 `config` 并比较 `dataVersion`。
 4. 远端版本一致时不下载新数据。
-5. 远端版本更高时读取 `manifest`，把新版本的必需文件下载到 `data/versions/<dataVersion>/`。
-6. 新版本通过完整性检查后，原子更新 `data/current.json`，后续请求再使用新版本。
+5. 远端版本更高时读取同语言 `manifest`，把新版本必需文件下载到对应语言版本目录。
+6. 新版本通过完整性检查后，原子更新该语言指针，后续请求再使用新版本。
 
 本地缓存建议按版本隔离：
 
 ```text
 data/
   current.json
+  current.en-US.json
+  current.zh-TW.json
   versions/
     16.10.9/
       manifest.json
@@ -110,9 +112,25 @@ data/
         index.json
         0.json
         1.json
+    en-US/
+      16.10.9-en/
+        manifest.json
+        augments.json
+        champions.json
+        items.json
+        champion-shards/
+    zh-TW/
+      16.10.9-tw/
+        manifest.json
+        augments.json
+        champions.json
+        items.json
+        champion-shards/
 ```
 
-`current.json` 只记录当前激活版本，避免更新中断导致缓存半成品覆盖可用数据。
+每个指针只记录对应语言的当前激活版本，避免更新中断导致缓存半成品覆盖可用数据。默认中文保留扁平目录以兼容已发布客户端。
+
+非默认语言使用严格数据契约：`config` 和 `manifest` 都必须显式返回与请求一致的 `locale`。服务端忽略 locale 参数、缺失 locale 或返回其他语言时，客户端必须拒绝激活和打包，不能把默认中文写入英文或繁中目录。
 
 英雄详情分片也遵循本地优先：前台请求可直接使用磁盘上已存在的较新分片或当前激活版本分片；不要为了探测远端新版详情而阻塞详情页或海克斯弹窗。只有当前本地版本缺少所需文件时，才进入远端分片或单英雄详情兜底。
 
@@ -123,6 +141,7 @@ data/
 | 路径 | 说明 |
 | --- | --- |
 | `/api/client/v1/config` | 客户端配置、数据版本、manifest 地址 |
+| `/api/client/v1/config?locale={locale}` | 指定语言配置；非默认语言响应必须显式返回匹配的 `locale` |
 | `/api/client/v1/data/{dataVersion}/manifest.json` | 数据文件清单、大小、hash、缓存策略 |
 | `/api/client/v1/data/{dataVersion}/augments.json` | 客户端海克斯列表 |
 | `/api/client/v1/data/{dataVersion}/champions.json` | 客户端英雄榜单 |

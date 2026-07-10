@@ -98,7 +98,7 @@ npm run release:push
 
 本仓库不提交真实 API Key。需要本地配置时，复制 `.env.local.example` 为 `.env.local`，再填入自己的 `ARAMGG_DATA_API_KEY`。
 
-客户端展示数据采用本地优先策略：打包内置的 `resources/client-data/` 和运行时 `data/current.json` / `data/versions/<dataVersion>/` 会先用于英雄详情、海克斯弹窗和推荐列表渲染；远端 `/api/client/v1/config` 只用于后台检查和准备新数据版本，必需文件完整后才切换当前版本。
+客户端展示数据采用按语言隔离的本地优先策略：默认中文继续使用 `current.json` / `versions/<dataVersion>/`，英文和繁中使用 `current.<locale>.json` / `versions/<locale>/<dataVersion>/`。打包内置和运行时完整数据会先用于英雄详情、海克斯弹窗和推荐列表渲染；远端配置只用于后台检查和准备同语言新版本，必需文件完整后才切换。
 
 ## 关键文档
 
@@ -108,6 +108,7 @@ npm run release:push
 - [LCU 排障指南](./docs/LCU_TROUBLESHOOTING.md)
 - [自动海克斯检测使用指南](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [客户端数据 API 分发策略](./docs/client-api-strategy.md)
+- [客户端多语言数据支持专项审查](./docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md)
 - [Electron 客户端版本更新方案](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite 架构整改进度](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript 开发约定](./docs/TYPESCRIPT_INTEGRATION.md)

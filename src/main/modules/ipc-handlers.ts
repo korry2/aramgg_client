@@ -22,6 +22,7 @@ import {
     getFloatingWindow,
     getMainWindow,
     getPopupWindow,
+    notifyAllWindows,
     raiseOverlayWindow,
     setPopupWindowAlwaysOnTop,
     toggleMainWindow,
@@ -55,8 +56,10 @@ import {
     SUPPORTED_DATA_LOCALES,
     getDataLocale,
     normalizeDataLocale,
+    prepareDataLocale,
     setDataLocale,
 } from '../data-loader.ts'
+import { changeDataLocale } from './data-locale-controller.ts'
 
 const TEST_AUGMENT_COUNT = 3
 const TEST_BENCH_CHAMPION_COUNT = 8
@@ -84,6 +87,7 @@ const BROADCAST_CHANNELS = new Set([
 ])
 const championDataLoadRequests = new Map()
 let quitRequested = false
+let startupDataLocalePromise = Promise.resolve()
 const MAX_POSTER_DATA_URL_LENGTH = 24 * 1024 * 1024
 
 function getElapsedMs(startedAt) {
@@ -411,10 +415,22 @@ async function buildRandomBenchRecommendation(currentChampionId = null) {
 
 export function registerIpcHandlers(isDev) {
     const startupLocale = normalizeDataLocale(store.get(APP_LOCALE_KEY) || DEFAULT_DATA_LOCALE)
-    setDataLocale(startupLocale)
-    if (!store.get(APP_LOCALE_KEY)) {
-        store.set(APP_LOCALE_KEY, startupLocale)
-    }
+    setDataLocale(DEFAULT_DATA_LOCALE)
+    startupDataLocalePromise = prepareDataLocale(startupLocale)
+        .then((prepared) => {
+            setDataLocale(prepared.locale)
+            store.set(APP_LOCALE_KEY, prepared.locale)
+            logger.info('[locale] startup data locale activated', prepared)
+        })
+        .catch((error) => {
+            setDataLocale(DEFAULT_DATA_LOCALE)
+            store.set(APP_LOCALE_KEY, DEFAULT_DATA_LOCALE)
+            logger.warn('[locale] stored data locale unavailable; reset to default:', {
+                requestedLocale: startupLocale,
+                locale: DEFAULT_DATA_LOCALE,
+                error: error.message,
+            })
+        })
 
     ipcMain.handle('store-get', (_event, key) => {
         return store.get(key)
@@ -428,25 +444,32 @@ export function registerIpcHandlers(isDev) {
         store.delete(key)
     })
 
-    ipcMain.handle('locale-get', () => {
+    ipcMain.handle('locale-get', async () => {
+        await startupDataLocalePromise
         return {
             locale: getDataLocale(),
             supportedLocales: SUPPORTED_DATA_LOCALES,
         }
     })
 
-    ipcMain.handle('locale-set', (_event, locale) => {
+    ipcMain.handle('locale-set', async (_event, locale) => {
+        await startupDataLocalePromise
         const normalizedLocale = normalizeDataLocale(locale)
-        setDataLocale(normalizedLocale)
-        store.set(APP_LOCALE_KEY, normalizedLocale)
-        void notifyAllWindows('locale-changed', { locale: normalizedLocale })
+        const prepared = await changeDataLocale(normalizedLocale, {
+            prepare: prepareDataLocale,
+            persist: (preparedLocale) => store.set(APP_LOCALE_KEY, preparedLocale),
+            activate: setDataLocale,
+            notify: (payload) => notifyAllWindows('locale-changed', payload),
+        })
 
         logger.info('[locale] data locale changed', {
-            locale: normalizedLocale,
+            locale: prepared.locale,
+            dataVersion: prepared.dataVersion,
         })
 
         return {
-            locale: normalizedLocale,
+            locale: prepared.locale,
+            dataVersion: prepared.dataVersion,
             supportedLocales: SUPPORTED_DATA_LOCALES,
         }
     })
@@ -1064,6 +1087,7 @@ export function registerIpcHandlers(isDev) {
 
     ipcMain.handle('get-winrate', async (_event, data = {}) => {
         const { championId, augmentIds, requestStartedAt, requestSource } = data
+        const requestLocale = getDataLocale()
         const startedAt = Date.now()
         const rendererRequestStartedAt = Number(requestStartedAt)
         const hasRendererRequestStartedAt = Number.isFinite(rendererRequestStartedAt)
@@ -1084,7 +1108,7 @@ export function registerIpcHandlers(isDev) {
 
         try {
             const { getChampionAugmentStats } = await import('../data-loader.ts')
-            let augmentStats = await getChampionAugmentStats(championId)
+            let augmentStats = await getChampionAugmentStats(championId, requestLocale)
 
             if (augmentIds && augmentIds.length > 0) {
                 const orderedAugmentIds = augmentIds
@@ -1108,6 +1132,7 @@ export function registerIpcHandlers(isDev) {
             return {
                 success: true,
                 championId,
+                locale: requestLocale,
                 augments: augmentStats,
                 timestamp: completedAt,
                 dataSource: 'remote',
@@ -1135,7 +1160,8 @@ export function registerIpcHandlers(isDev) {
     })
 
     ipcMain.handle('load-champion-data', async (_event, championId) => {
-        const requestKey = String(championId || '')
+        const requestLocale = getDataLocale()
+        const requestKey = `${requestLocale}:${String(championId || '')}`
         const pendingRequest = championDataLoadRequests.get(requestKey)
         if (pendingRequest) {
             logger.debug('[champion-data] load joined pending request', { championId })
@@ -1149,7 +1175,7 @@ export function registerIpcHandlers(isDev) {
             logger.debug('[champion-data] load requested', { championId })
 
             try {
-                const detail = await getChampionDetailData(championId)
+                const detail = await getChampionDetailData(championId, requestLocale)
                 logger.debug('[champion-data] load completed', {
                     championId,
                     buildCount: Array.isArray(detail.builds) ? detail.builds.length : 0,
@@ -1159,6 +1185,8 @@ export function registerIpcHandlers(isDev) {
 
                 return {
                     success: true,
+                    locale: detail.locale,
+                    dataVersion: detail.dataVersion,
                     data: {
                         stats: detail.stats,
                         augments: detail.augmentBase,

@@ -394,6 +394,7 @@ const manualLolPath = ref('')
 const manualPathStatus = ref(null)
 const manualPathLoading = ref(false)
 const selectedLocale = ref('zh-CN')
+const activeLocale = ref('zh-CN')
 const supportedLocales = ref([
     { code: 'zh-CN', label: 'Simplified Chinese', nativeLabel: '简体中文' },
     { code: 'en-US', label: 'English', nativeLabel: 'English' },
@@ -643,6 +644,7 @@ const loadLocale = async () => {
         }
         if (result?.locale) {
             selectedLocale.value = result.locale
+            activeLocale.value = result.locale
         }
     } catch (error) {
         console.warn('Failed to load locale:', error)
@@ -650,14 +652,16 @@ const loadLocale = async () => {
 }
 
 const changeLocale = async () => {
+    const requestedLocale = selectedLocale.value
     localeLoading.value = true
     try {
-        const result = await electronAPI.locale.set(selectedLocale.value)
+        const result = await electronAPI.locale.set(requestedLocale)
         if (result?.supportedLocales?.length) {
             supportedLocales.value = result.supportedLocales
         }
         if (result?.locale) {
             selectedLocale.value = result.locale
+            activeLocale.value = result.locale
         }
         await loadVersionInfo()
         testStatus.value = {
@@ -665,6 +669,7 @@ const changeLocale = async () => {
             message: `数据语言已切换为 ${selectedLocaleLabel.value}`,
         }
     } catch (error) {
+        selectedLocale.value = activeLocale.value
         console.warn('Failed to change locale:', error)
         testStatus.value = {
             type: 'error',
@@ -1174,8 +1179,7 @@ const quitApp = async () => {
 }
 
 onMounted(() => {
-    loadLocale()
-    loadVersionInfo()
+    void loadLocale().finally(() => loadVersionInfo())
     loadAppUpdateState()
     loadManualLolPath()
     removeQuitConfirmListener = electronAPI.events.on('quit-confirm-requested', confirmQuitApp)
@@ -1185,6 +1189,7 @@ onMounted(() => {
     removeLocaleChangedListener = electronAPI.events.on('locale-changed', ({ locale } = {}) => {
         if (locale) {
             selectedLocale.value = locale
+            activeLocale.value = locale
             loadVersionInfo()
         }
     })

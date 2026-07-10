@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { app } from 'electron'
-import { loadDataApiConfig } from './data-loader.ts'
+import { getActiveDataStatus, loadDataApiConfig } from './data-loader.ts'
 import { getChangelogEntries } from './changelog.ts'
 import logger from './modules/logger.ts'
 
@@ -85,7 +85,10 @@ function getSeverityText(severity) {
 }
 
 export async function getVersionInfo() {
-  const config = await loadDataApiConfig()
+  const [config, activeData] = await Promise.all([
+    loadDataApiConfig(),
+    getActiveDataStatus(),
+  ])
   const currentVersion = app.getVersion()
   const clientConfig = config?.client || config?.electron || {}
   const latestVersion = clientConfig.latestVersion || ''
@@ -103,11 +106,11 @@ export async function getVersionInfo() {
     autoUpdateEnabled: clientConfig.autoUpdateEnabled === true,
     updateFeedUrl: clientConfig.updateFeedUrl || '',
     minimumVersion,
-    dataVersion: config?.dataVersion || '',
-    locale: config?.locale || '',
-    gamePatch: config?.gamePatch || '',
+    dataVersion: activeData?.dataVersion || config?.dataVersion || '',
+    locale: activeData?.locale || config?.locale || '',
+    gamePatch: activeData?.gamePatch || config?.gamePatch || '',
     apiRelease: config?.apiRelease ?? null,
-    generatedAt: config?.generatedAt || '',
+    generatedAt: activeData?.generatedAt || config?.generatedAt || '',
     publishedAt: config?.publishedAt || '',
     severity: comparison.severity,
     shouldPrompt,
