@@ -1,8 +1,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { AppUpdateState, ClientVersionInfo, Unsubscribe } from '../../shared/ipc-contract.ts'
 import { electronAPI } from '../native/electron-api.js'
+import { useI18n } from 'vue-i18n'
 
 export function useAppUpdate(versionInfo: Ref<ClientVersionInfo | null>) {
+  const { t } = useI18n()
   const appUpdateState = ref<AppUpdateState | null>(null)
   const updateActionPending = ref(false)
   let unsubscribe: Unsubscribe | null = null
@@ -21,27 +23,29 @@ export function useAppUpdate(versionInfo: Ref<ClientVersionInfo | null>) {
 
     switch (updatePhase.value) {
       case 'checking':
-        return '正在检查'
+        return t('update.checking')
       case 'available':
-        return updateDownloadDeferred.value ? `等待下载${versionSuffix}` : `下载中${versionSuffix}`
+        return updateDownloadDeferred.value
+          ? t('update.waitingDownload', { version: versionSuffix })
+          : t('update.downloading', { version: versionSuffix })
       case 'downloading':
-        return `下载中${versionSuffix}`
+        return t('update.downloading', { version: versionSuffix })
       case 'downloaded':
-        return `已下载${versionSuffix}`
+        return t('update.downloaded', { version: versionSuffix })
       case 'installing':
-        return '正在安装'
+        return t('update.installing')
       case 'not-available':
-        return '已是最新'
+        return t('update.latest')
       case 'no-feed':
-        return manualUpdateDownloadUrl.value ? '手动下载' : '未配置更新源'
+        return manualUpdateDownloadUrl.value ? t('update.manualDownload') : t('update.sourceMissing')
       case 'disabled':
-        return '暂未支持自动更新'
+        return t('update.unsupported')
       case 'error':
-        return '更新异常'
+        return t('update.error')
       default:
         return versionInfo.value?.isNewer && latestVersion
-          ? `可更新${versionSuffix}`
-          : '自动更新'
+          ? t('update.available', { version: versionSuffix })
+          : t('update.automatic')
     }
   })
 
@@ -55,7 +59,9 @@ export function useAppUpdate(versionInfo: Ref<ClientVersionInfo | null>) {
   const showInstallUpdateAction = computed(() =>
     ['downloaded', 'installing'].includes(updatePhase.value))
   const installUpdateTitle = computed(() =>
-    updateActionPending.value || updatePhase.value === 'installing' ? '正在处理' : '重启安装')
+    updateActionPending.value || updatePhase.value === 'installing'
+      ? t('update.processing')
+      : t('update.restartInstall'))
   const showManualDownloadLink = computed(() =>
     Boolean(manualUpdateDownloadUrl.value) && !showInstallUpdateAction.value)
   const updateProgressPercent = computed(() => {
@@ -117,7 +123,7 @@ export function useAppUpdate(versionInfo: Ref<ClientVersionInfo | null>) {
       const result = await electronAPI.appUpdate.install()
       applyResultState(result)
       if (!result.success) {
-        throw new Error(result.error || '重启安装失败')
+        throw new Error(result.error || t('update.restartFailed'))
       }
     } catch (error) {
       updateActionPending.value = false

@@ -6,12 +6,12 @@
       :class="{ 'side-panel-mode': isSidePanel }"
     >
       <header class="insight-titlebar">
-        <h1>{{ isSidePanel ? '海克斯推荐' : '英雄详情' }}</h1>
+        <h1>{{ isSidePanel ? t('augment.recommendation') : t('augment.championDetails') }}</h1>
         <div class="window-controls">
-          <button class="window-control" type="button" aria-label="最小化" @click="closeOverlay('manual')">
+          <button class="window-control" type="button" :aria-label="t('common.minimize')" @click="closeOverlay('manual')">
             <Minus class="window-icon" />
           </button>
-          <button class="window-control danger" type="button" aria-label="关闭" @click="closeOverlay('manual')">
+          <button class="window-control danger" type="button" :aria-label="t('common.close')" @click="closeOverlay('manual')">
             <X class="window-icon" />
           </button>
         </div>
@@ -20,7 +20,7 @@
       <!-- 加载状态 -->
       <div v-if="loading && !contentVisible" class="loading-state">
         <div class="spinner"></div>
-        <p>加载英雄数据中...</p>
+        <p>{{ t('augment.loadingChampion') }}</p>
       </div>
 
       <!-- 错误状态 -->
@@ -68,22 +68,22 @@
                     @error="handleImageError"
                   />
                 </div>
-                <h2 class="champion-name">{{ championName || (championId ? `英雄 ${championId}` : '等待英雄选择') }}</h2>
+                <h2 class="champion-name">{{ championName || (championId ? t('augment.championFallback', { id: championId }) : t('augment.waitingChampion')) }}</h2>
               </div>
               <div class="hero-badges">
                 <button
                   v-if="championBlogUrl"
                   class="blog-link-badge"
                   type="button"
-                  title="打开英雄攻略"
+                  :title="t('augment.openGuide')"
                   @click="openChampionBlog(championBlogUrl)"
                 >
                   <ExternalLink class="blog-link-icon" />
-                  攻略
+                  {{ t('augment.guide') }}
                 </button>
-                <span class="tier-badge">梯队 {{ championStats?.tier || '-' }}</span>
+                <span class="tier-badge">{{ t('augment.tier', { tier: championStats?.tier || '-' }) }}</span>
                 <span class="winrate-badge" :class="getWinRateClass(championStats?.winRate)">
-                  胜率 {{ formatPercent(championStats?.winRate) }}
+                  {{ t('augment.winRateValue', { value: formatPercent(championStats?.winRate) }) }}
                 </span>
               </div>
             </div>
@@ -91,25 +91,25 @@
 
           <section v-if="!isSidePanel" class="stat-strip">
             <div class="stat-box">
-              <span>胜率</span>
+              <span>{{ t('augment.winRate') }}</span>
               <strong :class="getWinRateClass(championStats?.winRate)">
-                {{ championDataLoading ? '读取中' : formatPercent(championStats?.winRate) }}
+                {{ championDataLoading ? t('augment.reading') : formatPercent(championStats?.winRate) }}
               </strong>
             </div>
             <div class="stat-box">
-              <span>选取率</span>
-              <strong>{{ championDataLoading ? '读取中' : formatPercent(championStats?.pickRate) }}</strong>
+              <span>{{ t('augment.pickRate') }}</span>
+              <strong>{{ championDataLoading ? t('augment.reading') : formatPercent(championStats?.pickRate) }}</strong>
             </div>
             <div class="stat-box">
-              <span>场次</span>
-              <strong>{{ championDataLoading ? '读取中' : formatNumber(championStats?.numGames) }}</strong>
+              <span>{{ t('augment.games') }}</span>
+              <strong>{{ championDataLoading ? t('augment.reading') : formatNumber(championStats?.numGames) }}</strong>
             </div>
           </section>
 
           <section v-if="!isSidePanel && championBlogs.length" class="related-blogs">
             <div class="section-title-row compact">
-              <h3>相关攻略</h3>
-              <span>{{ championBlogs.length }} 篇</span>
+              <h3>{{ t('augment.relatedGuides') }}</h3>
+              <span>{{ t('augment.articleCount', { count: championBlogs.length }) }}</span>
             </div>
             <button
               v-for="blog in championBlogs"
@@ -142,8 +142,8 @@
               <!-- 海克斯 Tab -->
               <div v-if="activeTab === 'augments'" class="tab-panel">
                 <div class="section-title-row">
-                  <h3>核心海克斯</h3>
-                  <span>{{ filteredAugments.length }} 项</span>
+                  <h3>{{ t('augment.coreAugments') }}</h3>
+                  <span>{{ t('augment.itemCount', { count: filteredAugments.length }) }}</span>
                 </div>
 
                 <div class="filter-bar">
@@ -168,7 +168,7 @@
                   <div
                     class="augment-icon-wrapper"
                     tabindex="0"
-                    :aria-label="`${augment.name}说明`"
+                    :aria-label="t('augment.descriptionLabel', { name: augment.name })"
                     @mouseenter="showAugmentTooltip($event, augment)"
                     @mousemove="moveAugmentTooltip($event)"
                     @mouseleave="hideAugmentTooltip"
@@ -192,15 +192,15 @@
                 </div>
               </div>
               <div v-else class="empty-state">
-                <p>暂无海克斯数据</p>
+                <p>{{ t('augment.noAugments') }}</p>
               </div>
             </div>
 
             <!-- 出装 Tab -->
             <div v-if="activeTab === 'builds'" class="tab-panel">
               <div class="section-title-row">
-                <h3>出装路线</h3>
-                <span>{{ buildRoutes.length ? `${buildRoutes.length} 套` : '' }}</span>
+                <h3>{{ t('augment.buildRoutes') }}</h3>
+                <span>{{ buildRoutes.length ? t('augment.routeCount', { count: buildRoutes.length }) : '' }}</span>
               </div>
 
               <div v-if="hasBuildRecommendations" class="build-content">
@@ -214,7 +214,7 @@
                     @click="selectBuildRoute(idx)"
                   >
                     <span>{{ route.title }}</span>
-                    <small>{{ formatPercent(route.winRate) }} · {{ formatNumber(route.games) }} 场</small>
+                    <small>{{ formatPercent(route.winRate) }} · {{ t('augment.gameCount', { count: formatNumber(route.games) }) }}</small>
                   </button>
                 </div>
 
@@ -230,12 +230,12 @@
                     </div>
                     <div class="build-route-stats">
                       <strong>{{ formatPercent(selectedBuildRoute.winRate) }}</strong>
-                      <small>{{ formatNumber(selectedBuildRoute.games) }} 场</small>
+                      <small>{{ t('augment.gameCount', { count: formatNumber(selectedBuildRoute.games) }) }}</small>
                     </div>
                   </header>
 
                   <section v-if="selectedBuildRoute.startingItems.length > 0" class="item-section starter-section">
-                    <h4>出门装</h4>
+                    <h4>{{ t('augment.startingItems') }}</h4>
                     <div class="starter-list">
                       <div
                         v-for="(build, idx) in selectedBuildRoute.startingItems.slice(0, 2)"
@@ -262,7 +262,7 @@
                       :key="`${selectedBuildRoute.key}-core-${idx}`"
                       class="build-tile"
                     >
-                      <div class="build-tile-label">核心 {{ idx + 1 }}</div>
+                      <div class="build-tile-label">{{ t('augment.coreItem', { index: idx + 1 }) }}</div>
                       <div class="item-icons">
                         <img
                           v-for="itemId in build.items.slice(0, 6)"
@@ -274,13 +274,13 @@
                       </div>
                       <div class="build-stats">
                         <span>{{ formatPercent(build.winRate) }}</span>
-                        <small>{{ formatNumber(build.games) }} 场</small>
+                        <small>{{ t('augment.gameCount', { count: formatNumber(build.games) }) }}</small>
                       </div>
                     </div>
                   </div>
 
                   <section v-if="selectedBuildRoute.itemExtensions.length > 0" class="item-section">
-                    <h4>后续装备</h4>
+                    <h4>{{ t('augment.laterItems') }}</h4>
                     <div class="situational-grid">
                       <img
                         v-for="item in selectedBuildRoute.itemExtensions.slice(0, 12)"
@@ -293,7 +293,7 @@
                   </section>
 
                   <section v-if="selectedBuildRoute.situationalItems.length > 0" class="item-section">
-                    <h4>备选装备</h4>
+                    <h4>{{ t('augment.alternativeItems') }}</h4>
                     <div class="situational-grid">
                       <img
                         v-for="item in selectedBuildRoute.situationalItems.slice(0, 12)"
@@ -307,15 +307,15 @@
                 </article>
               </div>
               <div v-else class="empty-state">
-                <p>暂无出装数据</p>
+                <p>{{ t('augment.noBuilds') }}</p>
               </div>
             </div>
           </div>
         </div>
 
           <div class="overlay-footer">
-            <small>来源：{{ formatDataSource(dataSource) }}</small>
-            <small v-if="timestamp">更新于 {{ formatTime(timestamp) }}</small>
+            <small>{{ t('augment.source', { source: formatDataSource(dataSource) }) }}</small>
+            <small v-if="timestamp">{{ t('augment.updatedAt', { time: formatTime(timestamp) }) }}</small>
           </div>
         </div>
 
@@ -349,13 +349,13 @@
             </div>
           </div>
           <p v-if="augmentTooltipDetail.description">{{ augmentTooltipDetail.description }}</p>
-          <p v-else>暂无说明</p>
+          <p v-else>{{ t('augment.noDescription') }}</p>
         </div>
       </div>
 
       <!-- 无数据状态 -->
       <div v-else class="no-data">
-        <p>未能加载数据</p>
+        <p>{{ t('augment.loadFailed') }}</p>
       </div>
     </div>
   </transition>
@@ -379,6 +379,7 @@ import {
 } from '../service/overlay-formatters.ts'
 import { useAugmentTooltip } from '../composables/use-augment-tooltip.ts'
 import AramBenchRecommendation from './AramBenchRecommendation.vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   variant: {
@@ -386,6 +387,8 @@ const props = defineProps({
     default: 'popup',
   },
 })
+
+const { t } = useI18n()
 
 const DEFAULT_ACTIVE_TAB = 'augments'
 const visible = ref(false)
@@ -431,17 +434,21 @@ const contentVisible = computed(() => champSelectMode.value || !!championId.valu
 const isSidePanel = computed(() => props.variant === 'side-panel')
 const itemSetButtonLabel = computed(() => {
   if (itemSetApplying.value) {
-    return '配置中'
+    return t('itemSets.configuring')
   }
 
   if (!hasBuildRecommendations.value) {
-    return '等待出装数据'
+    return t('itemSets.waitingForData')
   }
 
   const count = Math.min(buildRoutes.value.length, MAX_ITEM_SET_BUILDS)
-  const target = count > 1 ? `${count} 套装备` : '当前英雄装备'
+  const target = count > 1
+    ? t('itemSets.multipleSets', { count })
+    : t('itemSets.currentChampion')
 
-  return itemSetAutoEnabled.value ? `重新配置 ${target}` : `配置 ${target}`
+  return itemSetAutoEnabled.value
+    ? t('itemSets.reconfigure', { target })
+    : t('itemSets.configure', { target })
 })
 
 const championBlogUrl = computed(() => {
@@ -463,7 +470,7 @@ const normalizeBlogRecords = (records = []) => {
 
       seen.add(url)
       return {
-        title: String(record?.title || record?.name || record?.label || '英雄攻略').trim() || '英雄攻略',
+        title: String(record?.title || record?.name || record?.label || t('augment.guideFallback')).trim() || t('augment.guideFallback'),
         url,
       }
     })
@@ -596,10 +603,12 @@ const showItemSetToast = (type, message) => {
 const formatItemSetSuccessMessage = (automatic, result = {}) => {
   const count = Number(result?.writtenItemSetCount)
   if (Number.isFinite(count) && count > 0) {
-    return automatic ? `已自动写入 ${count} 套游戏推荐` : `已写入 ${count} 套游戏推荐`
+    return automatic
+      ? t('itemSets.autoAppliedMultiple', { count })
+      : t('itemSets.appliedMultiple', { count })
   }
 
-  return automatic ? '已自动写入游戏推荐' : '已写入游戏推荐'
+  return automatic ? t('itemSets.autoApplied') : t('itemSets.applied')
 }
 
 const configureCurrentChampionItems = async (automatic = false) => {
@@ -608,7 +617,7 @@ const configureCurrentChampionItems = async (automatic = false) => {
   }
 
   itemSetApplying.value = true
-  showItemSetToast('loading', automatic ? '正在自动配置装备...' : '正在配置装备...')
+  showItemSetToast('loading', automatic ? t('itemSets.autoConfiguring') : t('itemSets.configuringNow'))
 
   try {
     const result = await electronAPI.itemSets.installAramChampion({
@@ -617,30 +626,30 @@ const configureCurrentChampionItems = async (automatic = false) => {
       championName: championNameData.value || { nameCN: championName.value },
     })
     if (!result?.success) {
-      throw new Error(result?.error || '装备配置失败')
+      throw new Error(result?.error || t('itemSets.configurationFailed'))
     }
 
     showItemSetToast('success', formatItemSetSuccessMessage(automatic, result))
   } catch (err) {
-    showItemSetToast('error', err?.message || '装备配置失败')
+    showItemSetToast('error', err?.message || t('itemSets.configurationFailed'))
   } finally {
     itemSetApplying.value = false
   }
 }
 
 // Tabs 配置
-const tabs = [
-  { key: 'augments', label: '海克斯', icon: '海' },
-  { key: 'builds', label: '出装', icon: '装' }
-]
+const tabs = computed(() => [
+  { key: 'augments', label: t('augment.tabs.augments') },
+  { key: 'builds', label: t('augment.tabs.builds') },
+])
 
 // 稀有度选项
-const rarityOptions = [
-  { key: 'all', label: '全部' },
-  { key: 'kSilver', label: '白银' },
-  { key: 'kGold', label: '金色' },
-  { key: 'kPrismatic', label: '棱彩' }
-]
+const rarityOptions = computed(() => [
+  { key: 'all', label: t('augment.rarities.all') },
+  { key: 'kSilver', label: t('augment.rarities.silver') },
+  { key: 'kGold', label: t('augment.rarities.gold') },
+  { key: 'kPrismatic', label: t('augment.rarities.prismatic') },
+])
 
 const {
   augmentTooltipDetail,
@@ -651,7 +660,7 @@ const {
 } = useAugmentTooltip(rarityOptions, getAugmentIconUrl)
 
 const setActiveTab = (key) => {
-  if (!tabs.some(tab => tab.key === key)) {
+  if (!tabs.value.some(tab => tab.key === key)) {
     return
   }
 
@@ -697,7 +706,7 @@ const selectRarity = (key) => {
 const mapIncomingAugmentsForFallback = (augments = []) => augments.map(aug => ({
   augmentId: aug.augmentId || aug.id,
   id: aug.id || aug.augmentId,
-  name: aug.name || '未知海克斯',
+  name: aug.name || t('augment.unknownAugment'),
   rarity: aug.rarity || 'unknown',
   rarityName: aug.rarityName || null,
   rarityDisplayName: aug.rarityDisplayName || null,
@@ -758,7 +767,7 @@ const applyFallbackChampionData = (data) => {
     relatedBlogs: data?.relatedBlogs || [],
   }
   displayAugments.value = mapIncomingAugmentsForFallback(data?.augments || [])
-  dataSource.value = data?.dataSource || '不可用'
+  dataSource.value = data?.dataSource || 'unavailable'
   timestamp.value = data?.timestamp || Date.now()
   error.value = null
 }
@@ -806,7 +815,7 @@ const itemNameById = computed(() => {
     }
 
     const name = getLocalizedText(item.name)
-    map.set(id, name || `装备 ${id}`)
+    map.set(id, name || t('augment.itemFallback', { id }))
   })
 
   return map
@@ -829,7 +838,7 @@ const itemIconById = computed(() => {
   return map
 })
 
-const getItemName = (itemId) => itemNameById.value.get(String(itemId)) || `装备 ${itemId}`
+const getItemName = (itemId) => itemNameById.value.get(String(itemId)) || t('augment.itemFallback', { id: itemId })
 const getItemIconUrl = (itemId) => itemIconById.value.get(String(itemId)) || getFallbackItemIconUrl(itemId)
 
 /**
@@ -926,7 +935,7 @@ const showOverlay = async (data) => {
     timestamp.value = data.timestamp || Date.now()
     await loadItemSetAutoPreference()
     if (itemSetAutoEnabled.value) {
-      showItemSetToast('loading', '自动配置已开启，检测到当前英雄后会写入游戏推荐')
+      showItemSetToast('loading', t('itemSets.autoEnabledWaiting'))
     }
 
     // 加载完整英雄数据
@@ -981,7 +990,7 @@ const showOverlay = async (data) => {
 
       // 设置英雄名称（优先使用传入的，否则使用从数据加载的）
       if (!championName.value && nameData) {
-        championName.value = nameData.nameCN || nameData.nameEN || `英雄 ${championId.value}`
+        championName.value = nameData.nameCN || nameData.nameEN || t('augment.championFallback', { id: championId.value })
       }
 
       logOverlayInfo('loadChampionData completed', {
@@ -1044,7 +1053,7 @@ const showOverlay = async (data) => {
         displayAugments.value = []
       }
     } else {
-      throw new Error(result.error || '数据加载失败')
+      throw new Error(result.error || t('augment.dataLoadFailed'))
     }
   } catch (err) {
     logOverlayInfo('showOverlay failed', {
@@ -1055,7 +1064,7 @@ const showOverlay = async (data) => {
     if (data?.championId) {
       applyFallbackChampionData(data)
     } else {
-      error.value = err.message || '加载数据失败'
+      error.value = err.message || t('augment.loadError')
     }
   } finally {
     if (loadSequence === championLoadSequence) {
@@ -1225,7 +1234,7 @@ onMounted(() => {
       return
     }
 
-    showItemSetToast('error', data?.error || '装备配置失败')
+    showItemSetToast('error', data?.error || t('itemSets.configurationFailed'))
   }))
 })
 

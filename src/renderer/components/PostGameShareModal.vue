@@ -3,10 +3,10 @@
     <section class="post-share-modal" role="dialog" aria-modal="true" aria-labelledby="post-share-title">
       <header class="post-share-header">
         <div>
-          <p class="post-share-kicker">赛后分享</p>
-          <h2 id="post-share-title">ARAMGG 赛后海报</h2>
+          <p class="post-share-kicker">{{ t('postGame.kicker') }}</p>
+          <h2 id="post-share-title">{{ t('postGame.title') }}</h2>
         </div>
-        <button class="post-share-icon-button" type="button" title="关闭" @click="emit('close')">
+        <button class="post-share-icon-button" type="button" :title="t('common.close')" @click="emit('close')">
           <X class="post-share-icon" />
         </button>
       </header>
@@ -24,22 +24,22 @@
         <button
           class="post-share-action"
           type="button"
-          title="复制海报"
+          :title="t('postGame.copyTitle')"
           :disabled="actionPending"
           @click="copyPoster"
         >
           <Copy class="post-share-action-icon" />
-          <span>复制</span>
+          <span>{{ t('postGame.copy') }}</span>
         </button>
         <button
           class="post-share-action accent"
           type="button"
-          title="保存图片"
+          :title="t('postGame.saveTitle')"
           :disabled="actionPending"
           @click="savePoster"
         >
           <Download class="post-share-action-icon" />
-          <span>保存</span>
+          <span>{{ t('postGame.save') }}</span>
         </button>
       </div>
     </section>
@@ -59,6 +59,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CheckCircle2, CircleAlert, Copy, Download, X } from 'lucide-vue-next'
 import { electronAPI } from '../native/electron-api.js'
 import { trackAnalyticsEvent } from '../services/analytics.ts'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   poster: {
@@ -68,11 +69,11 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+const { t, locale } = useI18n()
 
 const POSTER_WIDTH = 750
 const POSTER_HEIGHT = 1334
 const FONT_FAMILY = '"Microsoft YaHei", "Segoe UI", Arial, sans-serif'
-const FOOTER_TEXT = '分享自ARAMGG助手-aramgg.com'
 
 const canvasRef = ref(null)
 const actionPending = ref(false)
@@ -85,9 +86,9 @@ let drawToken = 0
 let toastTimer = null
 
 const resultLabel = computed(() => {
-  if (props.poster?.result === 'victory') return '胜利'
-  if (props.poster?.result === 'defeat') return '惜败'
-  return '赛后'
+  if (props.poster?.result === 'victory') return t('postGame.victory')
+  if (props.poster?.result === 'defeat') return t('postGame.defeat')
+  return t('postGame.result')
 })
 
 const resultColor = computed(() => {
@@ -100,7 +101,7 @@ function buildChampionDisplayName(champion) {
   const name = String(champion?.name || '').trim()
   const title = String(champion?.title || '').trim()
 
-  if (!name && !title) return '本局英雄'
+  if (!name && !title) return t('postGame.championFallback')
   if (!name) return title
   if (!title || title === name || title.includes(name)) return name
   return `${title} ${name}`
@@ -342,11 +343,11 @@ function getAugmentAccent(augment) {
 
 function getAugmentRarityLabel(augment) {
   const rarity = String(augment?.rarity || '').toLowerCase()
-  if (rarity.includes('prismatic')) return '棱彩'
-  if (rarity.includes('gold')) return '黄金'
-  if (rarity.includes('silver')) return '白银'
-  if (rarity.includes('unknown')) return '待识别'
-  return '强化'
+  if (rarity.includes('prismatic')) return t('postGame.rarityPrismatic')
+  if (rarity.includes('gold')) return t('postGame.rarityGold')
+  if (rarity.includes('silver')) return t('postGame.raritySilver')
+  if (rarity.includes('unknown')) return t('postGame.rarityUnknown')
+  return t('postGame.augment')
 }
 
 function drawAugmentCard(ctx, augment, image, y) {
@@ -377,13 +378,13 @@ function drawAugmentCard(ctx, augment, image, y) {
     })
   }
 
-  drawText(ctx, augment?.name || '未识别海克斯', x + 122, y + 50, {
+  drawText(ctx, augment?.name || t('postGame.unknownAugment'), x + 122, y + 50, {
     size: 30,
     weight: 800,
     color: '#f8fcff',
     maxWidth: width - 164,
   })
-  drawText(ctx, `${rarityLabel}海克斯`, x + 122, y + 82, {
+  drawText(ctx, t('postGame.augmentSuffix', { rarity: rarityLabel }), x + 122, y + 82, {
     size: 20,
     weight: 600,
     color: 'rgba(214, 226, 238, 0.66)',
@@ -417,13 +418,13 @@ function drawCompactAugmentCard(ctx, augment, image, x, y) {
     })
   }
 
-  drawText(ctx, augment?.name || '未识别海克斯', x + 88, y + 39, {
+  drawText(ctx, augment?.name || t('postGame.unknownAugment'), x + 88, y + 39, {
     size: 22,
     weight: 800,
     color: '#f8fcff',
     maxWidth: width - 112,
   })
-  drawText(ctx, `${rarityLabel}海克斯`, x + 88, y + 67, {
+  drawText(ctx, t('postGame.augmentSuffix', { rarity: rarityLabel }), x + 88, y + 67, {
     size: 16,
     weight: 700,
     color: 'rgba(214, 226, 238, 0.62)',
@@ -434,7 +435,7 @@ function drawCompactAugmentCard(ctx, augment, image, x, y) {
 function getPosterAugments(poster) {
   const augments = Array.isArray(poster?.augments) ? poster.augments.slice(0, 6) : []
   while (augments.length < 3) {
-    augments.push({ name: '未识别海克斯', rarity: 'unknown', imageDataUrl: null })
+    augments.push({ name: t('postGame.unknownAugment'), rarity: 'unknown', imageDataUrl: null })
   }
   return augments
 }
@@ -466,7 +467,7 @@ async function drawPoster() {
   ctx.clearRect(0, 0, POSTER_WIDTH, POSTER_HEIGHT)
   drawBackground(ctx)
 
-  drawText(ctx, 'ARAMGG 赛后海报', 58, 70, {
+  drawText(ctx, t('postGame.title'), 58, 70, {
     size: 24,
     weight: 800,
     color: '#9be8dc',
@@ -510,7 +511,7 @@ async function drawPoster() {
 
   fillRoundedRect(ctx, 52, 300, 646, 156, 24, 'rgba(255, 255, 255, 0.07)')
   strokeRoundedRect(ctx, 52, 300, 646, 156, 24, 'rgba(255, 255, 255, 0.11)')
-  drawText(ctx, '战绩', 84, 346, {
+  drawText(ctx, t('postGame.stats'), 84, 346, {
     size: 22,
     weight: 800,
     color: '#9be8dc',
@@ -522,12 +523,12 @@ async function drawPoster() {
     maxWidth: 582,
   })
   const cellWidth = 306
-  drawStatCell(ctx, 52, 494, cellWidth, 118, '输出', formatLargeNumber(stats.damageDealtToChampions), '#9be8dc')
-  drawStatCell(ctx, 392, 494, cellWidth, 118, '承伤', formatLargeNumber(stats.damageTaken), '#ffb06e')
-  drawStatCell(ctx, 52, 636, cellWidth, 118, '经济', formatLargeNumber(stats.goldEarned), '#e7bd68')
+  drawStatCell(ctx, 52, 494, cellWidth, 118, t('postGame.damage'), formatLargeNumber(stats.damageDealtToChampions), '#9be8dc')
+  drawStatCell(ctx, 392, 494, cellWidth, 118, t('postGame.damageTaken'), formatLargeNumber(stats.damageTaken), '#ffb06e')
+  drawStatCell(ctx, 52, 636, cellWidth, 118, t('postGame.gold'), formatLargeNumber(stats.goldEarned), '#e7bd68')
   drawStatCell(ctx, 392, 636, cellWidth, 118, 'KDA', formatKdaValue(stats.kda), '#caa8ff')
 
-  drawText(ctx, '本局海克斯', 58, 820, {
+  drawText(ctx, t('postGame.augments'), 58, 820, {
     size: 28,
     weight: 900,
     color: '#ffffff',
@@ -555,7 +556,7 @@ async function drawPoster() {
   ctx.moveTo(58, 1260)
   ctx.lineTo(692, 1260)
   ctx.stroke()
-  drawText(ctx, FOOTER_TEXT, 375, 1300, {
+  drawText(ctx, t('postGame.footer'), 375, 1300, {
     size: 22,
     weight: 800,
     color: 'rgba(246, 251, 255, 0.86)',
@@ -566,7 +567,7 @@ async function drawPoster() {
 function exportPosterDataUrl() {
   const canvas = canvasRef.value
   if (!canvas) {
-    throw new Error('海报未生成')
+    throw new Error(t('postGame.notGenerated'))
   }
   return canvas.toDataURL('image/png')
 }
@@ -609,7 +610,7 @@ async function runPosterAction(action, actionName) {
         error_message: error?.message || String(error || 'unknown'),
       })
     }
-    showToast(error?.message || '操作失败', 'error')
+    showToast(error?.message || t('postGame.operationFailed'), 'error')
   } finally {
     actionPending.value = false
   }
@@ -622,12 +623,12 @@ async function copyPoster() {
   await runPosterAction(async (dataUrl) => {
     const result = await electronAPI.postGameShare.copyImage(dataUrl)
     if (!result?.success) {
-      throw new Error(result?.error || '复制失败')
+      throw new Error(result?.error || t('postGame.copyFailed'))
     }
     trackPostGameShareEvent('post_game_share_copy_success', {
       button: 'copy',
     })
-    showToast('海报已复制')
+    showToast(t('postGame.copied'))
   }, 'copy')
 }
 
@@ -644,17 +645,17 @@ async function savePoster() {
       return
     }
     if (!result?.success) {
-      throw new Error(result?.error || '保存失败')
+      throw new Error(result?.error || t('postGame.saveFailed'))
     }
     trackPostGameShareEvent('post_game_share_save_success', {
       button: 'save',
     })
-    showToast('海报已保存')
+    showToast(t('postGame.saved'))
   }, 'save')
 }
 
 watch(
-  () => props.poster,
+  () => [props.poster, locale.value],
   () => {
     drawPoster()
   },

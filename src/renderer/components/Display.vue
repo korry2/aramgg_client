@@ -4,13 +4,13 @@
             <header class="hex-titlebar">
                 <div class="brand-lockup">
                     <Cpu class="brand-icon" />
-                    <h1>ARAMGG助手</h1>
+                    <h1>{{ t('display.brand') }}</h1>
                 </div>
                 <div class="window-controls">
-                    <button class="window-control" type="button" title="隐藏" @click="hideMainWindow">
+                    <button class="window-control" type="button" :title="t('common.hide')" @click="hideMainWindow">
                         <Minus class="window-icon" />
                     </button>
-                    <button class="window-control danger" type="button" title="退出" @click="confirmQuitApp">
+                    <button class="window-control danger" type="button" :title="t('common.exit')" @click="confirmQuitApp">
                         <X class="window-icon" />
                     </button>
                 </div>
@@ -20,26 +20,26 @@
                 <div class="status-strip">
                     <div class="status-header">
                         <div>
-                            <span class="section-kicker">运行状态</span>
-                            <h2>控制台</h2>
+                            <span class="section-kicker">{{ t('display.runningStatus') }}</span>
+                            <h2>{{ t('display.console') }}</h2>
                         </div>
                         <strong class="connection-pill">
-                            自动监听
+                            {{ t('display.autoMonitor') }}
                         </strong>
                     </div>
                     <div class="status-grid">
                         <div>
-                            <span>客户端版本</span>
+                            <span>{{ t('display.clientVersion') }}</span>
                             <strong>{{ clientVersionLabel }}</strong>
                             <small v-if="versionHint">{{ versionHint }}</small>
                         </div>
                         <div>
-                            <span>数据版本</span>
+                            <span>{{ t('display.dataVersion') }}</span>
                             <strong>{{ dataVersionLabel }}</strong>
                             <small>{{ dataLocaleStatusLabel }}</small>
                         </div>
                         <label class="locale-select-card">
-                            <span>数据语言</span>
+                            <span>{{ t('display.appLanguage') }}</span>
                             <select
                                 v-model="selectedLocale"
                                 :disabled="localeLoading"
@@ -53,12 +53,12 @@
                                     {{ localeOption.nativeLabel }}
                                 </option>
                             </select>
-                            <small>{{ localeLoading ? '切换中' : selectedLocaleLabel }}</small>
+                            <small>{{ localeLoading ? t('display.switching') : selectedLocaleLabel }}</small>
                         </label>
                         <div class="lcu-status-card">
-                            <span>LCU 连接</span>
-                            <strong>自动发现</strong>
-                            <small>{{ manualLolPath ? '运行中客户端 + 手动兜底' : '运行中客户端' }}</small>
+                            <span>{{ t('display.lcuConnection') }}</span>
+                            <strong>{{ t('display.autoDiscover') }}</strong>
+                            <small>{{ manualLolPath ? t('display.runningClientWithFallback') : t('display.runningClient') }}</small>
                         </div>
                     </div>
 
@@ -66,7 +66,7 @@
                         <div class="update-main">
                             <div class="update-copy">
                                 <div class="update-heading">
-                                    <span>应用更新</span>
+                                    <span>{{ t('display.appUpdate') }}</span>
                                     <strong>{{ updateTitle }}</strong>
                                 </div>
                             </div>
@@ -75,7 +75,7 @@
                                     v-if="showCheckUpdateAction"
                                     class="update-action"
                                     type="button"
-                                    title="检查更新"
+                                    :title="t('display.checkUpdate')"
                                     :disabled="!canCheckUpdate"
                                     @click="checkAppUpdate"
                                 >
@@ -95,7 +95,7 @@
                                     v-else-if="showManualDownloadLink"
                                     class="update-action accent"
                                     type="button"
-                                    title="打开下载页"
+                                    :title="t('display.openDownload')"
                                     @click="openDownloadUrl"
                                 >
                                     <Download class="update-action-icon" />
@@ -116,7 +116,7 @@
                         :aria-expanded="showAdvancedLcuConfig"
                         @click="toggleAdvancedLcuConfig"
                     >
-                        <span>游戏目录</span>
+                        <span>{{ t('display.gameDirectory') }}</span>
                         <ChevronRight
                             class="game-directory-arrow"
                             :class="{ open: showAdvancedLcuConfig }"
@@ -136,7 +136,7 @@
                             <button
                                 class="manual-path-button"
                                 type="button"
-                                title="浏览目录"
+                                :title="t('display.browseDirectory')"
                                 :disabled="manualPathLoading"
                                 @click="browseManualLolPath"
                             >
@@ -145,7 +145,7 @@
                             <button
                                 class="manual-path-button accent"
                                 type="button"
-                                title="保存目录"
+                                :title="t('display.saveDirectory')"
                                 :disabled="manualPathLoading"
                                 @click="saveManualLolPath"
                             >
@@ -154,7 +154,7 @@
                             <button
                                 class="manual-path-button danger"
                                 type="button"
-                                title="清除目录"
+                                :title="t('display.clearDirectory')"
                                 :disabled="manualPathLoading || !manualLolPath"
                                 @click="clearManualLolPath"
                             >
@@ -174,7 +174,7 @@
                             type="button"
                             @click="applyManualPathSuggestion"
                         >
-                            使用建议目录
+                            {{ t('display.useSuggestedDirectory') }}
                         </button>
                     </div>
                 </div>
@@ -185,7 +185,7 @@
 
                 <section class="post-game-panel">
                     <div class="section-header">
-                        <p class="section-kicker">赛后海报</p>
+                        <p class="section-kicker">{{ t('display.postGamePoster') }}</p>
                     </div>
                     <button
                         class="post-game-share-button mock"
@@ -195,39 +195,39 @@
                     >
                         <Sparkles class="icon" />
                         <span class="button-copy">
-                            <span class="text">模拟生成</span>
-                            <span class="hint">每次点击刷新预览</span>
+                            <span class="text">{{ t('display.mockGenerate') }}</span>
+                            <span class="hint">{{ t('display.refreshPreviewEveryClick') }}</span>
                         </span>
                     </button>
                 </section>
 
                 <section class="diagnostic-panel">
                     <div class="section-header">
-                        <p class="section-kicker">窗口预览</p>
+                        <p class="section-kicker">{{ t('display.windowPreview') }}</p>
                     </div>
 
                     <div class="test-controls">
                         <button class="test-btn primary" @click="testFloatingWindow">
                             <Target class="icon" />
                             <span class="button-copy">
-                                <span class="text">海克斯浮窗</span>
-                                <span class="hint">随机英雄与海克斯</span>
+                                <span class="text">{{ t('display.augmentOverlay') }}</span>
+                                <span class="hint">{{ t('display.randomChampionAugments') }}</span>
                             </span>
                         </button>
 
                         <button class="test-btn secondary" @click="testPopupWindow">
                             <ClipboardList class="icon" />
                             <span class="button-copy">
-                                <span class="text">英雄详情</span>
-                                <span class="hint">随机英雄详情</span>
+                                <span class="text">{{ t('display.championDetails') }}</span>
+                                <span class="hint">{{ t('display.randomChampionDetails') }}</span>
                             </span>
                         </button>
 
                         <button class="test-btn warning" @click="testDatabaseLoad">
                             <Database class="icon" />
                             <span class="button-copy">
-                                <span class="text">数据探测</span>
-                                <span class="hint">检查数据加载</span>
+                                <span class="text">{{ t('display.dataProbe') }}</span>
+                                <span class="hint">{{ t('display.checkDataLoading') }}</span>
                             </span>
                         </button>
 
@@ -241,13 +241,13 @@
 
             <footer class="hex-footer">
                 <p>
-                    ARAMGG助手 v{{ clientVersionLabel }} -
+                    {{ t('display.brand') }} v{{ clientVersionLabel }} -
                     <a class="footer-link" :href="ARAMGG_HOME_URL" @click.prevent="openAramggHome">
                         {{ ARAMGG_HOME_LABEL }}
                     </a>
                     <span class="footer-separator">·</span>
                     <button class="footer-link footer-action" type="button" @click="openLogDirectory">
-                        日志目录
+                        {{ t('display.logDirectory') }}
                     </button>
                     <span class="footer-separator">·</span>
                     <a class="footer-link" :href="DATA_API_URL" @click.prevent="openDataApi">
@@ -255,7 +255,7 @@
                     </a>
                 </p>
                 <p class="footer-feedback">
-                    反馈或者建议：
+                    {{ t('display.feedback') }}
                     <a class="footer-link" :href="FEEDBACK_URL" @click.prevent="openFeedbackEmail">
                         {{ FEEDBACK_EMAIL }}
                     </a>
@@ -265,7 +265,7 @@
                     </a>
                     <span class="footer-separator">·</span>
                     <button class="footer-link footer-action" type="button" @click="openChangelog">
-                        更新日志
+                        {{ t('display.changelog') }}
                     </button>
                 </p>
             </footer>
@@ -273,15 +273,15 @@
             <div v-if="showQuitConfirm" class="app-modal-overlay" @click.self="cancelQuitApp">
                 <section class="app-modal" role="dialog" aria-modal="true" aria-labelledby="quit-title">
                     <div class="app-modal-copy">
-                        <h2 id="quit-title">退出ARAMGG助手？</h2>
-                        <p>退出后，英雄监控、自动截图和浮窗更新都会停止。</p>
+                        <h2 id="quit-title">{{ t('display.quitTitle') }}</h2>
+                        <p>{{ t('display.quitDescription') }}</p>
                     </div>
                     <div class="app-modal-actions">
                         <button class="app-modal-action secondary" type="button" @click="cancelQuitApp">
-                            取消
+                            {{ t('common.cancel') }}
                         </button>
                         <button class="app-modal-action danger" type="button" @click="quitApp">
-                            退出
+                            {{ t('common.exit') }}
                         </button>
                     </div>
                 </section>
@@ -293,11 +293,11 @@
                         <div class="changelog-title-group">
                             <ScrollText class="changelog-title-icon" />
                             <div>
-                                <p class="section-kicker">版本记录</p>
-                                <h2 id="changelog-title">更新日志</h2>
+                                <p class="section-kicker">{{ t('display.versionHistory') }}</p>
+                                <h2 id="changelog-title">{{ t('display.changelog') }}</h2>
                             </div>
                         </div>
-                        <button class="window-control changelog-close" type="button" title="关闭" @click="closeChangelog">
+                        <button class="window-control changelog-close" type="button" :title="t('common.close')" @click="closeChangelog">
                             <X class="window-icon" />
                         </button>
                     </header>
@@ -312,7 +312,7 @@
                             <header class="changelog-entry-header">
                                 <div class="changelog-entry-title">
                                     <strong>{{ formatChangelogVersion(entry) }}</strong>
-                                    <span v-if="isCurrentChangelogEntry(entry)" class="changelog-current">当前</span>
+                                    <span v-if="isCurrentChangelogEntry(entry)" class="changelog-current">{{ t('display.currentVersion') }}</span>
                                 </div>
                                 <time v-if="entry.date" class="changelog-date">
                                     {{ formatChangelogDate(entry.date) }}
@@ -328,7 +328,7 @@
                         </article>
                     </div>
 
-                    <p v-else class="changelog-empty">暂无更新日志</p>
+                    <p v-else class="changelog-empty">{{ t('display.noChangelog') }}</p>
                 </section>
             </div>
 
@@ -342,7 +342,7 @@
                 v-if="shouldShowPostGameFloatingShare"
                 class="post-game-floating-share"
                 type="button"
-                title="分享战报"
+                :title="t('display.shareReport')"
                 :disabled="postGameShareLoading"
                 @click="openPostGameShareFromFloatingButton"
             >
@@ -362,6 +362,7 @@ import PostGameShareModal from './PostGameShareModal.vue'
 import { useAppUpdate } from '../composables/use-app-update.ts'
 import { usePostGameShare } from '../composables/use-post-game-share.ts'
 import { electronAPI } from '../native/electron-api.js'
+import { useI18n } from 'vue-i18n'
 import {
     ChevronRight,
     ClipboardList,
@@ -382,6 +383,7 @@ import {
 } from 'lucide-vue-next'
 
 const testStatus = ref(null)
+const { t } = useI18n()
 const versionInfo = ref(null)
 const showQuitConfirm = ref(false)
 const showChangelog = ref(false)
@@ -400,7 +402,7 @@ const localeLoading = ref(false)
 const ARAMGG_HOME_URL = 'https://aramgg.com'
 const ARAMGG_HOME_LABEL = 'aramgg.com'
 const DATA_API_URL = 'https://data.dtodo.cn'
-const DATA_API_LABEL = '开放api'
+const DATA_API_LABEL = computed(() => t('display.openApi'))
 const FEEDBACK_EMAIL = 'djlinguge@gmail.com'
 const FEEDBACK_URL = `mailto:${FEEDBACK_EMAIL}`
 const GITHUB_URL = 'https://github.com/valkia/aramgg_client'
@@ -439,11 +441,11 @@ const versionHint = computed(() => {
     }
 
     if (!versionInfo.value.isNewer) {
-        return versionInfo.value.latestVersion ? '最新 ' + versionInfo.value.latestVersion : ''
+        return versionInfo.value.latestVersion ? t('display.latestVersion', { version: versionInfo.value.latestVersion }) : ''
     }
 
     if (versionInfo.value.severity === 'patch') {
-        return '补丁 ' + versionInfo.value.latestVersion
+        return t('display.patchVersion', { version: versionInfo.value.latestVersion })
     }
 
     return versionInfo.value.statusText + ' ' + versionInfo.value.latestVersion
@@ -525,14 +527,14 @@ const changeLocale = async () => {
         await loadVersionInfo()
         testStatus.value = {
             type: 'success',
-            message: `数据语言已切换为 ${selectedLocaleLabel.value}`,
+            message: t('display.localeChanged', { locale: selectedLocaleLabel.value }),
         }
     } catch (error) {
         selectedLocale.value = activeLocale.value
         console.warn('Failed to change locale:', error)
         testStatus.value = {
             type: 'error',
-            message: '切换数据语言失败：' + (error.message || error),
+            message: t('display.localeChangeFailed', { error: error.message || error }),
         }
     } finally {
         localeLoading.value = false
@@ -553,7 +555,7 @@ const loadManualLolPath = async () => {
         if (result?.success) {
             manualLolPath.value = result.path || result.configuredPath || ''
             if (result.path && result.valid === false) {
-                setManualPathStatus('error', result.message || '已保存的目录不可用', {
+                setManualPathStatus('error', result.message || t('display.savedDirectoryUnavailable'), {
                     suggestedPath: result.suggestedPath || '',
                 })
             }
@@ -580,20 +582,20 @@ const validateManualLolPath = async () => {
     try {
         const result = await electronAPI.lcu.validateManualLeaguePath(path)
         if (!result?.success) {
-            throw new Error(result?.message || result?.error || '目录校验失败')
+            throw new Error(result?.message || result?.error || t('display.directoryValidationFailed'))
         }
 
         if (result.valid) {
-            setManualPathStatus('success', result.message || '目录可用')
+            setManualPathStatus('success', result.message || t('display.directoryAvailable'))
             return true
         }
 
-        setManualPathStatus('error', result.message || '目录不可用', {
+        setManualPathStatus('error', result.message || t('display.directoryUnavailable'), {
             suggestedPath: result.suggestedPath || '',
         })
         return false
     } catch (error) {
-        setManualPathStatus('error', error.message || '目录校验失败')
+        setManualPathStatus('error', error.message || t('display.directoryValidationFailed'))
         return false
     }
 }
@@ -604,21 +606,21 @@ const browseManualLolPath = async () => {
         const result = await electronAPI.lcu.selectManualLeaguePath()
         if (!result?.success) {
             if (result?.reason !== 'cancelled') {
-                throw new Error(result?.message || result?.error || '目录选择失败')
+                throw new Error(result?.message || result?.error || t('display.directorySelectionFailed'))
             }
             return
         }
 
         manualLolPath.value = result.path || result.normalizedPath || ''
         if (result.valid) {
-            setManualPathStatus('success', result.message || '目录可用，保存后启用')
+            setManualPathStatus('success', result.message || t('display.directoryAvailableAfterSave'))
         } else {
-            setManualPathStatus('error', result.message || '目录不可用', {
+            setManualPathStatus('error', result.message || t('display.directoryUnavailable'), {
                 suggestedPath: result.suggestedPath || '',
             })
         }
     } catch (error) {
-        setManualPathStatus('error', error.message || '目录选择失败')
+        setManualPathStatus('error', error.message || t('display.directorySelectionFailed'))
     } finally {
         manualPathLoading.value = false
     }
@@ -627,7 +629,7 @@ const browseManualLolPath = async () => {
 const saveManualLolPath = async () => {
     const path = manualLolPath.value.trim()
     if (!path) {
-        setManualPathStatus('error', '请输入或选择英雄联盟安装目录')
+        setManualPathStatus('error', t('display.enterLeagueDirectory'))
         return
     }
 
@@ -635,7 +637,7 @@ const saveManualLolPath = async () => {
     try {
         const result = await electronAPI.lcu.setManualLeaguePath(path)
         if (!result?.success || !result.valid) {
-            setManualPathStatus('error', result?.message || result?.error || '目录不可用', {
+            setManualPathStatus('error', result?.message || result?.error || t('display.directoryUnavailable'), {
                 suggestedPath: result?.suggestedPath || '',
             })
             return
@@ -644,10 +646,10 @@ const saveManualLolPath = async () => {
         manualLolPath.value = result.path || result.configuredPath || path
         setManualPathStatus(
             'success',
-            result.connected ? '兜底目录已保存，LCU 已连接' : '兜底目录已保存，等待客户端启动'
+            result.connected ? t('display.directorySavedConnected') : t('display.directorySavedWaiting')
         )
     } catch (error) {
-        setManualPathStatus('error', error.message || '保存目录失败')
+        setManualPathStatus('error', error.message || t('display.directorySaveFailed'))
     } finally {
         manualPathLoading.value = false
     }
@@ -658,13 +660,13 @@ const clearManualLolPath = async () => {
     try {
         const result = await electronAPI.lcu.clearManualLeaguePath()
         if (!result?.success) {
-            throw new Error(result?.error || '清除目录失败')
+            throw new Error(result?.error || t('display.directoryClearFailed'))
         }
 
         manualLolPath.value = ''
-        setManualPathStatus('info', '已清除手动兜底目录')
+        setManualPathStatus('info', t('display.directoryCleared'))
     } catch (error) {
-        setManualPathStatus('error', error.message || '清除目录失败')
+        setManualPathStatus('error', error.message || t('display.directoryClearFailed'))
     } finally {
         manualPathLoading.value = false
     }
@@ -735,7 +737,7 @@ const closeChangelog = () => {
 const formatChangelogVersion = (entry) => {
     const version = String(entry?.version || '').trim()
     if (!version) {
-        return '未标记版本'
+        return t('display.untaggedVersion')
     }
 
     return version.startsWith('v') ? version : `v${version}`
@@ -759,17 +761,17 @@ const openLogDirectory = async () => {
     try {
         const result = await electronAPI.appInfo.openLogDirectory()
         if (!result?.success) {
-            throw new Error(result?.error || '打开日志目录失败')
+            throw new Error(result?.error || t('display.logOpenFailed'))
         }
         testStatus.value = {
             type: 'success',
-            message: '日志目录已打开。请发送今天的 app-YYYY-MM-DD.log。',
+            message: t('display.logOpened'),
         }
     } catch (error) {
         console.warn('Failed to open log directory:', error)
         testStatus.value = {
             type: 'error',
-            message: '打开日志目录失败：' + (error.message || error),
+            message: `${t('display.logOpenFailed')}：${error.message || error}`,
         }
     }
 }
@@ -785,47 +787,47 @@ const formatRandomPreviewMessage = (prefix, result) => {
         .filter(Boolean)
         .join('、')
     const benchCount = result?.benchRecommendation?.candidates?.length || 0
-    const benchText = benchCount ? ` | 席位 ${benchCount} 个` : ''
+    const benchText = benchCount ? ` | ${t('display.benchCount', { count: benchCount })}` : ''
 
-    return `${prefix}：${data.championName || '随机英雄'}${augmentNames ? ' | ' + augmentNames : ''}${benchText}`
+    return `${prefix}：${data.championName || t('display.randomChampion')}${augmentNames ? ' | ' + augmentNames : ''}${benchText}`
 }
 
 const testFloatingWindow = async () => {
-    testStatus.value = { type: 'info', message: '正在抽取真实数据并打开海克斯浮窗...' }
+    testStatus.value = { type: 'info', message: t('display.openingAugmentPreview') }
 
     try {
         const result = await electronAPI.diagnostics.testShowRandomFloating()
         if (!result.success) {
-            throw new Error(result.error || '发送失败')
+            throw new Error(result.error || t('display.sendingFailed'))
         }
         testStatus.value = {
             type: 'success',
-            message: formatRandomPreviewMessage('海克斯浮窗测试数据已发送', result),
+            message: formatRandomPreviewMessage(t('display.augmentPreviewSent'), result),
         }
     } catch (err) {
-        testStatus.value = { type: 'error', message: '发送失败：' + err.message }
+        testStatus.value = { type: 'error', message: t('display.sendingFailedWithReason', { error: err.message }) }
     }
 }
 
 const testPopupWindow = async () => {
-    testStatus.value = { type: 'info', message: '正在抽取真实数据并打开英雄详情...' }
+    testStatus.value = { type: 'info', message: t('display.openingChampionPreview') }
 
     try {
         const result = await electronAPI.diagnostics.testShowRandomPopup()
         if (!result.success) {
-            throw new Error(result.error || '发送失败')
+            throw new Error(result.error || t('display.sendingFailed'))
         }
         testStatus.value = {
             type: 'success',
-            message: formatRandomPreviewMessage('英雄详情测试数据已发送', result),
+            message: formatRandomPreviewMessage(t('display.championPreviewSent'), result),
         }
     } catch (err) {
-        testStatus.value = { type: 'error', message: '发送失败：' + err.message }
+        testStatus.value = { type: 'error', message: t('display.sendingFailedWithReason', { error: err.message }) }
     }
 }
 
 const testDatabaseLoad = async () => {
-    testStatus.value = { type: 'info', message: '正在测试数据加载...' }
+    testStatus.value = { type: 'info', message: t('display.testingData') }
 
     try {
         const result = await electronAPI.diagnostics.testDatabaseLoad()
@@ -834,20 +836,20 @@ const testDatabaseLoad = async () => {
         if (result.success) {
             testStatus.value = {
                 type: 'success',
-                message: '数据加载成功：' + result.dataCount + ' 条记录 | 路径：https://data.dtodo.cn',
+                message: t('display.dataLoaded', { count: result.dataCount }),
             }
         } else {
-            let errorMsg = result.error || '未知错误'
+            let errorMsg = result.error || t('common.unknownError')
             if (result.tests) {
                 const failedTests = result.tests
                     .map((t, i) => '[' + (i + 1) + '] ' + (t.exists ? 'OK' : 'MISS') + ' ' + t.path.substring(0, 60) + '...')
                     .join('\\n')
-                errorMsg += '\\n\\n路径检查结果：\\n' + failedTests
+                errorMsg += `\\n\\n${t('display.pathCheckResults')}\\n${failedTests}`
             }
             testStatus.value = { type: 'error', message: errorMsg }
         }
     } catch (err) {
-        testStatus.value = { type: 'error', message: '测试失败：' + err.message }
+        testStatus.value = { type: 'error', message: t('display.testFailed', { error: err.message }) }
         console.error('Database test error', err)
     }
 }

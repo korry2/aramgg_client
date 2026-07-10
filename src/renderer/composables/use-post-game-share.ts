@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { LooseRecord, Unsubscribe } from '../../shared/ipc-contract.ts'
 import { electronAPI } from '../native/electron-api.js'
 import { trackAnalyticsEvent } from '../services/analytics.ts'
+import { useI18n } from 'vue-i18n'
 
 interface StatusMessage {
   type: string
@@ -47,6 +48,7 @@ function asPoster(value: unknown): PostGamePoster | null {
 }
 
 export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
+  const { t } = useI18n()
   const showPostGameShare = ref(false)
   const postGamePoster = ref<PostGamePoster | null>(null)
   const postGameShareLoading = ref(false)
@@ -55,7 +57,7 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
 
   const shouldShowPostGameFloatingShare = computed(() => hasPostGameStats(postGamePoster.value))
   const postGameShareFloatingLabel = computed(() =>
-    postGameShareLoading.value ? '生成中' : '分享战报')
+    postGameShareLoading.value ? t('postGame.generating') : t('postGame.shareReport'))
 
   const getAnalyticsParams = (
     poster = postGamePoster.value,
@@ -121,8 +123,8 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
         statusSink.value = {
           type: 'info',
           message: result.error
-            ? `赛后海报暂不可用：${result.error}`
-            : '暂未捕获到可分享的最近对局。',
+            ? t('postGame.unavailable', { error: result.error })
+            : t('postGame.noRecentGame'),
         }
       }
     } catch (error) {
@@ -130,7 +132,7 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
       if (!silent) {
         statusSink.value = {
           type: 'error',
-          message: `生成赛后海报失败：${getErrorMessage(error)}`,
+          message: t('postGame.generateFailed', { error: getErrorMessage(error) }),
         }
       }
     } finally {
@@ -157,7 +159,7 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
         }))
         return
       }
-      throw new Error(result.error || '模拟海报生成失败')
+      throw new Error(result.error || t('postGame.mockFailed'))
     } catch (error) {
       console.warn('Failed to create mock post-game share poster:', error)
       trackShareEvent('post_game_share_mock_failure', {
@@ -165,7 +167,7 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
       })
       statusSink.value = {
         type: 'error',
-        message: `模拟生成失败：${getErrorMessage(error)}`,
+        message: t('postGame.mockFailedWithReason', { error: getErrorMessage(error) }),
       }
     } finally {
       postGameShareLoading.value = false

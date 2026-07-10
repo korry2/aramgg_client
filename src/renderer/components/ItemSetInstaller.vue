@@ -2,14 +2,14 @@
   <section class="config-card">
     <div class="card-header">
       <PackageCheck class="setting-icon" />
-      <h3 class="card-title">出装推荐</h3>
+      <h3 class="card-title">{{ t('itemSets.title') }}</h3>
     </div>
 
     <div class="card-content">
       <div class="setting-row">
         <div class="setting-copy">
-          <strong>默认配置当前英雄装备</strong>
-          <span>开启后，选到英雄并加载到出装数据时，自动把该英雄的 ARAMGG 出装写入游戏商店推荐。关闭后，不会自动写入，你可以在英雄详情里手动配置。</span>
+          <strong>{{ t('itemSets.autoApplyTitle') }}</strong>
+          <span>{{ t('itemSets.autoApplyDescription') }}</span>
         </div>
 
         <button
@@ -32,7 +32,9 @@
 import { onMounted, ref } from 'vue'
 import { PackageCheck } from 'lucide-vue-next'
 import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const STORE_KEY = 'itemSets.autoApplyAram'
 const enabled = ref(true)
 const saving = ref(false)

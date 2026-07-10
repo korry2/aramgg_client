@@ -114,12 +114,13 @@
 - [x] 将偏好设置和系统操作拆分到 `src/main/ipc/`，限制 renderer 可访问的 store key，并移除核心 IPC 与 ARAM 推荐模块的 `@ts-nocheck`。
 - [x] gameflow phase 接入可独立测试的 `GameSessionCoordinator`，重复阶段事件不再重复执行入口副作用。
 - [x] 新增多语言数据构建、运行时 locale 契约、语言切换事务和 OCR 非阻塞单元测试。
+- [x] Renderer 接入 Vue i18n 三语言资源；主窗口和所有活动浮窗在挂载前读取当前 locale，并在数据切换提交后同步刷新界面文案。
 - [x] 服务端三语言 `16.13.5` 发布后完成真实预加载和 `npm run pack`；解包目录中每种语言均包含 49 个文件和 44 个 champion shards。
 - [x] 打包数据下载增加文件/字节进度、活动文件和 heartbeat；本地候选按版本选择，旧用户缓存不再遮蔽新 bundled 数据。
 - [x] OCR fixtures 改用临时固定名称库，不再读取用户缓存、LCU 或线上赛季数据。
 - [x] manifest 路径与资源 origin 使用运行时/打包共享校验；renderer origin、导航和 IPC sender 统一收紧。
 - [x] 自动更新增加本地 feed origin 与 Windows publisher 信任根；当前列表为空且安装包未签名，因此继续保持关闭。
-- [x] 验证通过：23 个文件、82 项 `npm run test:unit`，以及 `npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`；完整 `npm audit` 为 0。
+- [x] 验证通过：24 个文件、85 项 `npm run test:unit`，以及 `npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`；完整 `npm audit` 为 0。
 
 ### 2026-05-31
 

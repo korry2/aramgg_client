@@ -11,7 +11,7 @@ A League of Legends ARAM assistant built with Electron, Vue 3, and electron-vite
 
 This project only assists with analysis and display. It does not automatically pick champions, swap bench champions, lock in, or accept trades.
 
-The application UI is Simplified Chinese by default. This English README is provided for contributors and users who prefer English project documentation.
+The application interface and display data can be switched together between Simplified Chinese, English, and Traditional Chinese. This English README is provided for contributors and users who prefer English project documentation.
 
 ## Project Structure
 
@@ -130,8 +130,9 @@ Older implementation summaries, plans, and completion reports have been archived
 
 ## UI, Installation, and Runtime Data
 
-- UI copy defaults to Simplified Chinese. New UI strings should continue to include Simplified Chinese first.
-- The main window can select `zh-CN`, `en-US`, or `zh-TW` display data. A switch succeeds only when a complete, exactly matching locale dataset is available locally or from the data API.
+- The main window's "Interface and data language" setting supports `zh-CN`, `en-US`, and `zh-TW`. A successful switch updates the main window, champion details, bench recommendations, Augment overlays, the right-side recommendation list, and the post-game poster together.
+- Locale changes are transactional: the target dataset is prepared first, and `locale-changed` updates Vue i18n only after an exact locale match is ready. A failed preparation leaves both the interface and data on the previous locale.
+- Renderer messages live in `src/renderer/i18n/messages.ts`. New user-visible copy must include all three locales and preserve message-key parity.
 - The main window is shown on the right side of the primary display work area by default. The champion detail window, top Augment overlay, and right-side recommendation list are still positioned by the main process.
 - The main window's window preference controls can decide whether to close the champion detail page when entering a match, whether to show the top Augment overlay, and whether to show the right-side Augment recommendation list.
 - LCU credentials are discovered automatically from the running League Client process by default. The main window's game directory setting is an advanced fallback for reading the LCU lockfile and logs only when automatic discovery fails.

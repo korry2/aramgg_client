@@ -2,14 +2,14 @@
   <section class="config-card">
     <div class="card-header">
       <Settings class="setting-icon" />
-      <h3 class="card-title">窗口偏好</h3>
+      <h3 class="card-title">{{ t('preferences.title') }}</h3>
     </div>
 
     <div class="overlay-mode-hint">
       <AlertTriangle class="hint-icon" />
       <div class="hint-copy">
-        <strong>全屏显示说明</strong>
-        <span>海克斯浮窗是桌面置顶窗口，独占全屏可能会遮挡它；需要显示浮窗时，请将英雄联盟视频设置切换为无边框或窗口化。</span>
+        <strong>{{ t('preferences.fullscreenTitle') }}</strong>
+        <span>{{ t('preferences.fullscreenDescription') }}</span>
       </div>
     </div>
 
@@ -44,46 +44,54 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { AlertTriangle, Settings } from 'lucide-vue-next'
 import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
+import { useI18n } from 'vue-i18n'
 
-const preferenceItems = [
+const { t } = useI18n()
+const preferenceDefinitions = [
   {
     key: 'hideChampionInsightOnGameStart',
     storeKey: 'championInsight.hideOnGameStart',
     defaultValue: true,
-    title: '进游戏关闭英雄详情页',
-    description: '关闭后，英雄详情页不会在加载/进入游戏时自动隐藏，并允许切到后台。',
+    titleKey: 'preferences.hideDetailsTitle',
+    descriptionKey: 'preferences.hideDetailsDescription',
   },
   {
     key: 'showAugmentTopOverlay',
     storeKey: 'augments.showTopOverlay',
     defaultValue: true,
-    title: '展示海克斯顶部浮窗',
-    description: '识别到海克斯选择时，在屏幕顶部展示三张海克斯推荐。',
+    titleKey: 'preferences.topOverlayTitle',
+    descriptionKey: 'preferences.topOverlayDescription',
   },
   {
     key: 'showAugmentSidePanel',
     storeKey: 'augments.showSidePanel',
     defaultValue: true,
-    title: '展示海克斯右侧推荐列表',
-    description: '识别到海克斯选择时，在游戏右侧展示海克斯和出装推荐列表。',
+    titleKey: 'preferences.sidePanelTitle',
+    descriptionKey: 'preferences.sidePanelDescription',
   },
 ]
 
+const preferenceItems = computed(() => preferenceDefinitions.map(item => ({
+  ...item,
+  title: t(item.titleKey),
+  description: t(item.descriptionKey),
+})))
+
 const preferences = reactive(
-  preferenceItems.reduce((result, item) => {
+  preferenceDefinitions.reduce((result, item) => {
     result[item.key] = item.defaultValue
     return result
   }, {})
 )
 const savingKey = ref('')
-const itemByKey = computed(() => new Map(preferenceItems.map(item => [item.key, item])))
+const itemByKey = new Map(preferenceDefinitions.map(item => [item.key, item]))
 
 const loadPreferences = async () => {
   if (!hasElectronAPI()) {
     return
   }
 
-  for (const item of preferenceItems) {
+  for (const item of preferenceDefinitions) {
     try {
       const storedValue = await electronAPI.store.get(item.storeKey)
       if (storedValue == null) {
@@ -112,7 +120,7 @@ const applyImmediateWindowEffect = (key, value) => {
 }
 
 const togglePreference = async (key) => {
-  const item = itemByKey.value.get(key)
+  const item = itemByKey.get(key)
   if (!item) {
     return
   }

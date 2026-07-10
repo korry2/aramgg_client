@@ -1,0 +1,61 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  DEFAULT_APP_LOCALE,
+  normalizeAppLocale,
+  setAppLocale,
+  SUPPORTED_APP_LOCALES,
+  translate,
+} from '../../src/renderer/i18n/index.ts'
+import { messages } from '../../src/renderer/i18n/messages.ts'
+import {
+  formatDataSource,
+  getLocalizedText,
+} from '../../src/renderer/service/overlay-formatters.ts'
+
+function collectLeafKeys(value: unknown, prefix = ''): string[] {
+  if (!value || typeof value !== 'object') {
+    return [prefix]
+  }
+
+  return Object.entries(value)
+    .flatMap(([key, child]) => collectLeafKeys(child, prefix ? `${prefix}.${key}` : key))
+    .sort()
+}
+
+afterEach(() => {
+  setAppLocale(DEFAULT_APP_LOCALE)
+})
+
+describe('renderer i18n', () => {
+  it('keeps the locale contract aligned with client data locales', () => {
+    expect(SUPPORTED_APP_LOCALES).toEqual(['zh-CN', 'en-US', 'zh-TW'])
+    expect(normalizeAppLocale('en-GB')).toBe('en-US')
+    expect(normalizeAppLocale('zh-Hant')).toBe('zh-TW')
+    expect(normalizeAppLocale('unsupported')).toBe(DEFAULT_APP_LOCALE)
+  })
+
+  it('keeps every locale message tree structurally complete', () => {
+    const expectedKeys = collectLeafKeys(messages['zh-CN'])
+
+    expect(collectLeafKeys(messages['en-US'])).toEqual(expectedKeys)
+    expect(collectLeafKeys(messages['zh-TW'])).toEqual(expectedKeys)
+  })
+
+  it('switches interface text and data-derived labels together', () => {
+    const localizedValue = {
+      zh_CN: '中文说明',
+      en_US: 'English description',
+      zh_TW: '繁體說明',
+    }
+
+    setAppLocale('en-US')
+    expect(translate('display.appLanguage')).toBe('Interface and data language')
+    expect(formatDataSource('remote')).toBe('Remote data')
+    expect(getLocalizedText(localizedValue)).toBe('English description')
+
+    setAppLocale('zh-TW')
+    expect(translate('display.appLanguage')).toBe('介面與資料語言')
+    expect(formatDataSource('remote')).toBe('遠端資料')
+    expect(getLocalizedText(localizedValue)).toBe('繁體說明')
+  })
+})

@@ -1,14 +1,14 @@
 <template>
   <transition name="float-fade">
     <div v-if="visible" class="floating-overlay">
-      <button class="close-btn" type="button" @click="closeOverlay('manual')" title="关闭" aria-label="关闭">
+      <button class="close-btn" type="button" @click="closeOverlay('manual')" :title="t('common.close')" :aria-label="t('common.close')">
         <X class="close-icon" />
       </button>
 
       <!-- 加载状态 -->
       <div v-if="loading" class="loading">
         <div class="spinner"></div>
-        <span>加载中...</span>
+        <span>{{ t('common.loading') }}</span>
       </div>
 
       <!-- 海克斯推荐列表 -->
@@ -21,7 +21,7 @@
         >
           <div v-if="!augment.missing && isTopPick(augment, index)" class="top-pick-badge">
             <span>*</span>
-            优先推荐
+            {{ t('augment.priority') }}
           </div>
 
           <div class="augment-icon-frame">
@@ -38,11 +38,11 @@
             <h3 class="name">{{ augment.missing ? '' : augment.name }}</h3>
             <div v-if="!augment.missing" class="stats-lines">
               <div class="stat-line">
-                <span>选取率</span>
+                <span>{{ t('augment.pickRateShort') }}</span>
                 <strong>{{ formatPercent(augment.pickRate) }}</strong>
               </div>
               <div class="stat-line">
-                <span>胜率</span>
+                <span>{{ t('augment.winRate') }}</span>
                 <strong>{{ formatPercent(augment.winRate) }}</strong>
               </div>
             </div>
@@ -77,7 +77,9 @@ import {
 } from '../service/augment-display.js'
 import { getAugmentIconUrl } from '../service/cdn'
 import { formatPercent } from '../service/overlay-formatters.ts'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const visible = ref(false)
 const loading = ref(false)
 const error = ref(null)
@@ -109,12 +111,12 @@ const getScoreWidth = (value) => {
  * 获取推荐文本
  */
 const getRecommendText = (score) => {
-  if (score == null || isNaN(score)) return '未知'
-  if (score >= 0.6) return '必选'
-  if (score >= 0.5) return '强推'
-  if (score >= 0.4) return '推荐'
-  if (score >= 0.3) return '可选'
-  return '冷门'
+  if (score == null || isNaN(score)) return t('augment.scoreUnknown')
+  if (score >= 0.6) return t('augment.scoreMustPick')
+  if (score >= 0.5) return t('augment.scoreStrong')
+  if (score >= 0.4) return t('augment.scoreRecommended')
+  if (score >= 0.3) return t('augment.scoreOptional')
+  return t('augment.scoreNiche')
 }
 
 /**
@@ -274,7 +276,7 @@ const showOverlay = async (data) => {
               console.log('✅ [FloatingOverlay] 通过LCU获取到英雄ID:', championResult.championId)
             } else {
               console.warn('❌ [FloatingOverlay] LCU获取英雄ID失败:', championResult.error)
-              throw new Error('无法获取当前英雄ID - store和LCU均失败')
+              throw new Error(t('augment.loadError'))
             }
           }
         }
@@ -355,7 +357,7 @@ const showOverlay = async (data) => {
           // 查询成功但没有这些海克斯的数据，显示基本信息
           console.warn('⚠️ [FloatingOverlay] 没有找到这些海克斯的胜率数据，显示基本信息')
         } else {
-          throw new Error(winrateResult.error || '胜率查询失败')
+          throw new Error(winrateResult.error || t('augment.loadError'))
         }
       } catch (err) {
         console.error('❌ [FloatingOverlay] 查询失败:', err)
@@ -372,7 +374,7 @@ const showOverlay = async (data) => {
     }
   } else {
     loading.value = false
-    error.value = '无可用数据'
+    error.value = t('augment.noData')
     logFloatingInfo('showOverlay received no data')
   }
 }

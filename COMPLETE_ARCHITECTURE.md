@@ -35,6 +35,7 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | 游戏会话状态机 | `src/main/services/game-session/game-session-machine.ts` | 规范化 gameflow 生命周期、去重阶段入口并选择副作用 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
 | 数据加载与语言切换 | `src/main/data-loader.ts`、`src/main/modules/data-locale-controller.ts` | 按语言隔离的远端/本地数据、打包兜底数据，以及先准备再提交的语言切换事务 |
+| Renderer 国际化 | `src/renderer/i18n/`、`src/renderer/main.js` | Vue i18n 三语言资源；所有渲染窗口启动时读取生效 locale，并监听同一 `locale-changed` 事件 |
 | 客户端数据安全 | `src/shared/client-data-security.ts` | 统一校验 manifest 逻辑路径、落盘根目录和远端资源 origin，供运行时与打包脚本复用 |
 | 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
 | Renderer / IPC 信任边界 | `src/main/security/renderer-origin.ts`、`src/main/security/trusted-ipc.ts` | 登记本地 renderer origin，并拒绝非应用窗口、子 frame 或非可信页面发起的 IPC |
@@ -80,7 +81,9 @@ resources/client-data/ 或 appData/data/
 
 运行时和 `scripts/fetch-client-data.mjs` 共用 `src/shared/client-data-security.ts`。manifest 逻辑路径会拒绝绝对路径、URI scheme、空段、`.` / `..`、Windows 保留名和 NTFS ADS，并在 `path.resolve()` 后确认目标仍位于版本根目录。资源 URL 只能使用数据 API origin 或显式补充的 `ARAMGG_DATA_ALLOWED_ORIGINS`；生产 origin 必须是 HTTPS，本地开发 localhost 可使用 HTTP。
 
-英雄详情和海克斯弹窗的前台关键路径会收集同语言的用户缓存与 bundled 指针，按 dataVersion、生成时间和激活时间选择最新完整版本，避免旧用户缓存遮蔽新安装包数据；随后还可读取本地较新的单个详情分片。远端版本检查不应阻塞首屏，只有本地缺少必需详情文件时才进入远端分片或单英雄详情兜底。`locale-set` 先完整准备目标语言，再依次写入 electron-store、切换活动语言并广播 `locale-changed`；准备失败不会留下半切换状态。
+英雄详情和海克斯弹窗的前台关键路径会收集同语言的用户缓存与 bundled 指针，按 dataVersion、生成时间和激活时间选择最新完整版本，避免旧用户缓存遮蔽新安装包数据；随后还可读取本地较新的单个详情分片。远端版本检查不应阻塞首屏，只有本地缺少必需详情文件时才进入远端分片或单英雄详情兜底。
+
+`locale-set` 是界面与数据语言的唯一提交入口。主进程先完整准备目标语言，再依次写入 electron-store、切换活动数据语言并广播 `locale-changed`；每个 renderer 窗口收到事件后更新 Vue i18n，英雄详情同时清理旧 locale 缓存并重新加载。准备失败不会广播事件，因此界面和数据都保留原语言。渲染入口在挂载 Vue 前调用 `locale-get`，独立浮窗不会先以默认中文闪现。
 
 ### ARAM 选人只读推荐
 
@@ -146,8 +149,8 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
 | `electronAPI.appUpdate.check()` | `app-update-check` | 手动检查自动更新 |
 | `electronAPI.appUpdate.download()` | `app-update-download` | 手动触发更新下载兜底 |
 | `electronAPI.appUpdate.install()` | `app-update-install` | 下载完成后重启并安装更新 |
-| `electronAPI.locale.get()` | `locale-get` | 读取当前数据语言和支持列表 |
-| `electronAPI.locale.set(locale)` | `locale-set` | 完整准备并切换目标语言数据 |
+| `electronAPI.locale.get()` | `locale-get` | 读取当前界面与数据语言及支持列表 |
+| `electronAPI.locale.set(locale)` | `locale-set` | 完整准备目标数据并提交统一应用语言 |
 | `electronAPI.lcu.getStatus()` | `lcu-get-status` | LCU 连接状态 |
 | `electronAPI.lcu.getCurrentSession()` | `lcu-get-current-session` | 原始选人 session |
 | `electronAPI.lcu.getChampSelectSnapshot()` | `lcu-get-champ-select-snapshot` | 标准化只读选人快照 |
@@ -169,7 +172,7 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
 | `augment-cleared` | 清空过期海克斯显示 |
 | `game-ended` / `end-of-game` | 对局结束 |
 | `app-update-status-changed` | 自动更新状态、下载进度或错误变化 |
-| `locale-changed` | 目标语言准备完成后通知可见窗口丢弃旧请求并刷新 |
+| `locale-changed` | 目标数据准备完成后同步所有窗口的 Vue i18n，并通知数据视图丢弃旧请求后刷新 |
 
 ## 安全模型
 

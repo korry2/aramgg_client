@@ -5,12 +5,12 @@
                 <Swords class="panel-icon" />
                 <div>
                     <p class="section-kicker">ARAM</p>
-                    <h3>席位推荐</h3>
+                    <h3>{{ t('bench.title') }}</h3>
                 </div>
             </div>
             <div class="panel-actions">
                 <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
-                <button class="refresh-btn" type="button" title="刷新推荐" @click="refresh">
+                <button class="refresh-btn" type="button" :title="t('bench.refreshTitle')" @click="refresh">
                     <RefreshCw class="refresh-icon" :class="{ spinning: loading }" />
                 </button>
             </div>
@@ -18,7 +18,7 @@
 
         <div v-if="loading && !recommendation" class="empty-state">
             <LoaderCircle class="empty-icon spinning" />
-            <span>读取中</span>
+            <span>{{ t('bench.reading') }}</span>
         </div>
 
         <div v-else-if="error" class="empty-state error-state">
@@ -61,8 +61,8 @@
                             </span>
                         </div>
                         <div class="stat-line">
-                            <div>胜率 {{ formatPercent(candidate.winRate) }}</div>
-                            <div>选取 {{ formatPercent(candidate.pickRate) }}</div>
+                            <div>{{ t('bench.winRate', { value: formatPercent(candidate.winRate) }) }}</div>
+                            <div>{{ t('bench.pickRate', { value: formatPercent(candidate.pickRate) }) }}</div>
                         </div>
                     </div>
 
@@ -82,6 +82,7 @@ import {
     Swords,
 } from 'lucide-vue-next'
 import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
     compact: {
@@ -93,6 +94,8 @@ const props = defineProps({
         default: null,
     },
 })
+
+const { t } = useI18n()
 
 const recommendation = ref(null)
 const loading = ref(false)
@@ -116,29 +119,29 @@ const statusClass = computed(() => {
 })
 
 const statusLabel = computed(() => {
-    if (loading.value) return '刷新中'
+    if (loading.value) return t('bench.refreshing')
 
     const status = recommendation.value?.status
-    if (status === 'ready') return '只读建议'
-    if (status === 'no-bench') return '无席位'
-    if (status === 'no-current-champion') return '未选英雄'
-    if (status === 'no-candidates') return '暂无英雄'
-    return '等待选人'
+    if (status === 'ready') return t('bench.readOnly')
+    if (status === 'no-bench') return t('bench.noBench')
+    if (status === 'no-current-champion') return t('bench.noChampion')
+    if (status === 'no-candidates') return t('bench.noCandidates')
+    return t('bench.waitingSelection')
 })
 
 const emptyMessage = computed(() => {
-    if (!hasElectronAPI()) return 'Electron API 不可用'
-    if (recommendation.value?.reason === 'lcu-unavailable') return '等待客户端连接'
-    return '等待进入选人阶段'
+    if (!hasElectronAPI()) return t('bench.apiUnavailable')
+    if (recommendation.value?.reason === 'lcu-unavailable') return t('bench.waitingClient')
+    return t('bench.waitingChampSelect')
 })
 
 const topCandidates = computed(() => recommendation.value?.candidates || [])
 const recommended = computed(() => recommendation.value?.recommendedChampion || null)
-const CANDIDATE_SOURCE_LABELS = {
-    current: '当前',
-    bench: '席位',
-    teammate: '队友',
-}
+const candidateSourceLabels = computed(() => ({
+    current: t('bench.sourceCurrent'),
+    bench: t('bench.sourceBench'),
+    teammate: t('bench.sourceTeammate'),
+}))
 
 const withTimeout = (promise, timeoutMs, message) => {
     let timeoutId
@@ -166,7 +169,7 @@ const applyPreviewRecommendation = (data) => {
 
 const refresh = async (showLoading = true) => {
     if (!hasElectronAPI()) {
-        error.value = 'Electron API 不可用'
+        error.value = t('bench.apiUnavailable')
         return
     }
 
@@ -192,7 +195,7 @@ const refresh = async (showLoading = true) => {
         const result = await withTimeout(
             electronAPI.lcu.getAramBenchRecommendation(),
             BENCH_REFRESH_TIMEOUT_MS,
-            `席位数据读取超过 ${BENCH_REFRESH_TIMEOUT_MS / 1000} 秒`
+            t('bench.timeout', { seconds: BENCH_REFRESH_TIMEOUT_MS / 1000 })
         )
         if (previewMode.value) {
             return
@@ -201,14 +204,14 @@ const refresh = async (showLoading = true) => {
         if (result?.success && result.recommendation) {
             recommendation.value = result.recommendation
         } else {
-            error.value = result?.error || '推荐读取失败'
+            error.value = result?.error || t('bench.loadFailed')
         }
     } catch (err) {
         if (previewMode.value) {
             return
         }
 
-        error.value = err?.message || '推荐读取失败'
+        error.value = err?.message || t('bench.loadFailed')
     } finally {
         requestInFlight.value = false
         loading.value = false
@@ -219,7 +222,7 @@ const isRecommended = (candidate) =>
     recommended.value && candidate.championId === recommended.value.championId
 
 const candidateSourceLabel = (candidate) =>
-    candidate?.sourceLabel || CANDIDATE_SOURCE_LABELS[candidate?.source] || '候选'
+    candidateSourceLabels.value[candidate?.source] || candidate?.sourceLabel || t('bench.sourceCandidate')
 
 const formatPercent = (value) => {
     if (value == null || Number.isNaN(Number(value))) return '--'

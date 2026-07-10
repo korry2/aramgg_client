@@ -2,10 +2,10 @@
     <div class="config-card">
         <div class="card-header">
             <Radar class="card-icon" />
-            <h3 class="card-title">英雄监控</h3>
+            <h3 class="card-title">{{ t('monitor.title') }}</h3>
             <div class="monitor-status" :class="{ 'status-active': isMonitoring }">
                 <span class="status-dot"></span>
-                {{ isMonitoring ? '监控中' : '未启动' }}
+                {{ isMonitoring ? t('monitor.monitoring') : t('monitor.stopped') }}
             </div>
         </div>
         <div class="card-content">
@@ -16,19 +16,19 @@
                 >
                     <Square v-if="isMonitoring" class="btn-icon" />
                     <Play v-else class="btn-icon" />
-                    {{ isMonitoring ? '停止监控' : '启动监控' }}
+                    {{ isMonitoring ? t('monitor.stop') : t('monitor.start') }}
                 </Button>
             </div>
 
             <!-- 状态信息 -->
-            <div v-if="selectedChampion || lastChampion" class="champion-info">
-                <div v-if="selectedChampion" class="info-item">
-                    <span class="info-label">当前选择</span>
-                    <span class="info-value">{{ selectedChampion }}</span>
+            <div v-if="selectedChampionId || lastChampionId" class="champion-info">
+                <div v-if="selectedChampionId" class="info-item">
+                    <span class="info-label">{{ t('monitor.currentSelection') }}</span>
+                    <span class="info-value">{{ t('monitor.championId', { id: selectedChampionId }) }}</span>
                 </div>
-                <div v-if="lastChampion" class="info-item">
-                    <span class="info-label">最后检测</span>
-                    <span class="info-value">{{ lastChampion }}</span>
+                <div v-if="lastChampionId" class="info-item">
+                    <span class="info-label">{{ t('monitor.lastDetected') }}</span>
+                    <span class="info-value">{{ t('monitor.championId', { id: lastChampionId }) }}</span>
                 </div>
             </div>
         </div>
@@ -40,10 +40,12 @@ import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { Button } from '@/components/ui/button'
 import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
 import { Play, Radar, Square } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const isMonitoring = ref(false)
-const selectedChampion = ref('')
-const lastChampion = ref('')
+const selectedChampionId = ref(null)
+const lastChampionId = ref(null)
 const monitorTimer = ref(null)
 const lastQueryChampionId = ref(null) // 追踪最后一次查询的英雄ID，避免重复查询
 
@@ -94,7 +96,7 @@ const startChampionMonitor = async () => {
         const championId = await getChampionIdViaIpc()
         if (championId) {
             console.log('✅ 检测到已选择的英雄:', championId)
-            lastChampion.value = `英雄ID：${championId}`
+            lastChampionId.value = championId
         }
     } catch (error) {
         console.warn('检查当前英雄选择失败:', error.message)
@@ -105,8 +107,8 @@ const startChampionMonitor = async () => {
         try {
             const championId = await getChampionIdViaIpc()
             if (championId) {
-                selectedChampion.value = `英雄ID：${championId}`
-                lastChampion.value = `英雄ID：${championId}`
+                selectedChampionId.value = championId
+                lastChampionId.value = championId
                 console.log('🎯 英雄选择更新:', championId)
 
                 // 缓存英雄ID到主进程store，供海克斯检测使用
@@ -199,7 +201,7 @@ const queryAugmentWinrates = async (championId) => {
             electronAPI.windows.showPopup({
                 ...basePopupData,
                 dataSource: 'unavailable',
-                error: result.error || '胜率数据加载失败'
+                error: result.error || t('augment.dataLoadFailed')
             })
         }
     } catch (error) {
@@ -208,7 +210,7 @@ const queryAugmentWinrates = async (championId) => {
             championId,
             augments: [],
             dataSource: 'unavailable',
-            error: error.message || '胜率数据加载失败',
+            error: error.message || t('augment.dataLoadFailed'),
             timestamp: Date.now()
         })
     }

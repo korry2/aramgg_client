@@ -5,6 +5,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 import { electronAPI, hasElectronAPI } from './native/electron-api.js'
 import { initRendererAnalytics, trackErrorEvent, trackPageView, trackAnalyticsEvent } from './services/analytics.ts'
+import { i18n, setAppLocale } from './i18n/index.ts'
 
 let appMounted = false
 
@@ -196,9 +197,35 @@ const app = createApp(App)
 setupGlobalErrorHandling(app)
 
 
+app.use(i18n)
 app.use(router)
-app.mount('#app')
-appMounted = true
+
+async function mountApp() {
+  setAppLocale(i18n.global.locale.value)
+
+  if (hasElectronAPI()) {
+    let localeChangeSequence = 0
+    electronAPI.events.on('locale-changed', ({ locale } = {}) => {
+      localeChangeSequence += 1
+      setAppLocale(locale)
+    })
+
+    const initialLocaleSequence = localeChangeSequence
+    try {
+      const localeState = await electronAPI.locale.get()
+      if (initialLocaleSequence === localeChangeSequence) {
+        setAppLocale(localeState?.locale)
+      }
+    } catch (error) {
+      console.warn('Failed to initialize renderer locale:', error)
+    }
+  }
+
+  app.mount('#app')
+  appMounted = true
+}
+
+void mountApp()
 
 setTimeout(() => {
   const root = document.getElementById('app')

@@ -1,5 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed, ref, unref, type MaybeRef } from 'vue'
 import { normalizeTooltipText } from '../service/overlay-formatters.ts'
+import { useI18n } from 'vue-i18n'
 
 interface RarityOption {
   key: string
@@ -40,9 +41,10 @@ function getTooltipPoint(event: MouseEvent | FocusEvent) {
 }
 
 export function useAugmentTooltip(
-  rarityOptions: ReadonlyArray<RarityOption>,
+  rarityOptions: MaybeRef<ReadonlyArray<RarityOption>>,
   resolveAugmentIconUrl: (path: string) => string,
 ) {
+  const { t } = useI18n()
   const augmentTooltip = ref<TooltipState>({ visible: false, augment: null, x: 0, y: 0 })
 
   const getTooltipText = (augment: AugmentTooltipSource) =>
@@ -58,11 +60,11 @@ export function useAugmentTooltip(
     const iconPath = augment.iconPath || augment.iconUrl || ''
     return {
       id: augment.augmentId || augment.id || '',
-      name: augment.name || '未知海克斯',
+      name: augment.name || t('augment.unknownAugment'),
       rarityLabel:
         augment.rarityDisplayName ||
         augment.rarityName ||
-        rarityOptions.find((option) => option.key === augment.rarity)?.label ||
+        unref(rarityOptions).find((option) => option.key === augment.rarity)?.label ||
         '',
       iconUrl: iconPath ? resolveAugmentIconUrl(iconPath) : '',
       description: getTooltipText(augment),

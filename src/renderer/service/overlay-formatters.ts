@@ -15,7 +15,15 @@ export function getLocalizedText(value: unknown): string {
   }
 
   const localized = value as Record<string, unknown>
-  const text = localized.zh_CN || localized.zh_cn || localized.en_us || localized.en_US
+  const localeKeys = {
+    'zh-CN': ['zh_CN', 'zh_cn', 'zh-CN'],
+    'en-US': ['en_US', 'en_us', 'en-US'],
+    'zh-TW': ['zh_TW', 'zh_tw', 'zh-TW', 'zh_Hant'],
+  }[i18n.global.locale.value] || []
+  const fallbackKeys = ['zh_CN', 'zh_cn', 'en_US', 'en_us']
+  const text = [...localeKeys, ...fallbackKeys]
+    .map(key => localized[key])
+    .find(candidate => typeof candidate === 'string')
   return typeof text === 'string' ? text : ''
 }
 
@@ -57,28 +65,32 @@ export function getWinRateClass(value: unknown): string {
 export function formatNumber(value: unknown): string {
   const number = Number(value)
   if (!Number.isFinite(number) || number === 0) return '--'
-  return number >= 10000 ? `${(number / 10000).toFixed(1)}万` : String(number)
+  if (number < 10000) return String(number)
+  return new Intl.NumberFormat(i18n.global.locale.value, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(number)
 }
 
 export function formatDataSource(source: unknown): string {
-  const labels: Record<string, string> = {
-    local: '本地',
-    remote: '远程数据',
-    pending: '加载中',
-    unavailable: '不可用',
-    test: '测试',
-    'auto-analysis': '自动识别',
-    'local-analysis': '本地识别',
-    fallback: '备用数据',
+  const labelKeys: Record<string, string> = {
+    local: 'dataSource.local',
+    remote: 'dataSource.remote',
+    pending: 'dataSource.pending',
+    unavailable: 'dataSource.unavailable',
+    test: 'dataSource.test',
+    'auto-analysis': 'dataSource.autoAnalysis',
+    'local-analysis': 'dataSource.localAnalysis',
+    fallback: 'dataSource.fallback',
   }
   const key = typeof source === 'string' ? source : ''
-  return labels[key] || key || '未知'
+  return labelKeys[key] ? translate(labelKeys[key]) : key || translate('dataSource.unknown')
 }
 
 export function formatTime(value: unknown): string {
   if (!value) return ''
   const date = new Date(value as string | number | Date)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('zh-CN')
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(i18n.global.locale.value)
 }
 
 export function handleImageError(event: Event): void {
@@ -86,3 +98,4 @@ export function handleImageError(event: Event): void {
     event.target.style.display = 'none'
   }
 }
+import { i18n, translate } from '../i18n/index.ts'
