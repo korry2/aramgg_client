@@ -1849,7 +1849,9 @@ onBeforeUnmount(() => {
     color: #bacac6;
     font-size: 10px;
     font-weight: 900;
+    line-height: 1.25;
     letter-spacing: 0;
+    white-space: nowrap;
 }
 
 .hex-footer .footer-feedback {
