@@ -19,6 +19,14 @@ npm run type-check
 - `vue-tsc -p tsconfig.renderer.json --noEmit`
 - `tsc -p tsconfig.electron.json --noEmit`
 
+ESLint 同时覆盖 `src/` 下的 `.js`、`.ts` 和 `.vue`：
+
+```bash
+npm run lint
+```
+
+TypeScript 文件通过 `typescript-eslint` parser 解析；类型正确性仍由 `npm run type-check` 负责。高风险 IPC 注册文件额外启用 `no-undef`，避免 `@ts-nocheck` 遮蔽未导入符号。
+
 ## 新代码规则
 
 - 新增源码、服务、工具、IPC 契约和测试默认使用 `.ts`。

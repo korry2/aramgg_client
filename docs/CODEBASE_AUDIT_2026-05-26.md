@@ -10,7 +10,7 @@
 
 ## 当前状态索引
 
-更新时间：2026-05-31
+更新时间：2026-07-10
 
 ### 已完成
 
@@ -30,6 +30,8 @@
 - 渲染进程：`GamePathConfig.vue` 缺少 Electron API 检查
 - 主进程：`electron-store` 多实例
 - 主进程：`broadcast` IPC 允许任意 channel
+- ESLint 覆盖 `.ts` 文件并接入 TypeScript parser
+- 移除未引用的 `radix-vue`
 
 ### 已过期 / 不再成立
 
@@ -43,8 +45,6 @@
 
 ### 当前剩余 P2 / P3
 
-- ESLint 覆盖 `.ts` 文件，并补充 TypeScript lint 支持。
-- 确认并移除未引用的 `radix-vue`。
 - 清理 `electron.vite.config.mjs` 中的 `nodeBuiltinsPlugin`、共用 `dist-electron` 清理策略、`src/*` alias 等配置债。
 - 修复路由名 `'Display'` 重复，并删除或归档 `src/renderer/router/index.js` 旧路由文件。
 - 提取 DDragon `14.24.1` 版本常量或改为动态版本。
@@ -276,7 +276,7 @@ ipcMain.handle('store-clear', () => {
 | 问题 | 文件 | 修复建议 |
 |------|------|----------|
 | `postcss-import` 未声明为依赖 | `postcss.config.js` | 已完成：删除旧 `postcss.config.js` |
-| `radix-vue` 与 `reka-ui` 共存 | `package.json` | 确认无引用后移除 `radix-vue` |
+| `radix-vue` 与 `reka-ui` 共存 | `package.json` | 已完成：移除未引用的 `radix-vue` |
 | ESLint 未配置 TypeScript 支持 | `eslint.config.js` | 安装配置 `typescript-eslint` |
 | lint 脚本未覆盖 `.ts` 文件 | `package.json` scripts | 改为 `eslint src` |
 | `emptyOutDir: true` main 和 preload 共享 `dist-electron` | `electron.vite.config.mjs` | 改为构建脚本中统一清理 |
@@ -345,7 +345,7 @@ ipcMain.handle('store-clear', () => {
 | 优先级 | 问题 | 说明 |
 |--------|---------|------|
 | P1 尽快 | #6 | `sharp` 原生模块打包验证 |
-| P2 计划 | ESLint/TS 覆盖、依赖清理、Vite/tsconfig 配置债、路由和 DDragon/axios 清理 | 代码质量和维护成本 |
+| P2 计划 | 依赖清理、Vite/tsconfig 配置债、路由和 DDragon/axios 清理 | 代码质量和维护成本 |
 | P3 清理 | 低优先级表中仍未完成的死代码、重复代码、性能微调 | 风险较低，适合批量整理 |
 
 ---
@@ -368,3 +368,4 @@ ipcMain.handle('store-clear', () => {
 | 2026-05-31 | #3 Tailwind v4 配置冲突 | 已完成 | 接入 `@tailwindcss/vite`，删除旧 Tailwind/PostCSS 配置文件，移除顶层 `autoprefixer`/`postcss` 依赖与 `package.json#postcss` |
 | 2026-05-31 | ShowDetail apply 失败无用户反馈 | 已完成 | 添加应用中/成功/失败状态提示，应用中禁用当前按钮 |
 | 2026-05-31 | `electron-store` 多实例 | 已完成 | 新增 `src/main/modules/app-store.ts` 共享单例，主进程模块统一复用 |
+| 2026-07-10 | ESLint 未覆盖 TypeScript | 已完成 | `npm run lint` 覆盖 `.js`、`.ts`、`.vue`；TypeScript 使用 `typescript-eslint` parser，IPC 注册文件启用 `no-undef` |

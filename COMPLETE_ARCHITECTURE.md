@@ -29,7 +29,7 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | IPC 注册 | `src/main/modules/ipc-handlers.ts`、`src/main/services/lcu/ipc-handlers.ts` | Store、截图、数据、LCU 等业务通道 |
 | LCU 服务 | `src/main/services/lcu/` | LCU token、gameflow、champ-select、符文页 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
-| 数据加载 | `src/main/data-loader.ts` | 远端数据、版本化本地缓存、打包兜底数据、英雄/海克斯/装备统计 |
+| 数据加载与语言切换 | `src/main/data-loader.ts`、`src/main/modules/data-locale-controller.ts` | 按语言隔离的远端/本地数据、打包兜底数据，以及先准备再提交的语言切换事务 |
 | 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
 | 自动截图 | `src/main/auto-screenshot-service.ts` | 串行截图和 OCR 队列，受 gameflow 阶段控制 |
 | 图像分析 | `src/main/image-analyzer.ts` | 海克斯 OCR 和匹配 |
@@ -57,17 +57,21 @@ LCU token 和端口优先从运行中的 League Client / LeagueClientUx 进程�
 ### 客户端数据热更新和本地优先读取
 
 ```text
-resources/client-data/ 或 appData/data/current.json
-  -> getActiveDataSet()
+resources/client-data/ 或 appData/data/
+  -> zh-CN: current.json + versions/<dataVersion>/
+  -> en-US / zh-TW: current.<locale>.json + versions/<locale>/<dataVersion>/
+  -> getActiveDataSet(locale)
   -> 英雄详情、海克斯弹窗、右侧推荐列表先渲染本地完整数据
 
-/api/client/v1/config
-  -> 后台比较 dataVersion
-  -> prepareDataVersion() 下载 manifest 和必需文件
-  -> 必需文件完整后原子更新 current.json
+/api/client/v1/config?locale=<locale>
+  -> 后台比较同语言 dataVersion
+  -> prepareDataVersion() 下载同语言 manifest 和必需文件
+  -> 必需文件完整后原子更新对应语言指针
 ```
 
-数据目录按版本隔离为 `data/versions/<dataVersion>/`。`current.json` 只指向已通过完整性检查的版本，避免半成品覆盖可用数据。英雄详情和海克斯弹窗的前台关键路径会先读取本地较新缓存分片，再读取当前激活版本；远端版本检查不应阻塞首屏。只有本地缺少必需详情文件时，才在兜底路径中等待远端分片或单英雄详情。
+默认 `zh-CN` 保留扁平目录以兼容已发布客户端；非默认语言使用独立指针和版本目录。每个指针只指向已通过完整性检查且 locale 匹配的版本，避免半成品或其他语言覆盖可用数据。非默认语言的远端 config 和 manifest 必须显式声明与请求一致的 locale；不匹配时，运行时拒绝激活，打包和 CI 直接失败。
+
+英雄详情和海克斯弹窗的前台关键路径会先读取同语言的本地较新缓存分片，再读取当前激活版本；远端版本检查不应阻塞首屏。只有本地缺少必需详情文件时，才在兜底路径中等待远端分片或单英雄详情。`locale-set` 先完整准备目标语言，再依次写入 electron-store、切换活动语言并广播 `locale-changed`；准备失败不会留下半切换状态。
 
 ### ARAM 选人只读推荐
 
@@ -95,6 +99,8 @@ LCU gameflow InProgress
 `InProgress` 指 `/lol-gameflow/v1/gameflow-phase` 的实际对局阶段。`ChampSelect`、`Lobby`、`EndOfGame` 等阶段会暂停或清空游戏内海克斯浮窗状态，避免展示过期结果。
 
 自动截图服务串行消费 OCR 队列，忙碌时只保留最新待分析截图。海克斯切换动画造成 0-2 张短暂识别结果时，会在宽限期内保留上一轮完整浮窗；部分识别只允许更新已有完整三卡浮窗，不能从空状态打开单卡或双卡浮窗。图像分析使用 PaddleOCR Node 后端和 `resources/paddleocr` ONNX 模型，先走标题区域活动检测、标题指纹缓存和左/中/右标题快速路径。游戏内海克斯固定为左/中/右三卡位，未读到的卡位保留为空槽，不再用宽区域 OCR fallback 补齐，避免 fallback 文本区域改变游戏内顺序。
+
+OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。当前游戏语言和默认数据语言只加载 manifest 与 `augments.json` 并阻塞当前帧准备；其他支持语言在后台补齐，失败后保留重试窗口。OCR 语言准备不调用完整英雄数据集加载，因此英文或繁中服务端暂不可用时不会阻塞默认中文识别。
 
 海克斯浮窗的胜率补齐优先在主进程完成，短等待内完成则随 `augment-detected` 一起发送；超时则先发送 pending payload，稍后再发送补齐后的结果。英雄海克斯推荐和基础海克斯详情按数据版本/英雄缓存，避免同一英雄刷新时重复映射和排序全量数据。
 
@@ -129,6 +135,8 @@ LCU gameflow InProgress
 | `electronAPI.appUpdate.check()` | `app-update-check` | 手动检查自动更新 |
 | `electronAPI.appUpdate.download()` | `app-update-download` | 手动触发更新下载兜底 |
 | `electronAPI.appUpdate.install()` | `app-update-install` | 下载完成后重启并安装更新 |
+| `electronAPI.locale.get()` | `locale-get` | 读取当前数据语言和支持列表 |
+| `electronAPI.locale.set(locale)` | `locale-set` | 完整准备并切换目标语言数据 |
 | `electronAPI.lcu.getStatus()` | `lcu-get-status` | LCU 连接状态 |
 | `electronAPI.lcu.getCurrentSession()` | `lcu-get-current-session` | 原始选人 session |
 | `electronAPI.lcu.getChampSelectSnapshot()` | `lcu-get-champ-select-snapshot` | 标准化只读选人快照 |
@@ -150,6 +158,7 @@ LCU gameflow InProgress
 | `augment-cleared` | 清空过期海克斯显示 |
 | `game-ended` / `end-of-game` | 对局结束 |
 | `app-update-status-changed` | 自动更新状态、下载进度或错误变化 |
+| `locale-changed` | 目标语言准备完成后通知可见窗口丢弃旧请求并刷新 |
 
 ## 安全模型
 

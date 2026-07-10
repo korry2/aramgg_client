@@ -16,6 +16,7 @@
 - Renderer 不能假设 Node 能力；只能通过 `window.electronAPI` 走 preload/IPC。
 - 运行时可变数据统一走 `src/main/modules/app-paths.ts`：安装版优先写入安装目录旁的 `aramgg_client-data/`，不可写时回退到 Electron `userData`。
 - 客户端英雄、海克斯、装备数据前台读取必须本地优先：完整缓存或打包兜底数据先渲染英雄详情和海克斯弹窗；远端 `dataVersion` 检查和新版本下载只在后台进行，且必须等必需文件完整后再激活。
+- 客户端数据按语言隔离：默认 `zh-CN` 保留扁平指针和版本目录，非默认语言使用语言级指针和版本目录；非默认 `config` / `manifest` 必须显式匹配请求语言，打包和运行时都不能把默认中文归类成英文或繁中。
 
 ## 常用命令
 
@@ -78,6 +79,7 @@ node tests/electron/test-augment-ocr-fixtures.js
 - 选人阶段推荐使用英雄详情窗口顶部展示，不放回主界面；候选英雄列表应展示完整候选，不做固定 top 5 截断。
 - 海克斯识别结果应优先按左/中/右卡片区域确定顺序；自动截图服务需要保留截图超时和 runId 隔离，避免上一局残留任务影响下一局识别。
 - 海克斯 OCR 使用 PaddleOCR Node 后端和 `resources/paddleocr` ONNX 模型；修改时应保留切换动画期间的短暂 miss 宽限、标题区域快速路径和标题指纹缓存；不要用宽区域 OCR fallback 补齐缺失卡位，读不到的位置保持空槽；部分识别只允许更新已有完整三卡浮窗，不能从空状态打开单卡/双卡浮窗。
+- 海克斯 OCR 的语言名称只走 manifest + `augments.json` 最小加载；当前游戏语言和默认语言进入前台准备，其他语言后台加载且失败可重试，不能为了 OCR 触发完整英雄数据集。
 
 ## 文档指针
 
@@ -88,4 +90,5 @@ node tests/electron/test-augment-ocr-fixtures.js
 - 游戏阶段：`docs/GAMEFLOW_DETECTION_GUIDE.md`
 - 自动海克斯：`docs/USER_GUIDE_AUTO_AUGMENT.md`
 - 客户端数据 API：`docs/client-api-strategy.md`
+- 客户端多语言数据专项审查：`docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md`
 - Electron 更新方案：`docs/ELECTRON_APP_UPDATE_STRATEGY.md`

@@ -122,7 +122,7 @@
 - [海克斯检测方案详细说明](./AUGMENT_DETECTION_STRATEGY.md)
 - [OCR实现待办清单](./OCR_IMPLEMENTATION_TODO.md)
 - [Tesseract.js官方](https://github.com/naptha/tesseract.js)
-- [项目README](../README.md)
+- [项目README](../../../README.md)
 
 ---
 

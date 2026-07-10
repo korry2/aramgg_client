@@ -18,7 +18,7 @@ Build output directories such as `dist/`, `dist-electron/`, and `build/` are gen
 - `npm run dev`: start the Electron app through `electron-vite dev`.
 - `npm run build`: build main, preload, and renderer bundles.
 - `npm run pack`: build and package with `electron-builder`.
-- `npm run lint`: run ESLint on `src/**/*.js` and `src/**/*.vue`.
+- `npm run lint`: run ESLint on JavaScript, TypeScript, and Vue files under `src/`.
 - `npm run type-check`: run Vue and Electron TypeScript checks.
 - `npm run test:unit`: run Vitest unit tests for focused shared/main utilities.
 - `npm run test:augment-ocr`: run committed PaddleOCR augment screenshot fixtures.
@@ -66,4 +66,8 @@ Mutable runtime data, including electron-store config, logs, remote-data cache, 
 
 Client data loading must stay local-first for foreground views. Complete cached or bundled data should render hero detail and augment popup surfaces immediately; remote `dataVersion` checks and downloads should run in the background and only activate a new version after required files are complete.
 
+Client data must remain isolated by locale. Keep the legacy flat pointer and version path for default `zh-CN`; use locale-scoped pointers and version directories for non-default locales. Non-default config and manifest responses must explicitly match the requested locale, and packaging/CI must fail instead of relabeling default Chinese data.
+
 Augment OCR runs through the PaddleOCR Node backend and packaged `resources/paddleocr` ONNX models. Preserve left/center/right title-region ordering, transient-miss retention during reroll animations, and the title-region fast path/cache. Do not fill missing title slots with broad OCR fallbacks; keep unread slots empty so game order cannot be reshuffled by fallback text regions.
+
+Augment OCR locale hydration must use the minimal manifest plus `augments.json` path. Load the current/default locale for the foreground frame, hydrate other supported locales in the background with retryable failures, and do not make OCR trigger full champion datasets.

@@ -148,7 +148,7 @@ npm run type-check:watch
 - 学习资源
 
 ### 完整指南（30 分钟）
-📖 **[TYPESCRIPT_INTEGRATION.md](./TYPESCRIPT_INTEGRATION.md)**
+📖 **[TYPESCRIPT_INTEGRATION.md](../../TYPESCRIPT_INTEGRATION.md)**
 - 详细实现说明
 - 最佳实践
 - 故障排查

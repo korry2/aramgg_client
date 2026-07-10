@@ -1,6 +1,6 @@
 # Electron / electron-vite 架构整改进度
 
-更新时间：2026-05-31
+更新时间：2026-07-10
 
 ## 目标
 
@@ -66,6 +66,7 @@
 - [x] 补齐 JS/TS 混用的声明或逐步迁移 TS。
 - [x] 修复会阻塞 type-check 的未使用变量和类型。
 - [x] 更新 ESLint 配置到当前 `eslint-plugin-vue` 可识别的配置。
+- [x] 使用 `typescript-eslint` parser 将 `src/**/*.ts` 纳入 lint，并对高风险 IPC 注册文件启用 `no-undef`。
 - [x] 将 main/preload/renderer 的类型检查边界拆清楚。
 - [x] 清理当前 lint warning 中的未使用变量，并将 `no-unused-vars` 恢复为 error。
 - [x] 清理旧 React 遗留文件，并移除 `.eslintignore` 中对应忽略项。
@@ -104,6 +105,12 @@
 - 主进程模块不再各自硬编码日志、缓存或 store 目录。
 
 ## 当前执行记录
+
+### 2026-07-10
+
+- [x] `npm run lint` 覆盖 `src/` 下的 JavaScript、TypeScript 和 Vue 文件。
+- [x] 新增多语言数据构建、运行时 locale 契约、语言切换事务和 OCR 非阻塞单元测试。
+- [x] 验证通过：`npm run test:unit`、`npm run lint`、`npm run type-check`、`npm run build`。
 
 ### 2026-05-31
 

@@ -292,30 +292,31 @@ score = winRate * 0.6 + pickRate * 0.2 + min(numGames/1000, 1) * 0.2
 
 ### 3.1 本地数据
 
-#### 3.1.1 海克斯基础信息 (`augments-base.json`)
-```json
-{
-  "id": 1205,
-  "name": "物理转魔法",
-  "rarity": "kSilver",
-  "iconPath": "/lol-game-data/assets/..."
-}
+客户端数据按语言和版本隔离。默认 `zh-CN` 保留兼容目录，英文和繁中使用语言级目录：
+
+```text
+data/
+  current.json
+  current.en-US.json
+  current.zh-TW.json
+  versions/
+    <zh-CN-dataVersion>/
+    en-US/<dataVersion>/
+    zh-TW/<dataVersion>/
 ```
 
-#### 3.1.2 英雄海克斯胜率数据 (`champion-augments/{championId}.json`)
-```json
-{
-  "augments": {
-    "1238": {
-      "tier": "1",
-      "num_win_games": "2683",
-      "win_rate": "0.5174",
-      "num_games": "5185",
-      "pick_rate": "0.0836"
-    }
-  }
-}
-```
+每个完整版本至少包含：
+
+| 文件 | 内容 |
+|------|------|
+| `manifest.json` | locale、dataVersion、文件清单与完整性元数据 |
+| `augments.json` | 海克斯名称、稀有度、图标和基础展示字段 |
+| `champions.json` | 英雄基础信息与榜单统计 |
+| `items.json` | 装备基础信息 |
+| `champion-shards/index.json` | 英雄详情到固定分片的索引 |
+| `champion-shards/<shardId>.json` | 英雄海克斯、组合和出装统计 |
+
+前台视图必须本地优先；远端检查和下载在后台完成，且只有必需文件完整后才能原子切换对应语言指针。非默认语言的 config 和 manifest 必须显式声明与请求一致的 locale，不能把默认中文数据写入英文或繁中目录。打包预加载和 release 校验覆盖 `zh-CN`、`en-US`、`zh-TW` 三种支持语言。
 
 ### 3.2 用户配置数据
 
@@ -478,15 +479,16 @@ IDLE ──配置路径──▶ CONFIGURED ──启动监控──▶ MONITORI
 
 ### 9.1 功能扩展
 - [ ] 支持云端数据同步
-- [ ] 支持多语言
+- [x] 支持 `zh-CN`、`en-US`、`zh-TW` 客户端展示数据和 OCR 名称隔离
+- [ ] 支持完整 UI 文案国际化
 - [ ] 支持自定义推荐算法
 - [ ] 支持符文页自动配置
 - [ ] 支持英雄对战数据分析
 
 ### 9.2 数据扩展
 - [ ] 接入实时数据源（OP.GG、Lolalytics等）
-- [ ] 支持数据版本自动更新
-- [ ] 支持海克斯组合统计
+- [x] 支持按语言隔离的数据版本后台更新
+- [x] 支持海克斯组合统计
 
 ---
 
@@ -636,3 +638,4 @@ function findBestMatch(ocrResult, augmentNames) {
 | v0.1 | 2026-01-31 | 初版需求文档 |
 | v0.2 | 2026-01-31 | 补充图像特征检测算法、浮窗跟随卡片定位、Tesseract.js 本地OCR方案 |
 | v0.3 | 2026-05-31 | OCR 引擎改为 PaddleOCR Node 后端，移除 Tesseract/Python 兜底并加入固定样本回归测试 |
+| v0.4 | 2026-07-10 | 客户端展示数据、版本目录、打包预加载和 OCR 名称支持按语言隔离 |

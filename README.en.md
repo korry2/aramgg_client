@@ -100,7 +100,7 @@ Client data APIs, API key application, and integration notes are available on th
 
 This repository does not commit real API keys. For local configuration, copy `.env.local.example` to `.env.local`, then fill in your own `ARAMGG_DATA_API_KEY`.
 
-Client display data uses a local-first strategy. Bundled `resources/client-data/` data and runtime `data/current.json` / `data/versions/<dataVersion>/` data are used first to render champion detail views, Augment popups, and recommendation lists. The remote `/api/client/v1/config` endpoint is used only for background checks and preparing new data versions. A new data version is activated only after all required files are complete.
+Client display data uses a locale-isolated, local-first strategy. Default Chinese keeps the compatible `current.json` / `versions/<dataVersion>/` layout; English and Traditional Chinese use `current.<locale>.json` / `versions/<locale>/<dataVersion>/`. Bundled and runtime data render champion details, Augment popups, and recommendation lists before remote checks run. Background updates may activate only complete data for the same locale; non-default config and manifest responses must explicitly declare the requested locale.
 
 ## Key Documents
 
@@ -110,6 +110,7 @@ Client display data uses a local-first strategy. Bundled `resources/client-data/
 - [LCU Troubleshooting Guide](./docs/LCU_TROUBLESHOOTING.md)
 - [Auto Augment Detection User Guide](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [Client Data API Distribution Strategy](./docs/client-api-strategy.md)
+- [Localized Client Data Review](./docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md)
 - [Electron Client Update Strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite Architecture Migration Progress](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript Development Conventions](./docs/TYPESCRIPT_INTEGRATION.md)
@@ -120,6 +121,7 @@ Older implementation summaries, plans, and completion reports have been archived
 ## UI, Installation, and Runtime Data
 
 - UI copy defaults to Simplified Chinese. New UI strings should continue to include Simplified Chinese first.
+- The main window can select `zh-CN`, `en-US`, or `zh-TW` display data. A switch succeeds only when a complete, exactly matching locale dataset is available locally or from the data API.
 - The main window is shown on the right side of the primary display work area by default. The champion detail window, top Augment overlay, and right-side recommendation list are still positioned by the main process.
 - The main window's window preference controls can decide whether to close the champion detail page when entering a match, whether to show the top Augment overlay, and whether to show the right-side Augment recommendation list.
 - LCU credentials are discovered automatically from the running League Client process by default. The main window's game directory setting is an advanced fallback for reading the LCU lockfile and logs only when automatic discovery fails.
