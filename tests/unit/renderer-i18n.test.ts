@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
 import {
   DEFAULT_APP_LOCALE,
   normalizeAppLocale,
@@ -57,5 +58,20 @@ describe('renderer i18n', () => {
     expect(translate('display.appLanguage')).toBe('介面與資料語言')
     expect(formatDataSource('remote')).toBe('遠端資料')
     expect(getLocalizedText(localizedValue)).toBe('繁體說明')
+  })
+
+  it('does not keep locale loading blocked on the remote version refresh', async () => {
+    const source = await readFile(
+      new URL('../../src/renderer/components/Display.vue', import.meta.url),
+      'utf8',
+    )
+    const changeLocaleBlock = source.slice(
+      source.indexOf('const changeLocale = async'),
+      source.indexOf('const setManualPathStatus'),
+    )
+
+    expect(changeLocaleBlock).not.toContain('await loadVersionInfo()')
+    expect(source).not.toContain('cursor: wait')
+    expect(source).toContain('class="locale-loading-icon"')
   })
 })

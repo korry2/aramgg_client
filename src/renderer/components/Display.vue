@@ -53,7 +53,14 @@
                                     {{ localeOption.nativeLabel }}
                                 </option>
                             </select>
-                            <small>{{ localeLoading ? t('display.switching') : selectedLocaleLabel }}</small>
+                            <small class="locale-status" aria-live="polite">
+                                <RefreshCw
+                                    v-if="localeLoading"
+                                    class="locale-loading-icon"
+                                    aria-hidden="true"
+                                />
+                                <span>{{ localeLoading ? t('display.switching') : selectedLocaleLabel }}</span>
+                            </small>
                         </label>
                         <div class="lcu-status-card">
                             <span>{{ t('display.lcuConnection') }}</span>
@@ -487,10 +494,18 @@ const {
 } = usePostGameShare(testStatus)
 
 const loadVersionInfo = async () => {
+    const requestedLocale = activeLocale.value
     try {
         const result = await electronAPI.appInfo.getVersionInfo()
-        if (result.success) {
+        const resultLocale = result.data?.locale
+        if (result.success && (!resultLocale || resultLocale === activeLocale.value)) {
             versionInfo.value = result.data
+        } else if (result.success) {
+            console.debug('Ignored stale version info response', {
+                requestedLocale,
+                resultLocale,
+                activeLocale: activeLocale.value,
+            })
         }
     } catch (error) {
         console.warn('Failed to load version info:', error)
@@ -524,7 +539,13 @@ const changeLocale = async () => {
             selectedLocale.value = result.locale
             activeLocale.value = result.locale
         }
-        await loadVersionInfo()
+        if (versionInfo.value && result?.dataVersion) {
+            versionInfo.value = {
+                ...versionInfo.value,
+                locale: result.locale,
+                dataVersion: result.dataVersion,
+            }
+        }
         testStatus.value = {
             type: 'success',
             message: t('display.localeChanged', { locale: selectedLocaleLabel.value }),
@@ -1181,7 +1202,22 @@ onBeforeUnmount(() => {
 
 .locale-select-card select:disabled {
     color: #859491;
-    cursor: wait;
+    cursor: default;
+    opacity: 0.76;
+}
+
+.locale-status {
+    min-height: 13px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.locale-loading-icon {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
+    animation: update-spin 0.9s linear infinite;
 }
 
 .version-download {

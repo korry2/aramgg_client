@@ -35,7 +35,7 @@ Use targeted test scripts in `tests/electron/` directly when debugging a feature
 
 Use Vue single-file components for renderer UI. Keep business logic in services where possible, not inside templates. Prefer existing UI primitives in `src/renderer/components/ui/`, Tailwind utility classes, and project design tokens in `src/renderer/styles/index.css`. Add scoped CSS only when Tailwind and existing tokens are not a good fit.
 
-User-visible renderer copy must use Vue i18n messages from `src/renderer/i18n/` and include `zh-CN`, `en-US`, and `zh-TW` with identical message keys. Treat the main-window locale selector as the combined interface-and-data language setting; do not update renderer locale before `electronAPI.locale.set()` has prepared and committed the matching dataset.
+User-visible renderer copy must use Vue i18n messages from `src/renderer/i18n/` and include `zh-CN`, `en-US`, and `zh-TW` with identical message keys. Treat the main-window locale selector as the combined interface-and-data language setting; do not update renderer locale before `electronAPI.locale.set()` has prepared and committed the matching dataset. Keep post-commit version/config refreshes in the background so they do not extend locale loading or make the window appear unresponsive.
 
 Use JavaScript/TypeScript ES modules. Prefer TypeScript by default for new source files, services, utilities, IPC contracts, and tests; add `.js` only when extending an existing JavaScript module or when a dependency/tooling boundary makes TypeScript impractical. Component files use `PascalCase.vue`; services and utilities use lowercase or kebab-case names. Keep comments short and only where they clarify non-obvious behavior.
 
