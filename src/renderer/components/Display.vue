@@ -23,40 +23,48 @@
                             <span class="section-kicker">{{ t('display.runningStatus') }}</span>
                             <h2>{{ t('display.console') }}</h2>
                         </div>
-                        <label
-                            class="header-locale-control"
-                            :class="{ loading: localeLoading }"
-                            :title="t('display.appLanguage')"
+                        <Select
+                            v-model="selectedLocale"
+                            :disabled="localeLoading"
+                            @update:model-value="changeLocale"
                         >
-                            <RefreshCw
-                                v-if="localeLoading"
-                                class="locale-loading-icon"
-                                aria-hidden="true"
-                            />
-                            <Languages v-else class="header-locale-icon" aria-hidden="true" />
-                            <select
-                                v-model="selectedLocale"
+                            <SelectTrigger
+                                class="header-locale-trigger"
                                 :aria-label="t('display.appLanguage')"
-                                :disabled="localeLoading"
-                                @change="changeLocale"
+                                :title="t('display.appLanguage')"
                             >
-                                <option
+                                <RefreshCw
+                                    v-if="localeLoading"
+                                    class="locale-loading-icon"
+                                    aria-hidden="true"
+                                />
+                                <Languages v-else class="header-locale-icon" aria-hidden="true" />
+                                <SelectValue class="header-locale-value">
+                                    {{ selectedLocaleLabel }}
+                                </SelectValue>
+                                <span class="locale-live-status" aria-live="polite">
+                                    {{ localeLoading ? t('display.switching') : selectedLocaleLabel }}
+                                </span>
+                            </SelectTrigger>
+                            <SelectContent
+                                align="end"
+                                :side-offset="6"
+                                class="locale-select-content"
+                            >
+                                <SelectItem
                                     v-for="localeOption in supportedLocales"
                                     :key="localeOption.code"
                                     :value="localeOption.code"
+                                    :text-value="localeOption.nativeLabel"
+                                    class="locale-select-item"
                                 >
-                                    {{ localeOption.nativeLabel }}
-                                </option>
-                            </select>
-                            <ChevronDown
-                                v-if="!localeLoading"
-                                class="header-locale-chevron"
-                                aria-hidden="true"
-                            />
-                            <span class="locale-live-status" aria-live="polite">
-                                {{ localeLoading ? t('display.switching') : selectedLocaleLabel }}
-                            </span>
-                        </label>
+                                    <span class="locale-option-copy">
+                                        <span>{{ localeOption.nativeLabel }}</span>
+                                        <small>{{ localeOption.code }}</small>
+                                    </span>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                     <div class="status-grid">
                         <div>
@@ -373,12 +381,18 @@ import ItemSetInstaller from './ItemSetInstaller.vue'
 import OverlayPreferences from './OverlayPreferences.vue'
 import ChampionMonitor from './ChampionMonitor.vue'
 import PostGameShareModal from './PostGameShareModal.vue'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from './ui/select/index.js'
 import { useAppUpdate } from '../composables/use-app-update.ts'
 import { usePostGameShare } from '../composables/use-post-game-share.ts'
 import { electronAPI } from '../native/electron-api.js'
 import { useI18n } from 'vue-i18n'
 import {
-    ChevronDown,
     ChevronRight,
     ClipboardList,
     Cpu,
@@ -536,8 +550,13 @@ const loadLocale = async () => {
     }
 }
 
-const changeLocale = async () => {
-    const requestedLocale = selectedLocale.value
+const changeLocale = async (requestedLocale = selectedLocale.value) => {
+    if (!requestedLocale || requestedLocale === activeLocale.value || localeLoading.value) {
+        selectedLocale.value = activeLocale.value
+        return
+    }
+
+    selectedLocale.value = requestedLocale
     localeLoading.value = true
     try {
         const result = await electronAPI.locale.set(requestedLocale)
@@ -1120,72 +1139,80 @@ onBeforeUnmount(() => {
     letter-spacing: 0;
 }
 
-.header-locale-control {
-    width: 124px;
-    height: 32px;
+.header-locale-trigger {
+    width: 132px;
+    height: 40px;
     position: relative;
-    display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) 12px;
-    align-items: center;
     flex: 0 0 auto;
-    gap: 6px;
-    padding: 0 8px;
-    color: var(--lol-primary-2);
-    background: rgba(194, 156, 109, 0.1);
-    border: 1px solid rgba(194, 156, 109, 0.22);
-    border-radius: 4px;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: rgba(7, 18, 27, 0.78) !important;
+    border-color: rgba(226, 192, 143, 0.22) !important;
+    box-shadow:
+        0 8px 18px rgba(0, 0, 0, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    color: #e2c08f !important;
     cursor: pointer;
+    font-size: 12px;
+    font-weight: 850;
+    transition-property: background-color, border-color, box-shadow, scale;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.header-locale-control:hover {
-    border-color: rgba(226, 192, 143, 0.42);
-    background: rgba(194, 156, 109, 0.16);
+.header-locale-trigger:hover {
+    background: rgba(194, 156, 109, 0.13) !important;
+    border-color: rgba(226, 192, 143, 0.42) !important;
 }
 
-.header-locale-control:focus-within {
-    border-color: rgba(226, 192, 143, 0.58);
-    box-shadow: 0 0 0 2px rgba(194, 156, 109, 0.12);
+.header-locale-trigger:focus-visible,
+.header-locale-trigger[data-state='open'] {
+    background: rgba(194, 156, 109, 0.15) !important;
+    border-color: rgba(226, 192, 143, 0.58) !important;
+    box-shadow:
+        0 0 0 2px rgba(194, 156, 109, 0.12),
+        0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
-.header-locale-control.loading {
+.header-locale-trigger:active:not(:disabled) {
+    scale: 0.96;
+}
+
+.header-locale-trigger:disabled {
     cursor: default;
-    opacity: 0.76;
+    opacity: 0.72;
 }
 
-.header-locale-control select {
-    width: 100%;
+.header-locale-value {
     min-width: 0;
-    height: 100%;
-    padding: 0;
-    appearance: none;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: #e2c08f;
-    cursor: inherit;
-    font-size: 11px;
-    font-weight: 900;
+    flex: 1;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.header-locale-control select:disabled {
+.header-locale-trigger :deep(.select-trigger-chevron) {
+    margin-left: auto;
     color: #859491;
-}
-
-.header-locale-control option {
-    background: #111d26;
-    color: #e2c08f;
+    transition-property: transform, color;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 .header-locale-icon,
-.header-locale-chevron,
 .locale-loading-icon {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
     pointer-events: none;
 }
 
-.header-locale-chevron {
-    color: #859491;
+.header-locale-trigger[data-state='open'] :deep(.select-trigger-chevron) {
+    color: #e2c08f;
+    transform: rotate(180deg);
 }
 
 .locale-loading-icon {
@@ -1200,6 +1227,58 @@ onBeforeUnmount(() => {
     clip: rect(0, 0, 0, 0);
     clip-path: inset(50%);
     white-space: nowrap;
+}
+
+:global(.locale-select-content) {
+    min-width: 148px !important;
+    padding: 0;
+    border-color: rgba(226, 192, 143, 0.2) !important;
+    border-radius: 8px !important;
+    background: rgba(10, 22, 31, 0.98) !important;
+    box-shadow:
+        0 18px 40px rgba(0, 0, 0, 0.42),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:global(.locale-select-item) {
+    min-height: 40px;
+    padding: 6px 30px 6px 9px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition-property: background-color, color;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:global(.locale-select-item[data-highlighted]) {
+    background: rgba(194, 156, 109, 0.13) !important;
+    color: #f4ecdc !important;
+}
+
+:global(.locale-select-item[data-state='checked']) {
+    color: #e2c08f !important;
+}
+
+.locale-option-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.2;
+}
+
+.locale-option-copy > span {
+    color: inherit;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.locale-option-copy small {
+    color: #6f817e;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
 }
 
 .status-grid {
