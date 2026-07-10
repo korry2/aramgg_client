@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * 日志模块 - 提供文件日志记录功能
  * 日志存储位置: 应用数据目录/logs/
@@ -13,45 +12,50 @@ const LOG_LEVELS = {
     INFO: 1,
     WARN: 2,
     ERROR: 3
-}
+} as const
+type LogLevel = keyof typeof LOG_LEVELS
 
 // 当前日志级别（可通过环境变量设置）
-const currentLevel = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase()] ?? LOG_LEVELS.INFO
+const requestedLogLevel = process.env.LOG_LEVEL?.toUpperCase()
+const currentLevel = requestedLogLevel && requestedLogLevel in LOG_LEVELS
+    ? LOG_LEVELS[requestedLogLevel as LogLevel]
+    : LOG_LEVELS.INFO
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000
 const FILE_WRITE_ERROR_LOG_INTERVAL_MS = 30000
 let lastFileWriteErrorAt = 0
 let lastFileWriteErrorKey = ''
 
-const toBeijingISOString = (date = new Date()) => {
+const toBeijingISOString = (date: Date = new Date()): string => {
     const beijingDate = new Date(date.getTime() + BEIJING_OFFSET_MS)
     return beijingDate.toISOString().replace('Z', '+08:00')
 }
 
 // 日志目录
-const getLogDir = () => {
+const getLogDir = (): string => {
     const logDir = resolveLogDir()
     fs.ensureDirSync(logDir)
     return logDir
 }
 
 // 获取日志文件名（按日期）
-const getLogFileName = () => {
+const getLogFileName = (): string => {
     const dateStr = toBeijingISOString().split('T')[0] // YYYY-MM-DD
     return `app-${dateStr}.log`
 }
 
 // 获取日志文件路径
-const getLogFilePath = () => {
+const getLogFilePath = (): string => {
     return path.join(getLogDir(), getLogFileName())
 }
 
-const formatArg = (arg) => {
+const formatArg = (arg: unknown): string => {
     if (arg instanceof Error) {
+        const errorWithCode = arg as Error & { code?: unknown }
         return JSON.stringify({
             name: arg.name,
             message: arg.message,
             stack: arg.stack,
-            code: arg.code,
+            code: errorWithCode.code,
         })
     }
 
@@ -67,12 +71,12 @@ const formatArg = (arg) => {
 }
 
 // 格式化日志消息
-const formatLogMessage = (level, message, ...args) => {
+const formatLogMessage = (level: LogLevel, message: unknown, ...args: unknown[]): string => {
     const timestamp = toBeijingISOString()
     const levelStr = level.padEnd(5)
     
     // 处理消息和参数
-    let msg = message
+    let msg = String(message)
     if (args.length > 0) {
         msg += ' ' + args.map(formatArg).join(' ')
     }
@@ -81,13 +85,19 @@ const formatLogMessage = (level, message, ...args) => {
 }
 
 // 写入日志到文件
-const writeToFile = async (logMessage, resolveFilePath = getLogFilePath) => {
+const writeToFile = async (
+    logMessage: string,
+    resolveFilePath: () => string = getLogFilePath
+): Promise<void> => {
     try {
         const logFile = resolveFilePath()
         await fs.appendFile(logFile, logMessage + '\n', { encoding: 'utf8' })
     } catch (error) {
         const now = Date.now()
-        const errorKey = `${resolveFilePath.name}:${error.code || error.name}:${error.message}`
+        const normalizedError = (
+            error instanceof Error ? error : new Error(String(error))
+        ) as Error & { code?: unknown }
+        const errorKey = `${resolveFilePath.name}:${normalizedError.code || normalizedError.name}:${normalizedError.message}`
         if (errorKey !== lastFileWriteErrorKey || now - lastFileWriteErrorAt > FILE_WRITE_ERROR_LOG_INTERVAL_MS) {
             lastFileWriteErrorAt = now
             lastFileWriteErrorKey = errorKey
@@ -97,7 +107,12 @@ const writeToFile = async (logMessage, resolveFilePath = getLogFilePath) => {
 }
 
 // 同时输出到控制台和文件
-const logWithLevel = (level, levelValue, message, ...args) => {
+const logWithLevel = (
+    level: LogLevel,
+    levelValue: number,
+    message: unknown,
+    ...args: unknown[]
+): void => {
     if (levelValue < currentLevel) return
     
     const formattedMessage = formatLogMessage(level, message, ...args)
@@ -117,10 +132,10 @@ const logWithLevel = (level, levelValue, message, ...args) => {
 
 // 导出日志方法
 export const logger = {
-    debug: (message, ...args) => logWithLevel('DEBUG', LOG_LEVELS.DEBUG, message, ...args),
-    info: (message, ...args) => logWithLevel('INFO', LOG_LEVELS.INFO, message, ...args),
-    warn: (message, ...args) => logWithLevel('WARN', LOG_LEVELS.WARN, message, ...args),
-    error: (message, ...args) => logWithLevel('ERROR', LOG_LEVELS.ERROR, message, ...args),
+    debug: (message: unknown, ...args: unknown[]) => logWithLevel('DEBUG', LOG_LEVELS.DEBUG, message, ...args),
+    info: (message: unknown, ...args: unknown[]) => logWithLevel('INFO', LOG_LEVELS.INFO, message, ...args),
+    warn: (message: unknown, ...args: unknown[]) => logWithLevel('WARN', LOG_LEVELS.WARN, message, ...args),
+    error: (message: unknown, ...args: unknown[]) => logWithLevel('ERROR', LOG_LEVELS.ERROR, message, ...args),
     
     // 获取日志目录路径
     getLogDir,
@@ -132,7 +147,7 @@ export const logger = {
     toBeijingISOString,
     
     // 清理旧日志文件（保留最近N天）
-    cleanupOldLogs: async (keepDays = 7) => {
+    cleanupOldLogs: async (keepDays: number = 7): Promise<void> => {
         try {
             const logDir = getLogDir()
             const files = await fs.readdir(logDir)

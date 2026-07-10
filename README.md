@@ -85,6 +85,8 @@ npm run release:push
 
 自动更新 feed 目录需要包含 `latest.yml`、`aramgg_client Setup <version>.exe` 和对应 `.exe.blockmap`。当前优先更新 `latestVersion`、`downloadUrl` 和更新日志，让旧客户端走手动下载；等自动更新链路验证完整后再开启 `autoUpdateEnabled`。
 
+远端配置不能自行扩展更新信任根。启用自动更新前，必须在 `src/main/app-update-service.ts` 中写入确认后的 HTTPS feed origin 和 Windows 证书发布者 CN，并发布经过 Authenticode 签名的安装包。开发环境只有同时启用 `ARAMGG_ALLOW_DEV_UPDATE_CHECK`，才会读取 `ARAMGG_UPDATE_ALLOWED_ORIGINS` 和 `ARAMGG_UPDATE_PUBLISHER_NAMES` 进行本地链路测试。
+
 示例：当前 `0.1.0` 执行 `npm run release:patch` 会生成 `0.1.1` 的版本提交和 `v0.1.1` tag；推送后 GitHub Actions 会校验 tag 必须等于 `package.json` 版本，校验通过才发布 Release。
 
 不要手动创建轻量 tag 代替发布脚本。需要清理错误发布时，先确认要删除的本地和远端 tag，再按同一版本号重建 annotated tag。
@@ -102,6 +104,8 @@ npm run release:push
 
 本仓库不提交真实 API Key。需要本地配置时，复制 `.env.local.example` 为 `.env.local`，再填入自己的 `ARAMGG_DATA_API_KEY`。
 
+客户端数据的 manifest 路径和资源 URL 会经过统一安全校验。`ARAMGG_DATA_ALLOWED_ORIGINS` 只用于显式补充可信数据源，多个 origin 用逗号分隔；生产源必须使用 HTTPS，只有本地开发的 localhost 可使用 HTTP。
+
 客户端展示数据采用按语言隔离的本地优先策略：默认中文继续使用 `current.json` / `versions/<dataVersion>/`，英文和繁中使用 `current.<locale>.json` / `versions/<locale>/<dataVersion>/`。打包内置和运行时完整数据会先用于英雄详情、海克斯弹窗和推荐列表渲染；远端配置只用于后台检查和准备同语言新版本，必需文件完整后才切换。
 
 ## 关键文档
@@ -113,6 +117,7 @@ npm run release:push
 - [自动海克斯检测使用指南](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [客户端数据 API 分发策略](./docs/client-api-strategy.md)
 - [客户端多语言数据支持专项审查](./docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md)
+- [全项目代码审查与整改状态](./docs/CODE_REVIEW_2026-07-10.md)
 - [Electron 客户端版本更新方案](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite 架构整改进度](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript 开发约定](./docs/TYPESCRIPT_INTEGRATION.md)

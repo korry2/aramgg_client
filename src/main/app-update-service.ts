@@ -4,6 +4,11 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 import { loadDataApiConfig } from './data-loader.ts'
 import logger from './modules/logger.ts'
 import { allowMainWindowClose } from './modules/window-manager.ts'
+import {
+  normalizeTrustedUpdateFeedUrl,
+  parseTrustedPublisherNames,
+  parseTrustedUpdateOrigins,
+} from './security/update-trust.ts'
 
 const { autoUpdater, CancellationToken } = electronUpdater
 type UpdateCancellationToken = InstanceType<typeof CancellationToken>
@@ -71,6 +76,25 @@ const AUTO_UPDATE_ENV_VALUE = String(process.env.ARAMGG_ENABLE_AUTO_UPDATE || ''
 const AUTO_UPDATE_ENV_CONFIGURED = AUTO_UPDATE_ENV_VALUE.length > 0
 const AUTO_UPDATE_ENV_ENABLED = /^(1|true|yes)$/i.test(AUTO_UPDATE_ENV_VALUE)
 const UPDATE_DOWNLOAD_BLOCKED_PHASES = new Set(['GameStart', 'InProgress'])
+
+// Keep these lists empty until the production feed and Windows certificate are
+// finalized. Remote config cannot extend either trust root.
+const BUILTIN_TRUSTED_UPDATE_ORIGINS: readonly string[] = []
+const BUILTIN_TRUSTED_UPDATE_PUBLISHERS: readonly string[] = []
+const DEV_TRUSTED_UPDATE_ORIGINS = DEV_UPDATE_CHECK_ENABLED
+  ? String(process.env.ARAMGG_UPDATE_ALLOWED_ORIGINS || '').split(',')
+  : []
+const DEV_TRUSTED_UPDATE_PUBLISHERS = DEV_UPDATE_CHECK_ENABLED
+  ? String(process.env.ARAMGG_UPDATE_PUBLISHER_NAMES || '').split(',')
+  : []
+const TRUSTED_UPDATE_ORIGINS = parseTrustedUpdateOrigins(
+  [...BUILTIN_TRUSTED_UPDATE_ORIGINS, ...DEV_TRUSTED_UPDATE_ORIGINS],
+  DEV_UPDATE_CHECK_ENABLED
+)
+const TRUSTED_UPDATE_PUBLISHERS = parseTrustedPublisherNames([
+  ...BUILTIN_TRUSTED_UPDATE_PUBLISHERS,
+  ...DEV_TRUSTED_UPDATE_PUBLISHERS,
+])
 
 let initialized = false
 let isDevRuntime = false
@@ -172,37 +196,32 @@ function isRuntimeUpdateAllowed(): boolean {
   return app.isPackaged || DEV_UPDATE_CHECK_ENABLED
 }
 
-function isLocalhost(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+function normalizeFeedUrl(value: unknown): string {
+  return normalizeTrustedUpdateFeedUrl(
+    value,
+    TRUSTED_UPDATE_ORIGINS,
+    DEV_UPDATE_CHECK_ENABLED
+  )
 }
 
-function normalizeFeedUrl(value: unknown): string {
-  if (typeof value !== 'string') {
-    return ''
+function configureUpdateSignatureVerification(): void {
+  if (TRUSTED_UPDATE_PUBLISHERS.length === 0) {
+    throw new Error('自动更新未配置受信任的 Windows 发布者名称')
   }
 
-  const rawUrl = value.trim()
-  if (!rawUrl) {
-    return ''
+  const updater = autoUpdater as typeof autoUpdater & {
+    verifyUpdateCodeSignature?: (
+      publisherNames: string[],
+      filePath: string
+    ) => Promise<string | null>
+  }
+  const defaultVerifier = updater.verifyUpdateCodeSignature?.bind(updater)
+  if (!defaultVerifier) {
+    throw new Error('当前平台不支持 Windows 更新签名校验')
   }
 
-  const url = new URL(rawUrl)
-  if (url.protocol !== 'https:') {
-    const isAllowedDevHttp = DEV_UPDATE_CHECK_ENABLED && url.protocol === 'http:' && isLocalhost(url.hostname)
-    if (!isAllowedDevHttp) {
-      throw new Error('自动更新源必须使用 HTTPS')
-    }
-  }
-
-  if (/\/latest\.ya?ml$/i.test(url.pathname)) {
-    url.pathname = url.pathname.replace(/\/latest\.ya?ml$/i, '/')
-  } else if (!url.pathname.endsWith('/')) {
-    url.pathname = `${url.pathname}/`
-  }
-
-  url.search = ''
-  url.hash = ''
-  return url.toString()
+  updater.verifyUpdateCodeSignature = (_publisherNames, filePath) =>
+    defaultVerifier(TRUSTED_UPDATE_PUBLISHERS, filePath)
 }
 
 function getClientConfig(config: any): any {
@@ -614,6 +633,7 @@ export async function refreshAppUpdateConfig(options: RefreshOptions = {}): Prom
 
   let feedUrl = ''
   try {
+    configureUpdateSignatureVerification()
     feedUrl = normalizeFeedUrl(getUpdateFeedCandidate(config))
   } catch (error) {
     const message = getErrorMessage(error)

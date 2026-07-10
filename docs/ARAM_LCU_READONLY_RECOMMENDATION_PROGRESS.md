@@ -28,7 +28,7 @@
 
 - 主进程 LCU 服务：[src/main/services/lcu/lcu-service.ts](../src/main/services/lcu/lcu-service.ts)
 - LCU IPC handlers：[src/main/services/lcu/ipc-handlers.ts](../src/main/services/lcu/ipc-handlers.ts)
-- 渲染进程 LCU 代理：[src/renderer/services/lcu/lcu-client.ts](../src/renderer/services/lcu/lcu-client.ts)
+- 渲染进程 Electron API 代理：[src/renderer/native/electron-api.js](../src/renderer/native/electron-api.js)
 - 游戏流程编排：[src/main/modules/app-config.ts](../src/main/modules/app-config.ts)
 - 游戏会话纯状态机：[src/main/services/game-session/game-session-machine.ts](../src/main/services/game-session/game-session-machine.ts)
 - 自动截图服务：[src/main/auto-screenshot-service.ts](../src/main/auto-screenshot-service.ts)
@@ -64,7 +64,7 @@
 - [x] 在主进程增加轻量状态快照，包含 `gameflowPhase`、`champSelectSession`、`localPlayerCellId`、`selfChampionId`、`benchEnabled`、`benchChampions`、`myTeam`、`actions`、`timer`。
 - [x] 复用现有 `LCUService.getCurrentSession()` 和 `getGameflowPhase()` 完成第一版轮询同步。
 - [x] 增加 IPC 查询当前只读快照，例如 `lcu-get-champ-select-snapshot`。
-- [x] 在 preload 和 renderer LCU client 中补齐对应只读 API。
+- [x] 在 preload 和 renderer Electron API 代理中补齐对应只读 API。
 
 完成标准：
 
@@ -187,7 +187,7 @@
 - [x] 对照本项目现有 LCU、浮窗和截图服务能力。
 - [x] 形成只读推荐方案。
 - [x] 新增本进度追踪文档。
-- [x] 新增主进程只读选人快照、IPC、preload 与 renderer LCU client API。
+- [x] 新增主进程只读选人快照、IPC、preload 与 renderer Electron API 代理。
 - [x] 新增纯逻辑大乱斗 bench 推荐模块和 `tests/electron/test-aram-bench-recommendation.js`。
 - [x] 主界面接入 `AramBenchRecommendation.vue`，只展示建议和刷新入口。
 - [x] `get-champion-id` 改为复用只读快照，减少 session 解析重复逻辑。

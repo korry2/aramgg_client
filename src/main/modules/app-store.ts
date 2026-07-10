@@ -1,4 +1,3 @@
-// @ts-nocheck
 import Store from 'electron-store'
 import { getConfigDir } from './app-paths.ts'
 

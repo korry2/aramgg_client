@@ -5,7 +5,6 @@
  * 迁移自 electron/modules/ipc-handlers.ts
  */
 
-import { ipcMain } from 'electron'
 import logger from '../../modules/logger.ts'
 import store from '../../modules/app-store.ts'
 import { getLCUServiceInstance } from './lcu-service.ts'
@@ -15,6 +14,7 @@ import {
   createEmptyAramBenchRecommendation,
   getAramBenchRecommendation,
 } from '../aram/bench-recommendation.ts'
+import { trustedIpcMain as ipcMain } from '../../security/trusted-ipc.ts'
 
 const LCU_READ_TIMEOUT_MS = 8 * 1000
 let lastAramBenchRecommendationLogSignature = ''

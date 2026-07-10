@@ -3,17 +3,6 @@ import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
-// Plugin to handle Node.js built-in modules
-const nodeBuiltinsPlugin = () => ({
-  name: 'node-builtins',
-  resolveId(id) {
-    const builtins = ['fs', 'path', 'os', 'crypto', 'stream', 'util', 'events', 'buffer']
-    if (builtins.includes(id)) {
-      return { id, external: true }
-    }
-  }
-})
-
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -87,10 +76,6 @@ export default defineConfig({
       // 添加 TypeScript 支持
       extensions: ['.ts', '.js', '.mjs', '.vue', '.json']
     },
-    optimizeDeps: {
-      include: ['cheerio'],
-      exclude: ['electron', 'electron-store', 'electron-log', 'fs-extra']
-    },
-    plugins: [vue(), tailwindcss(), nodeBuiltinsPlugin()]
+    plugins: [vue(), tailwindcss()]
   }
 })

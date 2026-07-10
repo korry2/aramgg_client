@@ -1,4 +1,3 @@
-import { ipcMain } from 'electron'
 import type { AppStoreKey, SupportedDataLocale } from '../../shared/ipc-contract.ts'
 import {
   DEFAULT_DATA_LOCALE,
@@ -12,6 +11,7 @@ import { changeDataLocale } from '../modules/data-locale-controller.ts'
 import store from '../modules/app-store.ts'
 import logger from '../modules/logger.ts'
 import { notifyAllWindows } from '../modules/window-manager.ts'
+import { trustedIpcMain as ipcMain } from '../security/trusted-ipc.ts'
 
 const APP_LOCALE_KEY = 'app.locale'
 const RENDERER_STORE_KEYS = new Set<AppStoreKey>([

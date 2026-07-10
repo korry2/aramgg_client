@@ -104,13 +104,19 @@ GitHub Release v0.2.0/
 
 `autoUpdateEnabled` 是自动下载/安装总开关，默认保持 `false`。`updateFeedUrl` 指向目录，不是单个安装包；只有开关为 `true` 时客户端才会使用该目录。该目录需要能直接读取 `latest.yml`、安装包 `.exe` 和 `.blockmap`。如果误配置到 `latest.yml`，客户端会归一化到所在目录。
 
+远端配置只负责提供候选 feed，不能扩展本地信任根。生产启用前必须在 `src/main/app-update-service.ts` 中写入固定的 feed origin 和签名证书发布者 CN；任一列表为空时，客户端都会拒绝配置自动更新。开发环境可以在 `ARAMGG_ALLOW_DEV_UPDATE_CHECK=1` 时，通过 `ARAMGG_UPDATE_ALLOWED_ORIGINS` 和 `ARAMGG_UPDATE_PUBLISHER_NAMES` 测试本地 feed。
+
 本地开发和 CI 也可以用环境变量覆盖：
 
 ```text
 ARAMGG_ENABLE_AUTO_UPDATE=true
 ARAMGG_UPDATE_FEED_URL=https://example.com/releases/windows
 ARAMGG_ALLOW_DEV_UPDATE_CHECK=1
+ARAMGG_UPDATE_ALLOWED_ORIGINS=https://example.com
+ARAMGG_UPDATE_PUBLISHER_NAMES=Example Publisher CN
 ```
+
+后三项只用于开发链路测试；未启用 `ARAMGG_ALLOW_DEV_UPDATE_CHECK` 时，客户端不会读取环境变量中的额外 origin 或 publisher。生产信任根必须写入源码并随签名客户端发布。
 
 默认行为：
 
@@ -160,7 +166,7 @@ Electron 的页面更新属于应用本体更新的一部分：
 - 不在仓库或安装包内放上传凭证、CDN 写入 token 或管理员 token。
 - Renderer 不直接访问 `electron-updater`。
 - `contextIsolation`、`sandbox`、`webSecurity` 保持开启。
-- 后续正式发布前应补代码签名；未签名安装包在 Windows 上会有信任提示。
+- 正式启用自动更新前必须完成 Authenticode 代码签名，并把证书发布者 CN 固定到本地信任根；当前安装包状态为 `NotSigned`。
 - 更新包 hash 由 `latest.yml` 校验，发布端不能被未授权写入。
 
 ## 测试清单
@@ -178,6 +184,7 @@ Electron 的页面更新属于应用本体更新的一部分：
 9. 验证网络失败、`latest.yml` 异常、hash 不匹配时的错误提示。
 10. 验证开发模式默认不会误触发更新。
 11. 验证 renderer 页面变更能随应用更新生效。
+12. 验证非白名单 feed origin、错误发布者、未签名和签名不匹配的安装包均被拒绝。
 
 ## 待定问题
 

@@ -13,6 +13,7 @@ import {
     toggleMainWindow,
     getAugmentSidePanelWindow,
     getFloatingWindow,
+    getMainWindow,
     getPopupWindow,
     raiseOverlayWindow,
     setPopupWindowAlwaysOnTop,

@@ -1,27 +1,49 @@
-// @ts-nocheck
-import logger from './logger.ts';
-import { BrowserWindow, screen, app } from 'electron'
+import logger from './logger.ts'
+import {
+    BrowserWindow,
+    screen,
+    app,
+    type Event,
+    type Rectangle,
+    type WebPreferences,
+} from 'electron'
 import { createServer } from 'http'
 import { createReadStream, existsSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import {
+    isTrustedRendererUrl,
+    registerTrustedRendererOrigin,
+} from '../security/renderer-origin.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const RENDERER_CONTENT_SECURITY_POLICY = [
+    "default-src 'self'",
+    "script-src 'self' https://www.googletagmanager.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws://localhost:* ws://127.0.0.1:* https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://*.googleapis.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+].join('; ')
 
-let mainWindow = null
-let popupWindow = null
-let floatingWindow = null
-let augmentSidePanelWindow = null
+let mainWindow: BrowserWindow | null = null
+let popupWindow: BrowserWindow | null = null
+let floatingWindow: BrowserWindow | null = null
+let augmentSidePanelWindow: BrowserWindow | null = null
 let mainWindowCloseAllowed = false
-let rendererServerPromise = null
+let rendererServerPromise: Promise<string> | null = null
 
 const MAIN_WINDOW_SIZE = { width: 380, height: 620 }
 const POPUP_WINDOW_SIZE = { width: 360, height: 640 }
 const FLOATING_WINDOW_SIZE = { width: 760, height: 170 }
 const AUGMENT_SIDE_PANEL_WINDOW_SIZE = { width: 360, height: 640 }
 const OVERLAY_ALWAYS_ON_TOP_LEVEL = process.platform === 'win32' ? 'screen-saver' : 'floating'
-const MIME_TYPES = {
+const MIME_TYPES: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -36,7 +58,7 @@ const MIME_TYPES = {
     '.woff2': 'font/woff2',
 }
 
-function getMainWindowBounds() {
+function getMainWindowBounds(): Rectangle {
     const display = screen.getPrimaryDisplay()
     const area = display.workArea || display.bounds
     const width = Math.min(MAIN_WINDOW_SIZE.width, area.width)
@@ -60,7 +82,7 @@ function getDisplayForMainWindow() {
     return screen.getPrimaryDisplay()
 }
 
-function getPopupBounds() {
+function getPopupBounds(): Rectangle {
     const display = getDisplayForMainWindow()
     const area = display.workArea || display.bounds
     const width = Math.min(POPUP_WINDOW_SIZE.width, area.width)
@@ -75,7 +97,7 @@ function getPopupBounds() {
     }
 }
 
-function getFloatingBounds() {
+function getFloatingBounds(): Rectangle {
     const display = screen.getPrimaryDisplay()
     const area = display.workArea || display.bounds
     const width = Math.min(FLOATING_WINDOW_SIZE.width, area.width)
@@ -89,7 +111,7 @@ function getFloatingBounds() {
     }
 }
 
-function getAugmentSidePanelBounds() {
+function getAugmentSidePanelBounds(): Rectangle {
     const display = screen.getPrimaryDisplay()
     const area = display.workArea || display.bounds
     const width = Math.min(AUGMENT_SIDE_PANEL_WINDOW_SIZE.width, area.width)
@@ -130,13 +152,17 @@ export function applyAugmentSidePanelWindowLayout() {
     }
 }
 
-export function setPopupWindowAlwaysOnTop(alwaysOnTop) {
+export function setPopupWindowAlwaysOnTop(alwaysOnTop: boolean): void {
     if (popupWindow && !popupWindow.isDestroyed()) {
         setOverlayAlwaysOnTop(popupWindow, Boolean(alwaysOnTop), 'popup')
     }
 }
 
-function setOverlayAlwaysOnTop(window, alwaysOnTop = true, name = 'overlay') {
+function setOverlayAlwaysOnTop(
+    window: BrowserWindow | null,
+    alwaysOnTop: boolean = true,
+    name: string = 'overlay'
+): void {
     if (!window || window.isDestroyed()) {
         return
     }
@@ -144,12 +170,18 @@ function setOverlayAlwaysOnTop(window, alwaysOnTop = true, name = 'overlay') {
     try {
         window.setAlwaysOnTop(Boolean(alwaysOnTop), OVERLAY_ALWAYS_ON_TOP_LEVEL)
     } catch (error) {
-        logger.debug(`[window:${name}] failed to apply high always-on-top level:`, error.message)
+        logger.debug(
+            `[window:${name}] failed to apply high always-on-top level:`,
+            error instanceof Error ? error.message : String(error)
+        )
         window.setAlwaysOnTop(Boolean(alwaysOnTop))
     }
 }
 
-export function raiseOverlayWindow(window, name = 'overlay') {
+export function raiseOverlayWindow(
+    window: BrowserWindow | null,
+    name: string = 'overlay'
+): void {
     if (!window || window.isDestroyed()) {
         return
     }
@@ -174,7 +206,7 @@ export function raiseOverlayWindow(window, name = 'overlay') {
 /**
  * 获取正确的 preload 脚本路径
  */
-function getPreloadPath(isDev) {
+function getPreloadPath(isDev: boolean): string {
     // 使用 app.getAppPath() 获取应用根目录
     const appPath = app.getAppPath()
 
@@ -187,15 +219,15 @@ function getPreloadPath(isDev) {
     }
 }
 
-function getRendererIndexPath() {
+function getRendererIndexPath(): string {
     return path.join(__dirname, '../dist/index.html')
 }
 
-function getRendererDistPath() {
+function getRendererDistPath(): string {
     return path.dirname(getRendererIndexPath())
 }
 
-function resolveRendererAssetPath(requestUrl) {
+function resolveRendererAssetPath(requestUrl: string): string | null {
     const url = new URL(requestUrl, 'http://127.0.0.1')
     const requestedPath = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html'
     const rendererDistPath = path.resolve(getRendererDistPath())
@@ -206,16 +238,16 @@ function resolveRendererAssetPath(requestUrl) {
     return isInsideRendererDist ? filePath : null
 }
 
-function getMimeType(filePath) {
+function getMimeType(filePath: string): string {
     return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream'
 }
 
-function startRendererServer() {
+function startRendererServer(): Promise<string> {
     if (rendererServerPromise) {
         return rendererServerPromise
     }
 
-    rendererServerPromise = new Promise((resolve, reject) => {
+    rendererServerPromise = new Promise<string>((resolve, reject) => {
         const server = createServer((request, response) => {
             const filePath = resolveRendererAssetPath(request.url || '/index.html')
             if (!filePath || !existsSync(filePath)) {
@@ -229,6 +261,7 @@ function startRendererServer() {
                 response.writeHead(200, {
                     'content-type': getMimeType(filePath),
                     'cache-control': 'no-store',
+                    'content-security-policy': RENDERER_CONTENT_SECURITY_POLICY,
                 })
                 stream.pipe(response)
             })
@@ -265,7 +298,7 @@ function startRendererServer() {
     return rendererServerPromise
 }
 
-async function getRendererBaseUrl(isDev, devServerUrl) {
+async function getRendererBaseUrl(isDev: boolean, devServerUrl: string): Promise<string> {
     if (isDev) {
         return devServerUrl
     }
@@ -273,12 +306,43 @@ async function getRendererBaseUrl(isDev, devServerUrl) {
     return startRendererServer()
 }
 
-async function loadRendererUrl(window, route, isDev, devServerUrl) {
+async function loadRendererUrl(
+    window: BrowserWindow,
+    route: string,
+    isDev: boolean,
+    devServerUrl: string
+): Promise<void> {
     const baseUrl = await getRendererBaseUrl(isDev, devServerUrl)
+    registerTrustedRendererOrigin(baseUrl)
+    attachRendererNavigationGuards(window)
     await window.loadURL(`${baseUrl}/#${route}`)
 }
 
-function getRendererLogUrl(isDev, devServerUrl) {
+function attachRendererNavigationGuards(window: BrowserWindow): void {
+    const rejectUntrustedNavigation = (event: Event, targetUrl: string) => {
+        if (isTrustedRendererUrl(targetUrl)) {
+            return
+        }
+
+        event.preventDefault()
+        logger.warn('[window] blocked untrusted renderer navigation', {
+            currentUrl: window.webContents.getURL(),
+            targetUrl,
+        })
+    }
+
+    window.webContents.on('will-navigate', rejectUntrustedNavigation)
+    window.webContents.on('will-redirect', rejectUntrustedNavigation)
+    window.webContents.setWindowOpenHandler(({ url }) => {
+        logger.warn('[window] blocked renderer window.open', {
+            currentUrl: window.webContents.getURL(),
+            targetUrl: url,
+        })
+        return { action: 'deny' }
+    })
+}
+
+function getRendererLogUrl(isDev: boolean, devServerUrl: string): string {
     if (isDev) {
         return devServerUrl
     }
@@ -286,7 +350,7 @@ function getRendererLogUrl(isDev, devServerUrl) {
     return 'http://127.0.0.1:<dynamic>'
 }
 
-function getRendererLogPath(isDev) {
+function getRendererLogPath(isDev: boolean): string | undefined {
     if (isDev) {
         return undefined
     }
@@ -294,7 +358,7 @@ function getRendererLogPath(isDev) {
     return getRendererIndexPath()
 }
 
-function getRendererLogPathExists(isDev) {
+function getRendererLogPathExists(isDev: boolean): boolean | undefined {
     if (isDev) {
         return undefined
     }
@@ -302,7 +366,7 @@ function getRendererLogPathExists(isDev) {
     return existsSync(getRendererIndexPath())
 }
 
-function getRendererLogInfo(isDev, devServerUrl) {
+function getRendererLogInfo(isDev: boolean, devServerUrl: string) {
     return {
         rendererBaseUrl: getRendererLogUrl(isDev, devServerUrl),
         rendererIndexPath: getRendererLogPath(isDev),
@@ -310,7 +374,7 @@ function getRendererLogInfo(isDev, devServerUrl) {
     }
 }
 
-function attachWindowDiagnostics(name, window) {
+function attachWindowDiagnostics(name: string, window: BrowserWindow): void {
     const { webContents } = window
 
     webContents.on('did-finish-load', () => {
@@ -360,7 +424,14 @@ function attachWindowDiagnostics(name, window) {
     })
 }
 
-async function loadRendererRoute(window, name, isDev, devServerUrl, route, preloadPath) {
+async function loadRendererRoute(
+    window: BrowserWindow,
+    name: string,
+    isDev: boolean,
+    devServerUrl: string,
+    route: string,
+    preloadPath: string | undefined
+): Promise<void> {
     logger.info(`[window:${name}] loading renderer route`, {
         route,
         isDev,
@@ -372,7 +443,10 @@ async function loadRendererRoute(window, name, isDev, devServerUrl, route, prelo
     await loadRendererUrl(window, route, isDev, devServerUrl)
 }
 
-const getWebPreferences = (isDev, overrides = {}) => ({
+const getWebPreferences = (
+    isDev: boolean,
+    overrides: Partial<WebPreferences> = {}
+): WebPreferences => ({
     nodeIntegration: false,
     nodeIntegrationInWorker: false,
     webSecurity: true,
@@ -382,14 +456,17 @@ const getWebPreferences = (isDev, overrides = {}) => ({
     ...overrides,
 })
 
-const getOverlayWebPreferences = (isDev) => getWebPreferences(isDev, {
+const getOverlayWebPreferences = (isDev: boolean): WebPreferences => getWebPreferences(isDev, {
     backgroundThrottling: false,
 })
 
 /**
  * 创建主窗口
  */
-export const createMainWindow = async (isDev, devServerUrl) => {
+export const createMainWindow = async (
+    isDev: boolean,
+    devServerUrl: string
+): Promise<BrowserWindow> => {
     const webPreferences = getWebPreferences(isDev)
     const bounds = getMainWindowBounds()
 
@@ -399,20 +476,21 @@ export const createMainWindow = async (isDev, devServerUrl) => {
         webPreferences,
         title: 'ARAMGG助手',
     })
-    attachWindowDiagnostics('main', mainWindow)
+    const window = mainWindow
+    attachWindowDiagnostics('main', window)
 
-    mainWindow.on('close', (event) => {
+    window.on('close', (event) => {
         if (!mainWindowCloseAllowed) {
             event.preventDefault()
             logger.info('Main window close requested; asking renderer for confirmation')
-            if (!mainWindow.isVisible()) {
-                mainWindow.show()
+            if (!window.isVisible()) {
+                window.show()
             }
-            if (mainWindow.isMinimized()) {
-                mainWindow.restore()
+            if (window.isMinimized()) {
+                window.restore()
             }
-            mainWindow.focus()
-            mainWindow.webContents.send('quit-confirm-requested')
+            window.focus()
+            window.webContents.send('quit-confirm-requested')
             return
         }
 
@@ -432,25 +510,30 @@ export const createMainWindow = async (isDev, devServerUrl) => {
         }
     })
 
-    mainWindow.on('closed', () => {
+    window.on('closed', () => {
         logger.info('Main window closed')
-        mainWindow = null
+        if (mainWindow === window) {
+            mainWindow = null
+        }
     })
 
     // 加载应用
-    await loadRendererRoute(mainWindow, 'main', isDev, devServerUrl, '/display', webPreferences.preload)
+    await loadRendererRoute(window, 'main', isDev, devServerUrl, '/display', webPreferences.preload)
 
     if (isDev) {
-        mainWindow.webContents.openDevTools()
+        window.webContents.openDevTools()
     }
 
-    return mainWindow
+    return window
 }
 
 /**
  * 创建弹出窗口
  */
-export const createPopupWindow = async (isDev, devServerUrl) => {
+export const createPopupWindow = async (
+    isDev: boolean,
+    devServerUrl: string
+): Promise<BrowserWindow> => {
     const webPreferences = getOverlayWebPreferences(isDev)
     const bounds = getPopupBounds()
 
@@ -469,7 +552,7 @@ export const createPopupWindow = async (isDev, devServerUrl) => {
 
     popupWindow.on('closed', () => {
         logger.info('Popup window closed')
-        popupWindow = undefined
+        popupWindow = null
     })
 
     await loadRendererRoute(popupWindow, 'popup', isDev, devServerUrl, '/augment-overlay', webPreferences.preload)
@@ -486,7 +569,10 @@ export const createPopupWindow = async (isDev, devServerUrl) => {
 /**
  * 创建游戏右侧海克斯推荐列表窗口
  */
-export const createAugmentSidePanelWindow = async (isDev, devServerUrl) => {
+export const createAugmentSidePanelWindow = async (
+    isDev: boolean,
+    devServerUrl: string
+): Promise<BrowserWindow> => {
     const webPreferences = getOverlayWebPreferences(isDev)
     const bounds = getAugmentSidePanelBounds()
 
@@ -507,7 +593,7 @@ export const createAugmentSidePanelWindow = async (isDev, devServerUrl) => {
 
     augmentSidePanelWindow.on('closed', () => {
         logger.info('Augment side panel window closed')
-        augmentSidePanelWindow = undefined
+        augmentSidePanelWindow = null
     })
 
     await loadRendererRoute(
@@ -535,7 +621,10 @@ export const createAugmentSidePanelWindow = async (isDev, devServerUrl) => {
  * 创建透明浮动窗口（用于游戏内显示海克斯推荐）
  * 【重要】窗口位置在屏幕顶部(2%)，确保不与OCR识别区域(从25%开始)重叠
  */
-export const createFloatingWindow = async (isDev, devServerUrl) => {
+export const createFloatingWindow = async (
+    isDev: boolean,
+    devServerUrl: string
+): Promise<BrowserWindow> => {
     const webPreferences = getOverlayWebPreferences(isDev)
     const bounds = getFloatingBounds()
 
@@ -559,7 +648,7 @@ export const createFloatingWindow = async (isDev, devServerUrl) => {
 
     floatingWindow.on('closed', () => {
         logger.info('Floating window closed')
-        floatingWindow = undefined
+        floatingWindow = null
     })
 
     await loadRendererRoute(floatingWindow, 'floating', isDev, devServerUrl, '/floating-overlay', webPreferences.preload)
@@ -594,7 +683,7 @@ export const getFloatingWindow = () => floatingWindow
 
 export const getAugmentSidePanelWindow = () => augmentSidePanelWindow
 
-export function notifyAllWindows(channel, data) {
+export function notifyAllWindows(channel: string, data: unknown): void {
     for (const window of BrowserWindow.getAllWindows()) {
         if (window.isDestroyed()) {
             continue
@@ -605,7 +694,7 @@ export function notifyAllWindows(channel, data) {
         } catch (error) {
             logger.warn('[window-manager] failed to notify renderer window:', {
                 channel,
-                error: error.message,
+                error: error instanceof Error ? error.message : String(error),
             })
         }
     }

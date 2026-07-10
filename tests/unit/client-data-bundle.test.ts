@@ -125,4 +125,34 @@ describe('multi-locale client-data bundle preparation', () => {
     expect(output).toContain('[client-data] [zh-TW] progress 6/6 (100.0%)')
     expect(output).toContain('reason=downloaded')
   })
+
+  it('rejects manifest paths that escape the locale version directory', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const dataVersion = '16.13.3-malicious'
+    const configUrl = 'https://mock.local/api/client/v1/config'
+    const manifestUrl = `https://mock.local/api/client/v1/data/${dataVersion}/manifest.json`
+    const bodies = new Map<string, string>([
+      [configUrl, JSON.stringify({
+        locale: 'zh-CN',
+        dataVersion,
+        manifest: `/api/client/v1/data/${dataVersion}/manifest.json`,
+      })],
+      [manifestUrl, JSON.stringify({
+        locale: 'zh-CN',
+        dataVersion,
+        files: [{
+          path: 'champion-shards/../../../../outside.json',
+          url: `/api/client/v1/data/${dataVersion}/outside.json`,
+        }],
+      })],
+    ])
+
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = String(input)
+      return bodies.has(url) ? response(bodies.get(url)!) : response('{}', 404)
+    }))
+
+    const { bundleLocale } = await import('../../scripts/fetch-client-data.mjs')
+    await expect(bundleLocale('zh-CN')).rejects.toThrow(/unsafe segment/)
+  })
 })

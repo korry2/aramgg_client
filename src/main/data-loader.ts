@@ -2,6 +2,12 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'fs/promises'
 import path from 'path'
 import logger from './modules/logger.ts'
 import { getAppDataDir } from './modules/app-paths.ts'
+import {
+  getClientDataUrlPathname,
+  normalizeClientDataPath,
+  resolveClientDataFilePath,
+  resolveTrustedClientDataUrl,
+} from '../shared/client-data-security.ts'
 
 declare const fetch: any
 
@@ -22,6 +28,7 @@ type ClientConfig = {
   dataVersion?: string
   generatedAt?: string
   publishedAt?: string
+  apiRelease?: unknown
   manifest?: string
   changelog?: unknown
   releaseNotes?: unknown
@@ -36,6 +43,7 @@ type ClientConfig = {
   }
   electron?: {
     latestVersion?: string
+    minimumVersion?: string
     downloadUrl?: string
     autoUpdateEnabled?: boolean
     updateFeedUrl?: string
@@ -74,6 +82,7 @@ type OcrAugmentLocaleData = PreparedDataLocale & {
 
 export const DATA_API_ORIGIN =
   process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
+const DATA_ALLOWED_ORIGINS = process.env.ARAMGG_DATA_ALLOWED_ORIGINS || ''
 export const DATA_API_PREFIX = '/api/client/v1'
 export const DATA_API_CONFIG_PATH = `${DATA_API_PREFIX}/config`
 export const DEFAULT_DATA_LOCALE: SupportedDataLocale = 'zh-CN'
@@ -209,12 +218,8 @@ function setVersionedDataCache(
 }
 
 function getApiUrl(resourcePath: string): string {
-  if (/^https?:\/\//i.test(resourcePath)) {
-    return resourcePath
-  }
-
   const p = resourcePath.startsWith('/') ? resourcePath : `${DATA_API_PREFIX}/${resourcePath}`
-  return new URL(p, DATA_API_ORIGIN).toString()
+  return resolveTrustedClientDataUrl(p, DATA_API_ORIGIN, DATA_ALLOWED_ORIGINS)
 }
 
 async function getTransportFetch(): Promise<any> {
@@ -321,7 +326,7 @@ function compareDataVersions(left: string, right: string): number {
 }
 
 function normalizeDataPath(value: string): string {
-  return value.replace(/\\/g, '/').replace(/^\/+/, '')
+  return normalizeClientDataPath(value)
 }
 
 function normalizeManifestResourcePath(value: string): string {
@@ -625,12 +630,14 @@ function getManifestFileEntries(manifest: any): any[] {
 }
 
 function getManifestEntryLogicalPath(entry: any): string {
-  const directPath = normalizeDataPath(String(entry?.path || entry?.logicalPath || ''))
+  const directPath = String(entry?.path || entry?.logicalPath || '').trim()
   if (directPath) {
-    return directPath
+    return normalizeDataPath(directPath)
   }
 
-  const urlPath = normalizeDataPath(String(entry?.url || ''))
+  const urlPath = normalizeDataPath(
+    getClientDataUrlPathname(String(entry?.url || ''), DATA_API_ORIGIN)
+  )
   for (const marker of [
     'champion-shards/',
     'champions/',
@@ -758,7 +765,7 @@ async function writeDataFileToDisk(
   locale: SupportedDataLocale = activeDataLocale
 ): Promise<void> {
   const versionDir = await getVersionDir(dataVersion, locale)
-  await writeJsonFileAtomic(path.join(versionDir, normalizeDataPath(dataPath)), payload)
+  await writeJsonFileAtomic(resolveClientDataFilePath(versionDir, dataPath), payload)
 }
 
 async function readCachedVersionedDataFile(

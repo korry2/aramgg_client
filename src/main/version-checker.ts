@@ -1,12 +1,18 @@
-// @ts-nocheck
 import { app } from 'electron'
 import { getActiveDataStatus, loadDataApiConfig } from './data-loader.ts'
 import { getChangelogEntries } from './changelog.ts'
 import logger from './modules/logger.ts'
 
 const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/
+type VersionSeverity = 'unknown' | 'none' | 'major' | 'minor' | 'patch'
 
-function parseVersion(version) {
+type VersionComparison = {
+  severity: VersionSeverity
+  shouldPrompt: boolean
+  isNewer: boolean
+}
+
+function parseVersion(version: unknown): number[] | null {
   const match = VERSION_PATTERN.exec(String(version || '').trim())
   if (!match) {
     return null
@@ -15,7 +21,7 @@ function parseVersion(version) {
   return match.slice(1).map((part) => Number(part))
 }
 
-function compareVersion(currentVersion, latestVersion) {
+function compareVersion(currentVersion: unknown, latestVersion: unknown): VersionComparison {
   const current = parseVersion(currentVersion)
   const latest = parseVersion(latestVersion)
 
@@ -63,12 +69,12 @@ function compareVersion(currentVersion, latestVersion) {
   }
 }
 
-function isVersionLowerThan(currentVersion, targetVersion) {
+function isVersionLowerThan(currentVersion: unknown, targetVersion: unknown): boolean {
   const comparison = compareVersion(currentVersion, targetVersion)
   return comparison.isNewer
 }
 
-function getSeverityText(severity) {
+function getSeverityText(severity: VersionSeverity): string {
   if (severity === 'major') {
     return '最好更新'
   }
@@ -127,7 +133,10 @@ export async function checkForClientUpdate() {
   try {
     versionInfo = await getVersionInfo()
   } catch (error) {
-    logger.warn('Failed to check remote client version:', error.message)
+    logger.warn(
+      'Failed to check remote client version:',
+      error instanceof Error ? error.message : String(error)
+    )
     return null
   }
 

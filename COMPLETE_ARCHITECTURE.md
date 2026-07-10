@@ -35,7 +35,9 @@ Renderer 不直接访问 Node API。所有主进程能力都必须经由 preload
 | 游戏会话状态机 | `src/main/services/game-session/game-session-machine.ts` | 规范化 gameflow 生命周期、去重阶段入口并选择副作用 |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` | 纯逻辑，只输入快照和英雄统计 |
 | 数据加载与语言切换 | `src/main/data-loader.ts`、`src/main/modules/data-locale-controller.ts` | 按语言隔离的远端/本地数据、打包兜底数据，以及先准备再提交的语言切换事务 |
+| 客户端数据安全 | `src/shared/client-data-security.ts` | 统一校验 manifest 逻辑路径、落盘根目录和远端资源 origin，供运行时与打包脚本复用 |
 | 版本检查和应用更新 | `src/main/version-checker.ts`、`src/main/changelog.ts`、`src/main/app-update-service.ts` | 客户端版本提示、自动更新、下载入口和远端/本地更新日志 |
+| Renderer / IPC 信任边界 | `src/main/security/renderer-origin.ts`、`src/main/security/trusted-ipc.ts` | 登记本地 renderer origin，并拒绝非应用窗口、子 frame 或非可信页面发起的 IPC |
 | 自动截图 | `src/main/auto-screenshot-service.ts` | 串行截图和 OCR 队列，受 gameflow 阶段控制 |
 | 图像分析 | `src/main/image-analyzer.ts` | 海克斯 OCR 和匹配 |
 | 运行时数据目录 | `src/main/modules/app-paths.ts` | 配置、日志、远端数据缓存、OCR 调试截图 |
@@ -75,6 +77,8 @@ resources/client-data/ 或 appData/data/
 ```
 
 默认 `zh-CN` 保留扁平目录以兼容已发布客户端；非默认语言使用独立指针和版本目录。每个指针只指向已通过完整性检查且 locale 匹配的版本，避免半成品或其他语言覆盖可用数据。非默认语言的远端 config 和 manifest 必须显式声明与请求一致的 locale；不匹配时，运行时拒绝激活，打包和 CI 直接失败。
+
+运行时和 `scripts/fetch-client-data.mjs` 共用 `src/shared/client-data-security.ts`。manifest 逻辑路径会拒绝绝对路径、URI scheme、空段、`.` / `..`、Windows 保留名和 NTFS ADS，并在 `path.resolve()` 后确认目标仍位于版本根目录。资源 URL 只能使用数据 API origin 或显式补充的 `ARAMGG_DATA_ALLOWED_ORIGINS`；生产 origin 必须是 HTTPS，本地开发 localhost 可使用 HTTP。
 
 英雄详情和海克斯弹窗的前台关键路径会收集同语言的用户缓存与 bundled 指针，按 dataVersion、生成时间和激活时间选择最新完整版本，避免旧用户缓存遮蔽新安装包数据；随后还可读取本地较新的单个详情分片。远端版本检查不应阻塞首屏，只有本地缺少必需详情文件时才进入远端分片或单英雄详情兜底。`locale-set` 先完整准备目标语言，再依次写入 electron-store、切换活动语言并广播 `locale-changed`；准备失败不会留下半切换状态。
 
@@ -129,7 +133,7 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
   -> Display.vue
 ```
 
-主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。`app-update-service.ts` 只有在远端 `client.autoUpdateEnabled: true` 时才读取 `client.updateFeedUrl` 并配置 `electron-updater` generic feed；未开启时保留手动下载入口，不会自动检查或下载。自动更新开启后，生产环境启动会检查更新，发现新版本后自动下载，下载完成后由用户点击重启安装。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
+主界面读取 `electronAPI.appInfo.getVersionInfo()` 展示当前版本、远端最新版本、下载入口和更新日志。远端 `client.autoUpdateEnabled` 与 `client.updateFeedUrl` 只能提出候选更新；`app-update-service.ts` 还会要求 feed origin 和 Windows 发布者 CN 同时命中本地内置信任根，并用 `electron-updater` 的发布者校验验证安装包。任一信任列表为空时自动更新保持不可用，因此远端配置无法单独开启更新。更新日志优先来自远端 `client.changelog` / `client.releaseNotes`，字段缺失时使用 `src/main/changelog.ts` 中的打包兜底条目。旧客户端要看到未来版本日志，必须通过远端 `config` 下发，不能依赖本地兜底。
 
 ## IPC 速查
 
@@ -176,6 +180,8 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
 
 Renderer 代码不能直接导入或调用 Node/Electron 模块。新增主进程能力时，先在 `src/shared/ipc-contract.ts` 定义契约，再在 `src/preload/preload.ts` 白名单暴露业务方法，并通过 `src/renderer/native/electron-api.js` 代理。Renderer 可读写的配置 key 由 `src/main/ipc/preferences-handlers.ts` 明确允许，系统级操作由 `src/main/ipc/system-handlers.ts` 集中校验和注册。
 
+所有 renderer 发起的 IPC handler 通过 `trustedIpcMain` 注册：发送方必须属于现存应用窗口、来自顶层 frame，且 URL origin 已由窗口管理器登记。窗口加载后阻止跳转和重定向到非可信页面，并拒绝全部 `window.open`。开发与生产 renderer 都使用 CSP；生产本地 HTTP server 同步返回 CSP header。
+
 ## LCU 写入边界
 
 推荐链路只读。禁止在 ARAM bench 推荐中接入这些会改变选人结果的接口：
@@ -193,6 +199,7 @@ Renderer 代码不能直接导入或调用 Node/Electron 模块。新增主进�
 ```bash
 npm run lint
 npm run type-check
+npm run test:unit
 npm run build
 npm run test:augment-ocr
 node tests/electron/test-aram-bench-recommendation.js

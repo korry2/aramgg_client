@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, type OpenDialogOptions } from 'electron'
+import { BrowserWindow, clipboard, dialog, nativeImage, type OpenDialogOptions } from 'electron'
 import { writeFile } from 'fs/promises'
 import path from 'path'
 import { captureScreenshot } from '../screenshot.ts'
@@ -37,9 +37,12 @@ import {
 } from './lol-path.ts'
 import {
     getDataLocale,
+    loadChampionRoster,
 } from '../data-loader.ts'
+import { getAramBenchRecommendation } from '../services/aram/bench-recommendation.ts'
 import { registerPreferencesIpcHandlers } from '../ipc/preferences-handlers.ts'
 import { registerSystemIpcHandlers } from '../ipc/system-handlers.ts'
+import { trustedIpcMain as ipcMain } from '../security/trusted-ipc.ts'
 
 const TEST_AUGMENT_COUNT = 3
 const TEST_BENCH_CHAMPION_COUNT = 8
@@ -309,8 +312,6 @@ async function buildRandomAugmentPreviewData(context = 'random-augment-preview')
 }
 
 async function buildRandomBenchRecommendation(currentChampionId: number | null = null) {
-    const { loadChampionRoster } = await import('../data-loader.ts')
-    const { getAramBenchRecommendation } = await import('../services/aram/bench-recommendation.ts')
     const champions = await loadChampionRoster()
 
     if (champions.length < 2) {
@@ -713,7 +714,6 @@ export function registerIpcHandlers(isDev: boolean): void {
 
             let connected = false
             try {
-                const { getLCUServiceInstance } = await import('../services/lcu/lcu-service.ts')
                 const auth = await getLCUServiceInstance().getAuthToken(true)
                 connected = Boolean(auth)
             } catch (error) {

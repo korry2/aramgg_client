@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { app } from 'electron'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { configureAppPaths } from './modules/app-paths.ts'
 
-function getBootstrapLogFile() {
+function getBootstrapLogFile(): string {
     const appDataRoot = process.env.APPDATA
         ? path.join(process.env.APPDATA, 'aramgg_client')
         : path.join(os.homedir(), '.aramgg_client')
@@ -15,7 +14,7 @@ function getBootstrapLogFile() {
     return path.join(logDir, `bootstrap-${date}.log`)
 }
 
-function writeBootstrapError(stage, error) {
+function writeBootstrapError(stage: string, error: unknown): void {
     try {
         const message = error instanceof Error
             ? `${error.message}\n${error.stack || ''}`
@@ -37,9 +36,9 @@ try {
     throw error
 }
 
-let init
-let windowManager
-let logger
+let init: typeof import('./modules/app-config.ts').init
+let windowManager: typeof import('./modules/window-manager.ts')
+let logger: typeof import('./modules/logger.ts').default
 try {
     ;[{ init }, windowManager, { default: logger }] = await Promise.all([
         import('./modules/app-config.ts'),
@@ -58,14 +57,14 @@ app.commandLine.appendSwitch('ignore-connections-limit', 'op.gg')
 /**
  * 主进程全局错误处理
  */
-function setupMainProcessErrorHandling() {
+function setupMainProcessErrorHandling(): void {
     // 捕获未处理的 Promise 拒绝
     process.on('unhandledRejection', (reason, promise) => {
         logger.error('主进程未处理的 Promise 拒绝:', reason)
         console.error('Unhandled Rejection at:', promise, 'reason:', reason)
         import('./services/analytics-service.ts').then(({ recordPendingAnalyticsEvent }) => {
             recordPendingAnalyticsEvent('main_unhandled_rejection', {
-                message: reason?.message || String(reason || 'unknown'),
+                message: reason instanceof Error ? reason.message : String(reason || 'unknown'),
             })
         }).catch(() => {})
     })
@@ -118,15 +117,6 @@ function setupMainProcessErrorHandling() {
                 reason: details.reason,
                 exit_code: details.exitCode,
                 name: details.name,
-            })
-        }).catch(() => {})
-    })
-
-    app.on('gpu-process-crashed', (_event, killed) => {
-        logger.error('[app] gpu process crashed:', { killed })
-        import('./services/analytics-service.ts').then(({ recordPendingAnalyticsEvent }) => {
-            recordPendingAnalyticsEvent('gpu_process_crashed', {
-                killed,
             })
         }).catch(() => {})
     })

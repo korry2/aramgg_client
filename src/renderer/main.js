@@ -1,13 +1,8 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-import api from './request/api/api'
 import './styles/index.css'
 import { createRouter, createWebHashHistory } from 'vue-router'
 
-import Display from './components/Display.vue'
-import PopupAugmentView from './components/PopupAugmentView.vue'
-import FloatingView from './components/FloatingView.vue'
-import AugmentSidePanelView from './components/AugmentSidePanelView.vue'
 import { electronAPI, hasElectronAPI } from './native/electron-api.js'
 import { initRendererAnalytics, trackErrorEvent, trackPageView, trackAnalyticsEvent } from './services/analytics.ts'
 
@@ -169,11 +164,23 @@ function setupGlobalErrorHandling(app) {
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', name: 'Display', component: Display },
-    { path: '/display', name: 'Display', component: Display },
-    { path: '/augment-overlay', name: 'AugmentOverlay', component: PopupAugmentView },
-    { path: '/floating-overlay', name: 'FloatingOverlay', component: FloatingView },
-    { path: '/augment-side-panel', name: 'AugmentSidePanel', component: AugmentSidePanelView },
+    { path: '/', redirect: '/display' },
+    { path: '/display', name: 'Display', component: () => import('./components/Display.vue') },
+    {
+      path: '/augment-overlay',
+      name: 'AugmentOverlay',
+      component: () => import('./components/PopupAugmentView.vue'),
+    },
+    {
+      path: '/floating-overlay',
+      name: 'FloatingOverlay',
+      component: () => import('./components/FloatingView.vue'),
+    },
+    {
+      path: '/augment-side-panel',
+      name: 'AugmentSidePanel',
+      component: () => import('./components/AugmentSidePanelView.vue'),
+    },
   ],
 })
 
@@ -188,7 +195,6 @@ const app = createApp(App)
 // 设置全局错误监听
 setupGlobalErrorHandling(app)
 
-app.config.globalProperties.$api = api
 
 app.use(router)
 app.mount('#app')

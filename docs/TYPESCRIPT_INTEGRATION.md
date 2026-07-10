@@ -43,12 +43,21 @@ TypeScript 文件通过 `typescript-eslint` parser 解析；类型正确性仍�
 | Typed preload bridge | `src/preload/preload.ts` |
 | 通用领域 IPC handlers | `src/main/ipc/*.ts` |
 | Electron LCU 服务 | `src/main/services/lcu/*.ts` |
-| Renderer LCU 代理 | `src/renderer/services/lcu/*.ts` |
 | 主进程数据加载 | `src/main/data-loader.ts` |
+| Renderer/IPC 信任边界 | `src/main/security/*.ts` |
 | Electron API renderer 声明 | `src/renderer/native/electron-api.d.ts` |
 | App path/logger/store 运行时模块 | `src/main/modules/{app-paths,app-store,logger}.ts` |
 | ARAM bench 推荐 | `src/main/services/aram/bench-recommendation.ts` |
 | 游戏会话状态机 | `src/main/services/game-session/game-session-machine.ts` |
+
+当前仍保留 `@ts-nocheck` 的模块只有：
+
+- `src/main/modules/app-config.ts`；
+- `src/main/image-analyzer.ts`；
+- `src/main/auto-screenshot-service.ts`；
+- `src/main/services/analytics-service.ts`。
+
+其中前三个需要按游戏阶段、OCR 和截图状态边界做独立类型重构；Analytics 当前按产品决策暂不调整。即使保留 `@ts-nocheck`，ESLint 的主进程 `no-undef` 门禁仍会检查未定义运行时符号。
 
 ## 编写规范
 

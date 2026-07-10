@@ -58,6 +58,9 @@ node tests/electron/test-augment-ocr-fixtures.js
 
 - 保持 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`、`webSecurity: true`，除非用户明确要求并接受风险。
 - Renderer 不直接访问 `fs`、`ipcRenderer`、`require` 或 Node 模块。
+- Renderer 发起的 IPC 统一使用 `src/main/security/trusted-ipc.ts` 注册，校验所属窗口、顶层 frame 和已登记的本地 renderer origin；导航、重定向和 `window.open` 默认拒绝。
+- manifest 逻辑路径和资源 URL 统一走 `src/shared/client-data-security.ts`，禁止把远端路径直接拼接到可写目录；额外数据 origin 只允许显式 HTTPS，开发 localhost HTTP 除外。
+- 远端配置只能提出更新 feed，不能扩展内置 feed origin 或 Windows 发布者信任根；生产 origin、证书 CN 和签名安装包未共同验收前，自动更新保持关闭。
 - LCU 选人推荐链路只能读状态和统计数据，不得调用 `pickOrBan`、`benchSwap`、`action`、`acceptTrade`、`declineTrade` 等会改变选人结果的接口。
 - 现有符文页写入能力只服务符文功能，不能被 ARAM bench 推荐复用成自动操作。
 
@@ -101,5 +104,6 @@ node tests/electron/test-augment-ocr-fixtures.js
 - 自动海克斯：`docs/USER_GUIDE_AUTO_AUGMENT.md`
 - 客户端数据 API：`docs/client-api-strategy.md`
 - 客户端多语言数据专项审查：`docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md`
+- 全项目代码审查与整改状态：`docs/CODE_REVIEW_2026-07-10.md`
 - Electron 更新方案：`docs/ELECTRON_APP_UPDATE_STRATEGY.md`
 - 项目改进建议与实施进度：`docs/PROJECT_RECOMMENDATIONS_2026-07-10.md`

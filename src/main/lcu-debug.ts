@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LCU 诊断工具 - 用于调试进程参数发现。
  * 使用: node src/main/lcu-debug.ts

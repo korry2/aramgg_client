@@ -1,14 +1,13 @@
-// @ts-nocheck
 import fs from 'fs-extra'
 import os from 'os'
 import path from 'path'
 import { createRequire } from 'module'
 
 const APP_DATA_DIR_NAME = 'aramgg_client-data'
-let cachedAppDataDir = null
-let cachedDefaultUserDataDir = null
+let cachedAppDataDir: string | null = null
+let cachedDefaultUserDataDir: string | null = null
 const require = createRequire(import.meta.url)
-let electron = null
+let electron: any = null
 
 if (process.versions?.electron) {
     try {
@@ -25,7 +24,7 @@ function hasElectronApp() {
     return electronApp && typeof electronApp.getPath === 'function'
 }
 
-function getDefaultUserDataDir() {
+function getDefaultUserDataDir(): string {
     if (cachedDefaultUserDataDir) {
         return cachedDefaultUserDataDir
     }
@@ -41,10 +40,10 @@ function getDefaultUserDataDir() {
         cachedDefaultUserDataDir = path.join(os.homedir(), '.aramgg_client')
     }
 
-    return cachedDefaultUserDataDir
+    return cachedDefaultUserDataDir!
 }
 
-function getInstallSideDataDir() {
+function getInstallSideDataDir(): string | null {
     if (!hasElectronApp() || !electronApp.isPackaged || process.platform !== 'win32') {
         return null
     }
@@ -56,7 +55,7 @@ function getInstallSideDataDir() {
     }
 }
 
-function getLegacyInstallSideDataDir() {
+function getLegacyInstallSideDataDir(): string | null {
     if (!hasElectronApp() || !electronApp.isPackaged || process.platform !== 'win32') {
         return null
     }
@@ -68,7 +67,7 @@ function getLegacyInstallSideDataDir() {
     }
 }
 
-function canUseDataDir(directoryPath) {
+function canUseDataDir(directoryPath: string | null): boolean {
     if (!directoryPath) {
         return false
     }
@@ -89,7 +88,7 @@ function canUseDataDir(directoryPath) {
     }
 }
 
-export function getAppDataDir() {
+export function getAppDataDir(): string {
     if (cachedAppDataDir) {
         return cachedAppDataDir
     }
@@ -109,7 +108,7 @@ export function getAppDataDir() {
     return cachedAppDataDir
 }
 
-export function configureAppPaths() {
+export function configureAppPaths(): string {
     const appDataDir = getAppDataDir()
 
     if (!hasElectronApp() || typeof electronApp.setPath !== 'function') {
@@ -127,14 +126,14 @@ export function configureAppPaths() {
     return appDataDir
 }
 
-export function getConfigDir() {
+export function getConfigDir(): string {
     const configDir = path.join(getDefaultUserDataDir(), 'config')
     fs.ensureDirSync(configDir)
     migrateInstallSideConfigDir(configDir)
     return configDir
 }
 
-function migrateLegacyInstallSideDataDir(targetDir) {
+function migrateLegacyInstallSideDataDir(targetDir: string): void {
     const legacyDir = getLegacyInstallSideDataDir()
 
     if (!legacyDir || legacyDir === targetDir || !fs.existsSync(legacyDir)) {
@@ -151,7 +150,7 @@ function migrateLegacyInstallSideDataDir(targetDir) {
     }
 }
 
-function migrateInstallSideConfigDir(configDir) {
+function migrateInstallSideConfigDir(configDir: string): void {
     const installSideDataDir = getLegacyInstallSideDataDir()
 
     if (!installSideDataDir) {
@@ -179,13 +178,13 @@ function migrateInstallSideConfigDir(configDir) {
     }
 }
 
-export function getLogDir() {
+export function getLogDir(): string {
     const logDir = path.join(getAppDataDir(), 'logs')
     fs.ensureDirSync(logDir)
     return logDir
 }
 
-export function getPartialOcrScreenshotDir() {
+export function getPartialOcrScreenshotDir(): string {
     const screenshotDir = path.join(getAppDataDir(), 'ocr-partial-screenshots')
     fs.ensureDirSync(screenshotDir)
     return screenshotDir

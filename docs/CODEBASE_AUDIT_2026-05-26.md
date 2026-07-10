@@ -32,6 +32,9 @@
 - 主进程：`broadcast` IPC 允许任意 channel
 - ESLint 覆盖 `.ts` 文件并接入 TypeScript parser
 - 移除未引用的 `radix-vue`
+- 删除 `electron.vite.config.mjs` 中未使用的 `nodeBuiltinsPlugin` 和过期 `optimizeDeps`
+- 修复重复的 `Display` 路由名，并删除旧 `src/renderer/router/index.js`
+- 删除未引用的旧登录 API、axios interceptor、数据源、renderer LCU 兼容层和相关声明文件
 
 ### 已过期 / 不再成立
 
@@ -45,10 +48,8 @@
 
 ### 当前剩余 P2 / P3
 
-- 清理 `electron.vite.config.mjs` 中的 `nodeBuiltinsPlugin`、共用 `dist-electron` 清理策略、`src/*` alias 等配置债。
-- 修复路由名 `'Display'` 重复，并删除或归档 `src/renderer/router/index.js` 旧路由文件。
+- 继续处理 main/preload 共用 `dist-electron` 清理策略、`src/*` alias 等配置债。
 - 提取 DDragon `14.24.1` 版本常量或改为动态版本。
-- 将 `src/renderer/service/http.js` 的全局 axios interceptor 改为独立实例。
 - 主进程若继续增长，可处理 ARAM 推荐数据预加载、`getGameflowPhase` 重试上限、`_drainAnalysisQueue` 队列逻辑、LCU 实例缓存清理，以及 `app-config.ts` / `window-manager.ts` 两套 `notifyAllWindows` 实现的收敛。
 - 低优先级清理：`image-analyzer.ts` 弃用颜色检测代码、浮窗剩余重复逻辑、两套 localStorage 配置、ChampionMonitor 轮询、`Math.max(...array)` 微优化。
 
@@ -280,7 +281,7 @@ ipcMain.handle('store-clear', () => {
 | ESLint 未配置 TypeScript 支持 | `eslint.config.js` | 已完成：接入 `typescript-eslint` |
 | lint 脚本未覆盖 `.ts` 文件 | `package.json` scripts | 已完成：`eslint src` 覆盖 `.ts` |
 | `emptyOutDir: true` main 和 preload 共享 `dist-electron` | `electron.vite.config.mjs` | 改为构建脚本中统一清理 |
-| `nodeBuiltinsPlugin` 与 `externalizeDepsPlugin` 功能重叠 | `electron.vite.config.mjs` | 删除 `nodeBuiltinsPlugin` |
+| `nodeBuiltinsPlugin` 与 `externalizeDepsPlugin` 功能重叠 | `electron.vite.config.mjs` | 已完成：删除 `nodeBuiltinsPlugin` |
 | tsconfig 根配置包含 DOM 类型 | `tsconfig.json` | 根配置只作为项目引用入口 |
 | `src/*` 路径别名易与文件系统混淆 | `tsconfig.base.json` | 移除 `src/*` 别名，只保留 `@/*` |
 
@@ -288,10 +289,10 @@ ipcMain.handle('store-clear', () => {
 
 | 问题 | 文件 | 修复建议 |
 |------|------|----------|
-| 路由名称重复 `'Display'` | `main.js:98-99` | 根路由改名为 `'Home'` |
+| 路由名称重复 `'Display'` | `main.js:98-99` | 已完成：根路径改为 redirect，并删除旧路由文件 |
 | `once()` 未返回取消订阅函数 | `preload.js:30` | 已完成：`once()` 返回清理函数 |
 | DDragon 版本号 `14.24.1` 硬编码三处 | `service/cdn.js` | 提取为常量或动态获取 |
-| 全局 axios 拦截器污染 | `request/http.js` | 改用 `axios.create()` 独立实例 |
+| 全局 axios 拦截器污染 | `request/http.js` | 已完成：删除未引用的旧请求链 |
 | `init()` 无顶层错误处理 | `ShowDetail.vue:171` | 已完成：用 try/catch 包裹 |
 | loading 和 error 可能同时显示 | `ChampionStats.vue:15` | error 条件改为 `v-if="error && !loading"` |
 | apply 失败无用户反馈 | `ShowDetail.vue:210` | 已完成：增加 `applyStatus` 提示 |
@@ -345,7 +346,7 @@ ipcMain.handle('store-clear', () => {
 | 优先级 | 问题 | 说明 |
 |--------|---------|------|
 | P1 尽快 | #6 | `sharp` 安装版截图/OCR 烟测；打包与 `asarUnpack` 已验证 |
-| P2 计划 | 依赖清理、Vite/tsconfig 配置债、路由和 DDragon/axios 清理 | 代码质量和维护成本 |
+| P2 计划 | Vite/tsconfig 剩余配置债、DDragon 版本常量 | 代码质量和维护成本 |
 | P3 清理 | 低优先级表中仍未完成的死代码、重复代码、性能微调 | 风险较低，适合批量整理 |
 
 ---

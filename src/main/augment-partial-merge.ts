@@ -1,15 +1,45 @@
-// @ts-nocheck
-export function getAugmentIds(augments = []) {
+export type PartialAugment = {
+    id?: string | number | null
+    name?: string
+    rarity?: string
+    confidence?: number | null
+    detectedSlot?: number
+    missing?: boolean
+    [key: string]: unknown
+}
+
+export type AugmentSlotDiagnostic = {
+    slot?: number
+    matchedId?: string | number | null
+    text?: unknown
+    titleFingerprint?: unknown
+}
+
+type InitialPartialSelectionOptions = {
+    augments?: PartialAugment[]
+    slotDiagnostics?: AugmentSlotDiagnostic[]
+    minimumKnownAugments?: number
+}
+
+type MergePartialAugmentsOptions = {
+    augments?: PartialAugment[]
+    slotDiagnostics?: AugmentSlotDiagnostic[]
+    lastDetectedAugmentIds?: string[]
+    lastDetectedAugments?: PartialAugment[]
+    lastDetectedSlotFingerprints?: unknown[]
+}
+
+export function getAugmentIds(augments: PartialAugment[] = []): string[] {
     return augments.slice(0, 3).map(augment => {
         if (augment?.id == null) {
             return null
         }
 
         return String(augment.id)
-    }).filter(Boolean)
+    }).filter((id): id is string => Boolean(id))
 }
 
-export function createEmptyAugmentSlot(slot) {
+export function createEmptyAugmentSlot(slot: number): PartialAugment {
     return {
         id: null,
         name: '',
@@ -20,13 +50,13 @@ export function createEmptyAugmentSlot(slot) {
     }
 }
 
-function normalizeSlotText(text) {
+function normalizeSlotText(text: unknown): string {
     return String(text || '')
         .normalize('NFKC')
         .replace(/[\s"'`~!@#$%^&*()_+\-=[\]{};:,.<>/?\\|，。！？、：；（）【】《》“”‘’]/g, '')
 }
 
-export function hasMeaningfulSlotText(text) {
+export function hasMeaningfulSlotText(text: unknown): boolean {
     const normalized = normalizeSlotText(text)
     if (!normalized) {
         return false
@@ -36,11 +66,14 @@ export function hasMeaningfulSlotText(text) {
     return cjkCount >= 2 || normalized.length >= 4
 }
 
-function isValidDetectedSlot(slot) {
-    return Number.isInteger(slot) && slot >= 0 && slot < 3
+function isValidDetectedSlot(slot: unknown): slot is number {
+    return typeof slot === 'number' && Number.isInteger(slot) && slot >= 0 && slot < 3
 }
 
-function findSlotDiagnostic(slotDiagnostics = [], slot) {
+function findSlotDiagnostic(
+    slotDiagnostics: AugmentSlotDiagnostic[] = [],
+    slot: number
+): AugmentSlotDiagnostic | null {
     return (slotDiagnostics || []).find(diagnostic => diagnostic?.slot === slot) || null
 }
 
@@ -48,7 +81,7 @@ export function createInitialPartialAugmentSelection({
     augments = [],
     slotDiagnostics = [],
     minimumKnownAugments = 2,
-} = {}) {
+}: InitialPartialSelectionOptions = {}) {
     const knownAugments = augments.filter(augment =>
         augment?.id != null && isValidDetectedSlot(augment.detectedSlot)
     )
@@ -68,9 +101,12 @@ export function createInitialPartialAugmentSelection({
         return null
     }
 
-    const merged = [0, 1, 2].map(createEmptyAugmentSlot)
+    const merged: PartialAugment[] = [0, 1, 2].map(createEmptyAugmentSlot)
     for (const augment of knownAugments) {
-        merged[augment.detectedSlot] = augment
+        const slot = augment.detectedSlot
+        if (isValidDetectedSlot(slot)) {
+            merged[slot] = augment
+        }
     }
 
     return {
@@ -88,7 +124,7 @@ const HEX_BIT_COUNTS = new Map([
     ['c', 2], ['d', 3], ['e', 3], ['f', 4],
 ])
 
-export function getFingerprintHammingDistance(left, right) {
+export function getFingerprintHammingDistance(left: unknown, right: unknown): number | null {
     const a = String(left || '').toLowerCase()
     const b = String(right || '').toLowerCase()
     if (!a || !b || a.length !== b.length || !/^[0-9a-f]+$/.test(a) || !/^[0-9a-f]+$/.test(b)) {
@@ -97,13 +133,16 @@ export function getFingerprintHammingDistance(left, right) {
 
     let distance = 0
     for (let index = 0; index < a.length; index++) {
-        const xor = (parseInt(a[index], 16) ^ parseInt(b[index], 16)).toString(16)
+        const xor = (parseInt(a.charAt(index), 16) ^ parseInt(b.charAt(index), 16)).toString(16)
         distance += HEX_BIT_COUNTS.get(xor) ?? 0
     }
     return distance
 }
 
-function hasTitleFingerprintChanged(currentFingerprint, previousFingerprint) {
+function hasTitleFingerprintChanged(
+    currentFingerprint: unknown,
+    previousFingerprint: unknown
+): boolean {
     const distance = getFingerprintHammingDistance(currentFingerprint, previousFingerprint)
     return distance != null && distance >= TITLE_FINGERPRINT_CHANGE_THRESHOLD
 }
@@ -113,25 +152,24 @@ function getChangedUnmatchedSlots({
     lastDetectedAugments = [],
     lastDetectedSlotFingerprints = [],
     hasStablePreviousId = false,
-} = {}) {
+}: MergePartialAugmentsOptions & { hasStablePreviousId?: boolean } = {}): number[] {
     if (!hasStablePreviousId) {
         return []
     }
 
-    return slotDiagnostics
-        .filter(diagnostic => {
-            const slot = diagnostic?.slot
-            if (!Number.isInteger(slot) || slot < 0 || slot >= 3) {
-                return false
-            }
+    return slotDiagnostics.flatMap((diagnostic) => {
+        const slot = diagnostic.slot
+        if (!isValidDetectedSlot(slot)) {
+            return []
+        }
 
-            const previousAugment = lastDetectedAugments[slot]
-            return previousAugment?.id != null &&
+        const previousAugment = lastDetectedAugments[slot]
+        const changed = previousAugment?.id != null &&
                 diagnostic.matchedId == null &&
                 hasMeaningfulSlotText(diagnostic.text) &&
                 hasTitleFingerprintChanged(diagnostic.titleFingerprint, lastDetectedSlotFingerprints[slot])
-        })
-        .map(diagnostic => diagnostic.slot)
+        return changed ? [slot] : []
+    })
 }
 
 export function mergePartialAugments({
@@ -140,7 +178,7 @@ export function mergePartialAugments({
     lastDetectedAugmentIds = [],
     lastDetectedAugments = [],
     lastDetectedSlotFingerprints = [],
-} = {}) {
+}: MergePartialAugmentsOptions = {}) {
     if (augments.length >= 3) {
         return null
     }
@@ -167,7 +205,7 @@ export function mergePartialAugments({
         return null
     }
 
-    const merged = [0, 1, 2].map(createEmptyAugmentSlot)
+    const merged: PartialAugment[] = [0, 1, 2].map(createEmptyAugmentSlot)
     for (const augment of augments) {
         if (isValidDetectedSlot(augment?.detectedSlot)) {
             merged[augment.detectedSlot] = augment

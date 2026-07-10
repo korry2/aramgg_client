@@ -1,19 +1,18 @@
-// @ts-nocheck
 import { execFile } from 'child_process'
-import { desktopCapturer } from 'electron'
+import { desktopCapturer, type DesktopCapturerSource, type Size } from 'electron'
 import logger from './modules/logger.ts'
 
-let lastCaptureSourceKey = null
+let lastCaptureSourceKey: string | null = null
 const CAPTURE_THUMBNAIL_SIZE = { width: 1280, height: 720 }
 const DEFAULT_CAPTURE_TIMEOUT_MS = 4000
 
-function withTimeout(promise, timeoutMs, label) {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
     if (!timeoutMs || timeoutMs <= 0) {
         return promise
     }
 
-    let timeoutId = null
-    const timeoutPromise = new Promise((_, reject) => {
+    let timeoutId: NodeJS.Timeout | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
             reject(new Error(`${label} timed out after ${timeoutMs}ms`))
         }, timeoutMs)
@@ -31,7 +30,7 @@ function withTimeout(promise, timeoutMs, label) {
  * @param {Array} sources - desktopCapturer 返回的源列表
  * @returns {Object|null} 匹配的游戏窗口源，未找到返回 null
  */
-const findGameWindow = (sources) => {
+const findGameWindow = (sources: DesktopCapturerSource[]): DesktopCapturerSource | null => {
     const candidates = sources.map(source => {
         const name = source.name.toLowerCase()
         const isOwnWindow =
@@ -62,12 +61,12 @@ const findGameWindow = (sources) => {
     return candidates[0]?.score > 0 ? candidates[0].source : null
 }
 
-const isLolGameProcessRunning = () => {
+const isLolGameProcessRunning = (): Promise<boolean | null> => {
     if (process.platform !== 'win32') {
         return Promise.resolve(null)
     }
 
-    return new Promise((resolve) => {
+    return new Promise<boolean>((resolve) => {
         execFile(
             'tasklist',
             ['/FI', 'IMAGENAME eq League of Legends.exe', '/FO', 'CSV', '/NH'],
@@ -90,9 +89,9 @@ const isLolGameProcessRunning = () => {
  * @param {Array} sources - desktopCapturer 返回的源列表
  * @returns {Object|null} 主屏幕源，未找到返回 null
  */
-const findScreenSource = (sources) => {
+const findScreenSource = (sources: DesktopCapturerSource[]): DesktopCapturerSource | null => {
     // 优先使用主显示器（screen:0:0 通常是主屏幕）
-    const screens = sources.filter(s => s.id.startsWith('screen:'))
+    const screens = sources.filter((source) => source.id.startsWith('screen:'))
     return screens.length > 0 ? screens[0] : null
 }
 
@@ -134,7 +133,7 @@ export const getLolGameWindowInfo = async () => {
             found: false,
             id: null,
             name: null,
-            error: error.message,
+            error: error instanceof Error ? error.message : String(error),
         }
     }
 }
@@ -158,7 +157,13 @@ export const getLolGameStatus = async () => {
  * @param {Object} options - 截图选项
  * @returns {Promise<Object>} 截图结果
  */
-export const captureScreenshot = async (options = {}) => {
+type CaptureScreenshotOptions = {
+    preferScreen?: boolean
+    timeoutMs?: number
+    thumbnailSize?: Size
+}
+
+export const captureScreenshot = async (options: CaptureScreenshotOptions = {}) => {
     try {
         const {
             preferScreen = false,
@@ -166,7 +171,9 @@ export const captureScreenshot = async (options = {}) => {
             thumbnailSize = CAPTURE_THUMBNAIL_SIZE,
         } = options || {}
         const timestamp = Date.now()
-        const sourceTypes = preferScreen ? ['screen'] : ['window', 'screen']
+        const sourceTypes: Array<'screen' | 'window'> = preferScreen
+            ? ['screen']
+            : ['window', 'screen']
 
         // 获取所有窗口和屏幕源
         const sources = await withTimeout(
@@ -182,8 +189,8 @@ export const captureScreenshot = async (options = {}) => {
         const gameWindow = preferScreen ? null : findGameWindow(sources)
 
         // 确定截图源：优先游戏窗口，否则使用全屏
-        let captureSource = gameWindow
-        let captureMode = 'window'
+        let captureSource: DesktopCapturerSource | null = gameWindow
+        let captureMode: 'window' | 'screen' = 'window'
 
         if (!gameWindow) {
             captureSource = findScreenSource(sources)
@@ -235,7 +242,7 @@ export const captureScreenshot = async (options = {}) => {
         logger.error('Screenshot capture failed:', error)
         return {
             success: false,
-            error: error.message,
+            error: error instanceof Error ? error.message : String(error),
         }
     }
 }

@@ -87,6 +87,8 @@ After publishing the installer, update the remote client config at `/api/client/
 
 The auto-update feed directory must contain `latest.yml`, `aramgg_client Setup <version>.exe`, and the matching `.exe.blockmap`. For now, prefer updating `latestVersion`, `downloadUrl`, and release notes so older clients use manual downloads. Enable `autoUpdateEnabled` only after the full auto-update path has been verified.
 
+Remote config cannot extend updater trust roots. Before enabling automatic updates, add the approved HTTPS feed origin and Windows certificate publisher CN to `src/main/app-update-service.ts`, and publish an Authenticode-signed installer. Development-only overrides through `ARAMGG_UPDATE_ALLOWED_ORIGINS` and `ARAMGG_UPDATE_PUBLISHER_NAMES` are read only when `ARAMGG_ALLOW_DEV_UPDATE_CHECK` is enabled.
+
 Example: from `0.1.0`, running `npm run release:patch` creates the `0.1.1` version commit and `v0.1.1` tag. After pushing, GitHub Actions verifies that the tag matches the `package.json` version before publishing the Release.
 
 Do not create lightweight tags manually instead of using the release scripts. If a bad release tag must be cleaned up, first confirm the exact local and remote tag to delete, then recreate only the confirmed annotated version tag.
@@ -104,6 +106,8 @@ Client data APIs, API key application, and integration notes are available on th
 
 This repository does not commit real API keys. For local configuration, copy `.env.local.example` to `.env.local`, then fill in your own `ARAMGG_DATA_API_KEY`.
 
+Manifest paths and client-data resource URLs pass through a shared security validator. `ARAMGG_DATA_ALLOWED_ORIGINS` may explicitly add trusted origins as a comma-separated list; production origins must use HTTPS, while HTTP is accepted only for localhost development.
+
 Client display data uses a locale-isolated, local-first strategy. Default Chinese keeps the compatible `current.json` / `versions/<dataVersion>/` layout; English and Traditional Chinese use `current.<locale>.json` / `versions/<locale>/<dataVersion>/`. Bundled and runtime data render champion details, Augment popups, and recommendation lists before remote checks run. Background updates may activate only complete data for the same locale; non-default config and manifest responses must explicitly declare the requested locale.
 
 ## Key Documents
@@ -115,6 +119,7 @@ Client display data uses a locale-isolated, local-first strategy. Default Chines
 - [Auto Augment Detection User Guide](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [Client Data API Distribution Strategy](./docs/client-api-strategy.md)
 - [Localized Client Data Review](./docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md)
+- [Full Code Review and Remediation Status](./docs/CODE_REVIEW_2026-07-10.md)
 - [Electron Client Update Strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
 - [Electron / electron-vite Architecture Migration Progress](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
 - [TypeScript Development Conventions](./docs/TYPESCRIPT_INTEGRATION.md)

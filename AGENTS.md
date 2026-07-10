@@ -63,6 +63,12 @@ Renderer code must not assume Node access. Use the preload bridge and IPC APIs. 
 
 Define new preload methods and pushed events in `src/shared/ipc-contract.ts` first, then implement the typed preload bridge and main-process handler. Renderer-writable electron-store keys must remain allowlisted in `src/main/ipc/preferences-handlers.ts`.
 
+Renderer-initiated IPC registrations must use `src/main/security/trusted-ipc.ts`, which verifies the owning window, top frame, and registered local renderer origin. Keep renderer navigation, redirects, and `window.open` blocked by default.
+
+Manifest logical paths and resource URLs must go through `src/shared/client-data-security.ts`; do not join remote path strings directly to writable directories. Additional data origins must be explicit HTTPS origins, except localhost HTTP used for development.
+
+Remote config may propose an updater feed but must never extend the built-in feed-origin or Windows publisher trust roots. Keep automatic updates disabled until the production origin, Authenticode publisher CN, and signed installer have been verified together.
+
 ARAM champ-select recommendation code must remain read-only. Do not connect `pickOrBan`, `benchSwap`, `action`, `acceptTrade`, or `declineTrade` to recommendation flows; keep executable LCU writes isolated to their existing feature areas such as rune pages.
 
 Keep ARAM champ-select recommendations in the hero detail window, not on the main renderer screen. The recommendation area should show all available candidates and remain a read-only recommendation surface.

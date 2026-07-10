@@ -132,6 +132,8 @@ data/
 
 非默认语言使用严格数据契约：`config` 和 `manifest` 都必须显式返回与请求一致的 `locale`。服务端忽略 locale 参数、缺失 locale 或返回其他语言时，客户端必须拒绝激活和打包，不能把默认中文写入英文或繁中目录。
 
+运行时与打包脚本共用 `src/shared/client-data-security.ts` 校验 manifest。逻辑路径必须是安全相对路径，解析后的目标必须仍位于对应版本目录；绝对路径、URI scheme、空路径段、`.` / `..`、Windows 设备名和 NTFS ADS 都会被拒绝。资源 URL 默认只能使用 `ARAMGG_DATA_API_ORIGIN` 的 origin；如 CDN 确实跨 origin，通过逗号分隔的 `ARAMGG_DATA_ALLOWED_ORIGINS` 显式补充，生产源必须使用 HTTPS，localhost 开发源可使用 HTTP。
+
 英雄详情分片也遵循本地优先：前台请求可直接使用磁盘上已存在的较新分片或当前激活版本分片；不要为了探测远端新版详情而阻塞详情页或海克斯弹窗。只有当前本地版本缺少所需文件时，才进入远端分片或单英雄详情兜底。
 
 ## 官方客户端接口

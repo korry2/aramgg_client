@@ -56,7 +56,12 @@ export default [
     },
   },
   {
-    files: ['src/main/modules/ipc-handlers.ts'],
+    files: ['src/main/**/*.ts'],
+    languageOptions: {
+      globals: {
+        NodeJS: 'readonly',
+      },
+    },
     rules: {
       'no-undef': 'error',
     },

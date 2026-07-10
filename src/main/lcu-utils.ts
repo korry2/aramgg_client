@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * LCU Utils 兼容层
  * 重新导出新的 token-loader 以保持向后兼容

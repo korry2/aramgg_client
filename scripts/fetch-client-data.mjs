@@ -2,8 +2,15 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import {
+  getClientDataUrlPathname,
+  normalizeClientDataPath,
+  resolveClientDataFilePath,
+  resolveTrustedClientDataUrl,
+} from '../src/shared/client-data-security.ts'
 
 const DATA_API_ORIGIN = process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
+const DATA_ALLOWED_ORIGINS = process.env.ARAMGG_DATA_ALLOWED_ORIGINS || ''
 const DATA_API_PREFIX = '/api/client/v1'
 const DATA_API_CONFIG_PATH = `${DATA_API_PREFIX}/config`
 const OUTPUT_DIR = process.env.ARAMGG_CLIENT_DATA_DIR || path.join('resources', 'client-data')
@@ -78,16 +85,12 @@ function tryNormalizeLocale(value) {
 }
 
 function getApiUrl(resourcePath) {
-  if (/^https?:\/\//i.test(resourcePath)) {
-    return resourcePath
-  }
-
   const p = resourcePath.startsWith('/') ? resourcePath : `${DATA_API_PREFIX}/${resourcePath}`
-  return new URL(p, DATA_API_ORIGIN).toString()
+  return resolveTrustedClientDataUrl(p, DATA_API_ORIGIN, DATA_ALLOWED_ORIGINS)
 }
 
 function normalizeDataPath(value) {
-  return String(value || '').replace(/\\/g, '/').replace(/^\/+/, '')
+  return normalizeClientDataPath(value)
 }
 
 function sanitizePathPart(value) {
@@ -181,7 +184,7 @@ async function fetchTextOnce(resourcePath) {
 async function fetchText(resourcePath, options = {}) {
   let lastError = null
   const expectedBytes = Number(options.expectedBytes || 0)
-  const label = options.label || normalizeDataPath(resourcePath)
+  const label = options.label || String(resourcePath)
 
   for (let attempt = 1; attempt <= REQUEST_RETRY_COUNT; attempt += 1) {
     try {
@@ -246,12 +249,14 @@ function getManifestFileEntries(manifest) {
 }
 
 function getManifestEntryLogicalPath(entry) {
-  const directPath = normalizeDataPath(entry?.path || entry?.logicalPath || '')
+  const directPath = String(entry?.path || entry?.logicalPath || '').trim()
   if (directPath) {
-    return directPath
+    return normalizeDataPath(directPath)
   }
 
-  const urlPath = normalizeDataPath(entry?.url || '')
+  const urlPath = normalizeDataPath(
+    getClientDataUrlPathname(entry?.url || '', DATA_API_ORIGIN)
+  )
   for (const marker of ['champion-shards/', 'champions/']) {
     const markerIndex = urlPath.indexOf(marker)
     if (markerIndex >= 0) {
@@ -288,7 +293,7 @@ async function isExistingFileComplete(filePath, file) {
 
 async function isExistingBundleComplete(versionDir, files) {
   for (const file of files) {
-    if (!(await isExistingFileComplete(path.join(versionDir, file.path), file))) {
+    if (!(await isExistingFileComplete(resolveClientDataFilePath(versionDir, file.path), file))) {
       return false
     }
   }
@@ -297,7 +302,7 @@ async function isExistingBundleComplete(versionDir, files) {
 }
 
 async function downloadBundleFile(versionDir, file, manifestText) {
-  const filePath = path.join(versionDir, file.path)
+  const filePath = resolveClientDataFilePath(versionDir, file.path)
 
   if (await isExistingFileComplete(filePath, file)) {
     return { reused: true }

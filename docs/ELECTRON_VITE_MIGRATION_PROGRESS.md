@@ -15,8 +15,9 @@
 - `package.json#main`、electron-vite 输出目录、electron-builder `files` 已对齐。
 - `npm run type-check`、`npm run lint`、`npm run build` 当前均通过。
 - Windows 安装包已切换为 NSIS 引导式安装，支持选择安装目录并归一化到应用子目录；运行时可变数据统一由 `src/main/modules/app-paths.ts` 管理。
-- Electron 依赖已升级到 `electron@42.2.0`，electron-builder 已升级到 `^26.11.1`。
+- Electron 依赖保持 `electron@42.2.0`，electron-builder 已升级到 `^26.15.3`。
 - 主进程和 preload 入口均已迁移为 TypeScript；`src/shared/ipc-contract.ts` 统一约束 preload 与 renderer 的类型边界。
+- renderer 已增加 CSP、导航/重定向阻止和统一 IPC sender 校验；生产与开发依赖审计均为 0。
 
 ## 优先级
 
@@ -116,7 +117,9 @@
 - [x] 服务端三语言 `16.13.5` 发布后完成真实预加载和 `npm run pack`；解包目录中每种语言均包含 49 个文件和 44 个 champion shards。
 - [x] 打包数据下载增加文件/字节进度、活动文件和 heartbeat；本地候选按版本选择，旧用户缓存不再遮蔽新 bundled 数据。
 - [x] OCR fixtures 改用临时固定名称库，不再读取用户缓存、LCU 或线上赛季数据。
-- [x] 验证通过：60 项 `npm run test:unit`、`npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`。
+- [x] manifest 路径与资源 origin 使用运行时/打包共享校验；renderer origin、导航和 IPC sender 统一收紧。
+- [x] 自动更新增加本地 feed origin 与 Windows publisher 信任根；当前列表为空且安装包未签名，因此继续保持关闭。
+- [x] 验证通过：23 个文件、82 项 `npm run test:unit`，以及 `npm run test:augment-ocr`、`npm run lint`、`npm run type-check`、`npm run build`、`npm run pack`；完整 `npm audit` 为 0。
 
 ### 2026-05-31
 

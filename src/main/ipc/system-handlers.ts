@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, shell } from 'electron'
 import {
   checkForAppUpdate,
   downloadAppUpdate,
@@ -13,10 +13,12 @@ import {
 } from '../services/analytics-service.ts'
 import { logDiagnosticSnapshot } from '../modules/diagnostic-logger.ts'
 import logger from '../modules/logger.ts'
+import { getVersionInfo } from '../version-checker.ts'
 import {
-  allowMainWindowClose,
-  toggleMainWindow,
+    allowMainWindowClose,
+    toggleMainWindow,
 } from '../modules/window-manager.ts'
+import { trustedIpcMain as ipcMain } from '../security/trusted-ipc.ts'
 
 let quitRequested = false
 
@@ -86,7 +88,6 @@ export function registerSystemIpcHandlers(): void {
 
   ipcMain.handle('get-version-info', async () => {
     try {
-      const { getVersionInfo } = await import('../version-checker.ts')
       return { success: true, data: await getVersionInfo() }
     } catch (error) {
       const message = (error as Error).message
