@@ -89,6 +89,7 @@ function processSnapshot(snapshot: any) {
 ## 提交前检查
 
 ```bash
+npm run test:unit
 npm run lint
 npm run type-check
 npm run build

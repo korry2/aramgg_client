@@ -58,6 +58,12 @@
 - `npm run prepare:client-data` 完成三个指针和语言级版本目录；中断续跑会复用已校验文件。
 - `npm run pack` 成功，`build/win-unpacked/resources/client-data` 中三个指针、manifest 和 49 个必需文件均匹配 locale 与 `16.13.5`。
 
+### 构建进度与调试覆盖
+
+- `npm run prepare:client-data` 会按语言输出文件数、字节百分比、下载/复用计数、活动文件和耗时；未完成下载每 15 秒输出 heartbeat。
+- `ARAMGG_CLIENT_DATA_PROGRESS_INTERVAL_MS` 可在构建诊断时调整 heartbeat 毫秒间隔，默认 `15000`；正式构建通常不需要设置。
+- `ARAMGG_OCR_LOCALE` 只用于测试或诊断时固定 OCR 语言提示。生产环境不要设置，正常运行继续读取 LCU `/riotclient/region-locale`。
+
 ## 问题清单
 
 ### P1-1：语言切换 IPC 必然抛错（已修复）

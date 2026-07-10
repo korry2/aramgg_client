@@ -59,6 +59,8 @@
 
 PaddleOCR 模型随应用打包在 `resources/paddleocr/`。提交海克斯 OCR、裁剪区域或名称匹配改动前，应运行 `npm run test:augment-ocr` 检查仓库内固定样本。
 
+`ARAMGG_OCR_LOCALE` 只用于测试或诊断时固定 OCR 语言提示，例如 `zh-CN`；正常开发和安装版不要设置它，生产运行继续以 LCU `/riotclient/region-locale` 为准。固定 OCR fixtures 会自行使用临时用户目录和最小名称库，不读取真实用户缓存。
+
 ## 配置和状态
 
 ### LCU 发现与游戏目录兜底

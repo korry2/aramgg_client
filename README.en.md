@@ -31,6 +31,7 @@ The application UI is Simplified Chinese by default. This English README is prov
 ```bash
 npm install
 npm run dev
+npm run prepare:client-data
 npm run test:unit
 npm run test:augment-ocr
 npm run lint

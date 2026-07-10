@@ -29,6 +29,7 @@
 ```bash
 npm install
 npm run dev
+npm run prepare:client-data
 npm run test:unit
 npm run test:augment-ocr
 npm run lint

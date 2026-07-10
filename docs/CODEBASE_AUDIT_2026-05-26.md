@@ -41,7 +41,7 @@
 
 ### 当前剩余 P1
 
-- #6 `sharp` 原生模块 Electron 打包验证：先跑 `npm run pack` 和安装版 OCR 验证，再决定是否添加 `postinstall` 或 `asarUnpack`。
+- #6 `sharp` 原生模块安装版烟测：`npm run pack` 已通过且 `sharp` 已配置 `asarUnpack`；仍需在干净安装环境验证截图预处理和 OCR。
 
 ### 当前剩余 P2 / P3
 
@@ -49,8 +49,8 @@
 - 修复路由名 `'Display'` 重复，并删除或归档 `src/renderer/router/index.js` 旧路由文件。
 - 提取 DDragon `14.24.1` 版本常量或改为动态版本。
 - 将 `src/renderer/service/http.js` 的全局 axios interceptor 改为独立实例。
-- 主进程若继续增长，可处理 ARAM 推荐数据预加载、`getGameflowPhase` 重试上限、`_drainAnalysisQueue` 队列逻辑、LCU 实例缓存清理、`notifyAllWindows` 重复导入。
-- 低优先级清理：`image-analyzer.ts` 弃用颜色检测代码、浮窗组件重复逻辑、两套 localStorage 配置、ChampionMonitor 轮询、`Math.max(...array)` 微优化。
+- 主进程若继续增长，可处理 ARAM 推荐数据预加载、`getGameflowPhase` 重试上限、`_drainAnalysisQueue` 队列逻辑、LCU 实例缓存清理，以及 `app-config.ts` / `window-manager.ts` 两套 `notifyAllWindows` 实现的收敛。
+- 低优先级清理：`image-analyzer.ts` 弃用颜色检测代码、浮窗剩余重复逻辑、两套 localStorage 配置、ChampionMonitor 轮询、`Math.max(...array)` 微优化。
 
 ---
 
@@ -344,7 +344,7 @@ ipcMain.handle('store-clear', () => {
 
 | 优先级 | 问题 | 说明 |
 |--------|---------|------|
-| P1 尽快 | #6 | `sharp` 原生模块打包验证 |
+| P1 尽快 | #6 | `sharp` 安装版截图/OCR 烟测；打包与 `asarUnpack` 已验证 |
 | P2 计划 | 依赖清理、Vite/tsconfig 配置债、路由和 DDragon/axios 清理 | 代码质量和维护成本 |
 | P3 清理 | 低优先级表中仍未完成的死代码、重复代码、性能微调 | 风险较低，适合批量整理 |
 

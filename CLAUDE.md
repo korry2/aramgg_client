@@ -18,7 +18,7 @@
 - 游戏阶段入口由 `GameSessionCoordinator` 去重并选择效果，Electron 窗口、LCU、OCR 和截图副作用仍由 `app-config.ts` 执行。
 - 运行时可变数据统一走 `src/main/modules/app-paths.ts`：安装版优先写入安装目录旁的 `aramgg_client-data/`，不可写时回退到 Electron `userData`。
 - 客户端英雄、海克斯、装备数据前台读取必须本地优先：完整缓存或打包兜底数据先渲染英雄详情和海克斯弹窗；远端 `dataVersion` 检查和新版本下载只在后台进行，且必须等必需文件完整后再激活。
-- 同语言存在用户缓存和 bundled 多个完整候选时，按 dataVersion、生成时间和激活时间选择最新版本，不能固定让旧用户缓存遮蔽新安装包数据；OCR fixtures 不得依赖真实用户目录、LCU 或线上赛季数据。
+- 同语言存在用户缓存和 bundled 多个完整候选时，按 dataVersion、生成时间和激活时间选择最新版本，不能固定让旧用户缓存遮蔽新安装包数据；OCR fixtures 不得依赖真实用户目录、LCU 或线上赛季数据，`ARAMGG_OCR_LOCALE` 只用于测试/调试，生产语言仍由 LCU 决定。
 - 客户端数据按语言隔离：默认 `zh-CN` 保留扁平指针和版本目录，非默认语言使用语言级指针和版本目录；非默认 `config` / `manifest` 必须显式匹配请求语言，打包和运行时都不能把默认中文归类成英文或繁中。
 
 ## 常用命令
@@ -26,6 +26,7 @@
 ```bash
 npm install
 npm run dev
+npm run prepare:client-data
 npm run test:unit
 npm run test:augment-ocr
 npm run lint
@@ -42,6 +43,8 @@ node tests/electron/test-winrate-query.js
 node tests/electron/test-screenshot-analysis.js
 node tests/electron/test-augment-ocr-fixtures.js
 ```
+
+`ARAMGG_CLIENT_DATA_PROGRESS_INTERVAL_MS` 只调整客户端数据预加载未完成时的 heartbeat 间隔，默认 `15000` 毫秒，不得影响校验和激活逻辑。
 
 ## 发布与 CI
 

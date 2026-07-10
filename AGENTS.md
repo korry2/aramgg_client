@@ -18,6 +18,7 @@ Build output directories such as `dist/`, `dist-electron/`, and `build/` are gen
 ## Build, Test, and Development Commands
 
 - `npm run dev`: start the Electron app through `electron-vite dev`.
+- `npm run prepare:client-data`: download and validate bundled data for all supported locales.
 - `npm run build`: build main, preload, and renderer bundles.
 - `npm run pack`: build and package with `electron-builder`.
 - `npm run lint`: run ESLint on JavaScript, TypeScript, and Vue files under `src/`.
@@ -25,6 +26,8 @@ Build output directories such as `dist/`, `dist-electron/`, and `build/` are gen
 - `npm run test:unit`: run Vitest unit tests for focused shared/main utilities.
 - `npm run test:augment-ocr`: run committed PaddleOCR augment screenshot fixtures.
 - `npm run test:screenshots`: run screenshot/OCR analysis test script.
+
+`ARAMGG_CLIENT_DATA_PROGRESS_INTERVAL_MS` only changes the incomplete-download heartbeat interval for client-data preparation; it must not affect validation or activation behavior.
 
 Use targeted test scripts in `tests/electron/` directly when debugging a feature, for example `node tests/electron/test-winrate-query.js`.
 
@@ -70,7 +73,7 @@ Mutable runtime data, including electron-store config, logs, remote-data cache, 
 
 Client data loading must stay local-first for foreground views. Complete cached or bundled data should render hero detail and augment popup surfaces immediately; remote `dataVersion` checks and downloads should run in the background and only activate a new version after required files are complete.
 
-When both user-cache and bundled pointers are complete for one locale, select the newest compatible dataVersion rather than always preferring the writable cache. Keep foreground and OCR fixture tests isolated from real user data, LCU discovery, and live seasonal datasets.
+When both user-cache and bundled pointers are complete for one locale, select the newest compatible dataVersion rather than always preferring the writable cache. Keep foreground and OCR fixture tests isolated from real user data, LCU discovery, and live seasonal datasets. `ARAMGG_OCR_LOCALE` is a test/debug override only; production language detection remains LCU-driven.
 
 Client data must remain isolated by locale. Keep the legacy flat pointer and version path for default `zh-CN`; use locale-scoped pointers and version directories for non-default locales. Non-default config and manifest responses must explicitly match the requested locale, and packaging/CI must fail instead of relabeling default Chinese data.
 
