@@ -86,14 +86,18 @@ export async function findLeagueInstallChildPath(directoryPath: string): Promise
   return null
 }
 
-export async function getLeagueClientLogDirectories(lolPath: string): Promise<string[]> {
+export function getLeagueClientLogDirectoryCandidates(lolPath: string): string[] {
   const normalizedPath = normalizeLolPath(lolPath)
-  const candidates = [
+  return [
     path.join(normalizedPath, 'LeagueClient'),
     path.join(normalizedPath, 'Logs', 'LeagueClient Logs'),
     path.join(normalizedPath, 'Logs'),
     normalizedPath,
   ]
+}
+
+export async function getLeagueClientLogDirectories(lolPath: string): Promise<string[]> {
+  const candidates = getLeagueClientLogDirectoryCandidates(lolPath)
 
   const existingDirectories: string[] = []
   for (const directoryPath of candidates) {

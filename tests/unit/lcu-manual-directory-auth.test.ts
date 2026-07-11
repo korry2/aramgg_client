@@ -1,8 +1,18 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import logger from '../../src/main/modules/logger.ts'
 import { discoverLcuAuthFromManualDirectory } from '../../src/main/services/lcu/manual-directory-auth.ts'
+
+vi.mock('../../src/main/modules/logger.ts', () => ({
+  default: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}))
 
 const tempDirs: string[] = []
 
@@ -14,6 +24,7 @@ async function createTempLeagueDir(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.clearAllMocks()
   await Promise.all(
     tempDirs.splice(0).map((tempDir) =>
       rm(tempDir, { recursive: true, force: true })
@@ -63,5 +74,30 @@ describe('LCU manual directory auth discovery', () => {
 
     expect(token).toBe('parent-lock-token')
     expect(port).toBe('58125')
+  })
+
+  it('logs candidate metadata without logging invalid lockfile content', async () => {
+    const leagueDir = await createTempLeagueDir()
+    const privateContent = 'private-diagnostic-fixture-value'
+    await writeFile(path.join(leagueDir, 'lockfile'), privateContent)
+
+    const result = await discoverLcuAuthFromManualDirectory(leagueDir)
+
+    expect(result).toEqual([null, null, null])
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[LCU manual discovery] no auth found in configured directory',
+      expect.objectContaining({
+        configuredPath: leagueDir,
+        logCandidateCount: 0,
+        sensitiveValuesLogged: false,
+        lockfiles: expect.arrayContaining([
+          expect.objectContaining({
+            path: path.join(leagueDir, 'lockfile'),
+            status: 'invalid-auth',
+          }),
+        ]),
+      })
+    )
+    expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(privateContent)
   })
 })

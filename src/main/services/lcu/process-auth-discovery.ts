@@ -300,9 +300,16 @@ async function queryLeagueClientProcesses(): Promise<Win32ProcessRecord[]> {
 
     return parsePowerShellJson(stdout)
   } catch (error) {
-    const err = error as Error
+    const err = error as Error & { code?: unknown; killed?: unknown; signal?: unknown }
     if (shouldLogDiscoveryDiagnostic()) {
-      logger.warn('[LCU discovery] process query failed:', err.message)
+      logger.warn('[LCU discovery] process query failed', {
+        name: err.name,
+        message: err.message,
+        code: err.code || null,
+        killed: err.killed === true,
+        signal: err.signal || null,
+        timeoutMs: 3000,
+      })
     }
     return []
   }
@@ -339,9 +346,17 @@ export async function discoverLcuAuthFromProcess(): Promise<TokenLoadResult> {
   }
 
   if (shouldLogDiscoveryDiagnostic()) {
+    const metadataAccessLikelyRestricted =
+      sortedRecords.length > 0 &&
+      sortedRecords.every((record) => !record.ExecutablePath && !record.CommandLine)
+
     logger.warn('[LCU discovery] no process auth found', {
       processCount: sortedRecords.length,
       processes: sortedRecords.map(summarizeProcessRecord),
+      metadataAccessLikelyRestricted,
+      diagnosticHint: metadataAccessLikelyRestricted
+        ? 'League processes are visible, but executable paths and command lines are unavailable; check privilege mismatch or security software restrictions.'
+        : null,
     })
   }
 
