@@ -74,7 +74,7 @@
       }
     ],
     "win": {
-      "verifyUpdateCodeSignature": true,
+      "verifyUpdateCodeSignature": false,
       "target": [
         {
           "target": "nsis",

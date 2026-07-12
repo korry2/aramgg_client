@@ -77,9 +77,12 @@ const AUTO_UPDATE_ENV_CONFIGURED = AUTO_UPDATE_ENV_VALUE.length > 0
 const AUTO_UPDATE_ENV_ENABLED = /^(1|true|yes)$/i.test(AUTO_UPDATE_ENV_VALUE)
 const UPDATE_DOWNLOAD_BLOCKED_PHASES = new Set(['GameStart', 'InProgress'])
 
-// Keep these lists empty until the production feed and Windows certificate are
-// finalized. Remote config cannot extend either trust root.
-const BUILTIN_TRUSTED_UPDATE_ORIGINS: readonly string[] = []
+// Temporary unsigned-update bridge. Keep the feed origin pinned while Windows
+// publisher verification is disabled. Once signed installers and matching
+// publisher names are verified end to end, restore this and package.json's
+// win.verifyUpdateCodeSignature to true.
+const REQUIRE_SIGNED_WINDOWS_UPDATES = false
+const BUILTIN_TRUSTED_UPDATE_ORIGINS: readonly string[] = ['https://cdn.dtodo.cn']
 const BUILTIN_TRUSTED_UPDATE_PUBLISHERS: readonly string[] = []
 const DEV_TRUSTED_UPDATE_ORIGINS = DEV_UPDATE_CHECK_ENABLED
   ? String(process.env.ARAMGG_UPDATE_ALLOWED_ORIGINS || '').split(',')
@@ -205,16 +208,23 @@ function normalizeFeedUrl(value: unknown): string {
 }
 
 function configureUpdateSignatureVerification(): void {
-  if (TRUSTED_UPDATE_PUBLISHERS.length === 0) {
-    throw new Error('自动更新未配置受信任的 Windows 发布者名称')
-  }
-
   const updater = autoUpdater as typeof autoUpdater & {
     verifyUpdateCodeSignature?: (
       publisherNames: string[],
       filePath: string
     ) => Promise<string | null>
   }
+
+  if (!REQUIRE_SIGNED_WINDOWS_UPDATES) {
+    updater.verifyUpdateCodeSignature = async () => null
+    logger.warn('[update] Windows update signature verification is temporarily disabled')
+    return
+  }
+
+  if (TRUSTED_UPDATE_PUBLISHERS.length === 0) {
+    throw new Error('自动更新未配置受信任的 Windows 发布者名称')
+  }
+
   const defaultVerifier = updater.verifyUpdateCodeSignature?.bind(updater)
   if (!defaultVerifier) {
     throw new Error('当前平台不支持 Windows 更新签名校验')
