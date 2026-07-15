@@ -11,6 +11,24 @@
 
 本项目只做辅助判断和展示，不自动选英雄、不自动换 bench、不自动锁定或接受交换。
 
+## Star 趋势
+
+<p align="center">
+  <a href="https://www.star-history.com/valkia/aramgg_client/">
+    <img src="./docs/assets/star-history.svg" alt="aramgg_client Star 趋势图" width="900" />
+  </a>
+</p>
+
+## 支持项目
+
+如果这个项目对你有帮助，欢迎通过微信或支付宝支持后续开发与维护。
+
+<p align="center">
+  <img src="./docs/assets/support/wechat.jpg" alt="微信赞赏码" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./docs/assets/support/alipay.jpg" alt="支付宝收款码" width="220" />
+</p>
+
 ## 项目结构
 
 - `src/main/`：Electron 主进程，窗口、IPC、LCU、截图、OCR、数据加载。

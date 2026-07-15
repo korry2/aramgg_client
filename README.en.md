@@ -13,6 +13,24 @@ This project only assists with analysis and display. It does not automatically p
 
 The application interface and display data can be switched together between Simplified Chinese, English, and Traditional Chinese. This English README is provided for contributors and users who prefer English project documentation.
 
+## Star History
+
+<p align="center">
+  <a href="https://www.star-history.com/valkia/aramgg_client/">
+    <img src="./docs/assets/star-history.svg" alt="aramgg_client star history chart" width="900" />
+  </a>
+</p>
+
+## Support the Project
+
+If this project helps you, you can support ongoing development and maintenance through WeChat Pay or Alipay.
+
+<p align="center">
+  <img src="./docs/assets/support/wechat.jpg" alt="WeChat Pay donation QR code" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./docs/assets/support/alipay.jpg" alt="Alipay donation QR code" width="220" />
+</p>
+
 ## Project Structure
 
 - `src/main/`: Electron main process code for windows, IPC, LCU integration, screenshots, OCR, and data loading.
