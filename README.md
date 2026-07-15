@@ -19,6 +19,8 @@
   </a>
 </p>
 
+图表由开源项目 [Star History](https://github.com/star-history/star-history) 生成。
+
 ## 支持项目
 
 如果这个项目对你有帮助，欢迎通过微信或支付宝支持后续开发与维护。

@@ -21,6 +21,8 @@ The application interface and display data can be switched together between Simp
   </a>
 </p>
 
+Chart generated with the open-source [Star History](https://github.com/star-history/star-history) project.
+
 ## Support the Project
 
 If this project helps you, you can support ongoing development and maintenance through WeChat Pay or Alipay.
