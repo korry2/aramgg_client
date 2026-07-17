@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   parseLcuAuthFromCommandLine,
   parseLcuAuthFromLogContent,
   parseLcuAuthFromLockfile,
+  queryLeagueClientProcessesWithRunner,
 } from '../../src/main/services/lcu/process-auth-discovery.ts'
 
 describe('LCU process auth discovery', () => {
@@ -85,5 +86,70 @@ describe('LCU process auth discovery', () => {
     expect(token).toBe('url-token')
     expect(port).toBe('58125')
     expect(url).toBe('https://riot:url-token@127.0.0.1:58125')
+  })
+
+  it('falls back to Get-Process when the CIM query times out', async () => {
+    const timeoutError = Object.assign(new Error('process query timed out'), {
+      code: 'ETIMEDOUT',
+      killed: true,
+    })
+    const runner = vi.fn()
+      .mockRejectedValueOnce(timeoutError)
+      .mockResolvedValueOnce(JSON.stringify({
+        Name: 'LeagueClientUx.exe',
+        ProcessId: 4321,
+        ExecutablePath: 'C:\\Riot Games\\League of Legends\\LeagueClientUx.exe',
+        CommandLine: null,
+      }))
+
+    const result = await queryLeagueClientProcessesWithRunner(runner)
+
+    expect(runner).toHaveBeenCalledTimes(2)
+    expect(result.records).toEqual([
+      expect.objectContaining({
+        Name: 'LeagueClientUx.exe',
+        ProcessId: 4321,
+        ExecutablePath: 'C:\\Riot Games\\League of Legends\\LeagueClientUx.exe',
+      }),
+    ])
+    expect(result.attempts).toEqual([
+      expect.objectContaining({
+        strategy: 'get-cim-instance',
+        timeoutMs: 8000,
+        succeeded: false,
+        error: expect.objectContaining({ timedOut: true, code: 'ETIMEDOUT' }),
+      }),
+      expect.objectContaining({
+        strategy: 'get-process',
+        timeoutMs: 4000,
+        succeeded: true,
+        usableRecordCount: 1,
+      }),
+    ])
+  })
+
+  it('merges fallback paths into process records with restricted CIM metadata', async () => {
+    const runner = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        Name: 'LeagueClientUx.exe',
+        ProcessId: 4321,
+        ExecutablePath: null,
+        CommandLine: null,
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        Name: 'LeagueClientUx.exe',
+        ProcessId: 4321,
+        ExecutablePath: 'D:\\League\\LeagueClientUx.exe',
+        CommandLine: null,
+      }))
+
+    const result = await queryLeagueClientProcessesWithRunner(runner)
+
+    expect(runner).toHaveBeenCalledTimes(2)
+    expect(result.records).toHaveLength(1)
+    expect(result.records[0]).toEqual(expect.objectContaining({
+      ProcessId: 4321,
+      ExecutablePath: 'D:\\League\\LeagueClientUx.exe',
+    }))
   })
 })

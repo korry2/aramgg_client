@@ -31,6 +31,50 @@ import {
   PerkPage,
 } from './types.ts'
 
+const LCU_ENDPOINT_PROBE_TIMEOUT_MS = 2500
+const LCU_CONNECTION_DIAGNOSTIC_INTERVAL_MS = 30 * 1000
+const RECOVERABLE_LCU_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ERR_SOCKET_CLOSED',
+])
+
+type LcuRequestError = Error & {
+  code?: string
+  errno?: string | number
+  syscall?: string
+  address?: string
+  port?: string | number
+  cause?: { code?: string }
+  response?: { status?: number }
+}
+
+const getLcuRequestErrorCode = (error: unknown): string | null => {
+  const err = error as LcuRequestError
+  return err.code || err.cause?.code || null
+}
+
+const isRecoverableLcuRequestError = (error: unknown): boolean => {
+  const code = getLcuRequestErrorCode(error)
+  return Boolean(code && RECOVERABLE_LCU_ERROR_CODES.has(code))
+}
+
+const summarizeLcuRequestError = (error: unknown) => {
+  const err = error as LcuRequestError
+  return {
+    name: err.name || 'Error',
+    message: String(err.message || error || 'Unknown LCU request error').slice(0, 500),
+    code: getLcuRequestErrorCode(error),
+    errno: err.errno ?? null,
+    syscall: err.syscall || null,
+    address: err.address || null,
+    port: err.port ?? null,
+    status: err.response?.status ?? null,
+  }
+}
+
 const createEmptyChampSelectSnapshot = (
   params: {
     connected: boolean
@@ -510,6 +554,9 @@ export class LCUService {
   private lastFailTime: number = 0
   private tokenCacheDuration: number
   private failCooldown: number
+  private authRefreshPromise: Promise<LCUAuthResult | null> | null = null
+  private lastConnectionDiagnosticAt: number = 0
+  private lastConnectionDiagnosticSignature: string = ''
 
   // HTTPS Agent（禁用证书验证，LCU 使用自签名证书）
   private httpsAgent = new https.Agent({
@@ -556,6 +603,156 @@ export class LCUService {
     }
   }
 
+  private logConnectionDiagnostic(
+    event: string,
+    details: Record<string, unknown>
+  ): void {
+    const now = Date.now()
+    const signature = JSON.stringify({
+      event,
+      context: details.context || null,
+      reason: details.reason || null,
+      port: details.port || details.previousPort || null,
+      code: details.code || null,
+      status: details.status || null,
+    })
+
+    if (
+      signature === this.lastConnectionDiagnosticSignature &&
+      now - this.lastConnectionDiagnosticAt < LCU_CONNECTION_DIAGNOSTIC_INTERVAL_MS
+    ) {
+      return
+    }
+
+    this.lastConnectionDiagnosticAt = now
+    this.lastConnectionDiagnosticSignature = signature
+    logger.warn(event, {
+      ...details,
+      sensitiveValuesLogged: false,
+    })
+  }
+
+  private invalidateAuth(
+    reason: string,
+    error: unknown = null,
+    applyCooldown: boolean = true
+  ): string | null {
+    const previousPort = this.port
+    this.setVars(null, null, null)
+    this.lastTokenFetchTime = 0
+    this.lastFailTime = applyCooldown ? Date.now() : 0
+
+    this.logConnectionDiagnostic('[LCU connection] cached auth invalidated', {
+      reason,
+      previousPort,
+      ...(error ? summarizeLcuRequestError(error) : {}),
+    })
+
+    return previousPort
+  }
+
+  private async probeCurrentConnection(context: string): Promise<boolean> {
+    if (!this.urls || !this.auth || !this.port) {
+      return false
+    }
+
+    const startedAt = Date.now()
+    try {
+      const response = await axios.get(this.urls.authToken, {
+        ...this.auth,
+        httpsAgent: this.httpsAgent,
+        proxy: false,
+        timeout: LCU_ENDPOINT_PROBE_TIMEOUT_MS,
+        validateStatus: () => true,
+      })
+      const connected = response.status >= 200 && response.status < 300
+
+      if (!connected) {
+        this.logConnectionDiagnostic('[LCU connection] endpoint probe rejected', {
+          context,
+          port: this.port,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          timeoutMs: LCU_ENDPOINT_PROBE_TIMEOUT_MS,
+          diagnosticHint: response.status === 401
+            ? 'The discovered token is stale or belongs to another League client instance.'
+            : 'The LCU endpoint responded, but the auth probe did not return a success status.',
+        })
+      }
+
+      return connected
+    } catch (error) {
+      this.logConnectionDiagnostic('[LCU connection] endpoint probe failed', {
+        context,
+        durationMs: Date.now() - startedAt,
+        timeoutMs: LCU_ENDPOINT_PROBE_TIMEOUT_MS,
+        ...summarizeLcuRequestError(error),
+        port: this.port,
+        diagnosticHint: getLcuRequestErrorCode(error) === 'ECONNREFUSED'
+          ? 'No process is listening on the discovered LCU port; the lockfile/log may be stale or League Client is not fully running.'
+          : 'Check League Client state, local security software, proxy settings, and privilege level.',
+      })
+      return false
+    }
+  }
+
+  private async loadAndVerifyAuth(): Promise<LCUAuthResult | null> {
+    const [token, port] = await getLcuToken()
+
+    if (!token || !port) {
+      logger.debug('Unable to get LCU token; game client may not be running')
+      this.setVars(null, null, null)
+      this.lastFailTime = Date.now()
+      return null
+    }
+
+    const url = `https://127.0.0.1:${port}`
+    this.setVars(token, port, url)
+
+    if (!await this.probeCurrentConnection('auth-candidate-verification')) {
+      this.invalidateAuth('auth-candidate-unreachable', null, true)
+      return null
+    }
+
+    this.lastTokenFetchTime = Date.now()
+    this.lastFailTime = 0
+    logger.info('[LCU connection] auth candidate verified', {
+      port,
+      sensitiveValuesLogged: false,
+    })
+    return { token, port, url }
+  }
+
+  private async recoverFromConnectionFailure(
+    context: string,
+    error: unknown
+  ): Promise<boolean> {
+    if (!isRecoverableLcuRequestError(error)) {
+      return false
+    }
+
+    const previousPort = this.invalidateAuth(`${context}:transport-failure`, error, false)
+    const refreshed = await this.getAuthToken(true)
+    const connected = Boolean(refreshed)
+    const result = {
+      context,
+      connected,
+      previousPort,
+      discoveredPort: refreshed?.port || null,
+      rediscoveredSamePort: Boolean(previousPort && refreshed?.port === previousPort),
+      trigger: summarizeLcuRequestError(error),
+      sensitiveValuesLogged: false,
+    }
+
+    if (connected) {
+      logger.info('[LCU connection] forced rediscovery recovered connection', result)
+    } else {
+      this.logConnectionDiagnostic('[LCU connection] forced rediscovery did not recover', result)
+    }
+
+    return connected
+  }
+
   /**
    * 获取认证 token（带缓存和失败冷却机制）
    * @param forceRefresh - 是否强制刷新 token
@@ -576,29 +773,19 @@ export class LCUService {
       return { token: this.token, port: this.port!, url: this.url }
     }
 
+    if (this.authRefreshPromise) {
+      return this.authRefreshPromise
+    }
+
+    this.authRefreshPromise = this.loadAndVerifyAuth()
     try {
-      const [token, port] = await getLcuToken()
-
-      if (!token || !port) {
-        logger.debug('Unable to get LCU token; game client may not be running')
-        this.setVars(null, null, null)
-        this.lastFailTime = now
-        return null
-      }
-
-      const url = `https://127.0.0.1:${port}`
-      this.setVars(token, port, url)
-      this.lastTokenFetchTime = now
-      this.lastFailTime = 0 // 清除失败时间
-
-      logger.debug(`LCU connected (port: ${port})`)
-      return { token, port, url }
+      return await this.authRefreshPromise
     } catch (error) {
-      const err = error as Error
-      logger.error('LCU 连接失败:', err.message)
-      this.setVars(null, null, null)
-      this.lastFailTime = now
+      logger.error('LCU 连接失败:', summarizeLcuRequestError(error))
+      this.invalidateAuth('auth-refresh-error', error, true)
       return null
+    } finally {
+      this.authRefreshPromise = null
     }
   }
 
@@ -606,19 +793,15 @@ export class LCUService {
    * 检查 LCU 状态
    */
   async getLcuStatus(): Promise<boolean> {
-    if (!this.urls || !this.auth) {
+    if (!this.urls || !this.auth || !this.active) {
       return false
     }
 
-    try {
-      const res = await axios.get(this.urls.authToken, {
-        ...this.auth,
-        httpsAgent: this.httpsAgent,
-      })
-      return !!res
-    } catch (error) {
-      return false
+    const connected = await this.probeCurrentConnection('status-check')
+    if (!connected) {
+      this.invalidateAuth('status-check-failed', null, true)
     }
+    return connected
   }
 
   /**
@@ -640,20 +823,17 @@ export class LCUService {
       if (res.status === 404 || res.status === 401) {
         if (res.status === 401) {
           logger.warn('LCU 认证失效，需要重新连接')
-          this.active = false
-          this.lastFailTime = Date.now()
+          this.invalidateAuth('champ-select-session:unauthorized', null, false)
+          await this.getAuthToken(true)
         }
         return null
       }
 
       return res.data
     } catch (error) {
-      // 连接被拒绝说明客户端可能未运行或端口已失效
-      const err = error as any
-      if (err.code === 'ECONNREFUSED') {
-        this.active = false
-        this.lastFailTime = Date.now()
-        logger.debug('LCU connection lost')
+      if (!await this.recoverFromConnectionFailure('champ-select-session', error)) {
+        const err = error as Error
+        logger.debug('LCU champ-select session request failed:', err.message)
       }
       return null
     }
@@ -747,7 +927,13 @@ export class LCUService {
       return res.status >= 200 && res.status < 300 ? res.data : null
     } catch (error) {
       const err = error as Error
-      logger.warn('获取当前召唤师失败:', err.message)
+      const recovered = await this.recoverFromConnectionFailure('current-summoner', error)
+      logger.warn('获取当前召唤师失败:', {
+        error: err.message,
+        code: getLcuRequestErrorCode(error),
+        recoveryAttempted: isRecoverableLcuRequestError(error),
+        recovered,
+      })
       return null
     }
   }
@@ -974,21 +1160,16 @@ export class LCUService {
       if (res.status === 404 || res.status === 401) {
         // 重新获取 token
         logger.warn('LCU 认证失效，尝试重新连接...')
-        this.active = false
-        await this.getAuthToken()
+        this.invalidateAuth(`gameflow-phase:http-${res.status}`, null, false)
+        await this.getAuthToken(true)
         return null
       }
 
       logger.debug('Current gameflow phase:', res.data)
       return res.data
     } catch (error) {
-      const err = error as any
-      // 连接失败时尝试重新认证
-      if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
-        logger.debug('LCU connection lost, trying to reconnect')
-        this.active = false
-        await this.getAuthToken()
-      } else {
+      if (!await this.recoverFromConnectionFailure('gameflow-phase', error)) {
+        const err = error as Error
         logger.warn('获取游戏阶段失败:', err.message)
       }
       return null

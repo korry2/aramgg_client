@@ -713,16 +713,24 @@ export function registerIpcHandlers(isDev: boolean): void {
             store.set(LCU_MANUAL_LEAGUE_PATH_KEY, validation.normalizedPath)
 
             let connected = false
+            let connectionReason = 'auth-not-found-or-endpoint-unreachable'
             try {
-                const auth = await getLCUServiceInstance().getAuthToken(true)
-                connected = Boolean(auth)
+                const lcuService = getLCUServiceInstance()
+                const auth = await lcuService.getAuthToken(true)
+                if (auth) {
+                    connected = await lcuService.getLcuStatus()
+                    connectionReason = connected ? 'endpoint-verified' : 'endpoint-unreachable'
+                }
             } catch (error) {
+                connectionReason = 'connection-check-failed'
                 logger.debug('[lcu] manual League path saved but auth refresh failed:', getErrorMessage(error))
             }
 
             logger.info('[lcu] manual League path fallback saved', {
                 layout: validation.layout || null,
                 connected,
+                connectionReason,
+                configuredPath: validation.normalizedPath,
             })
 
             return {
@@ -730,6 +738,7 @@ export function registerIpcHandlers(isDev: boolean): void {
                 path: validation.normalizedPath,
                 configuredPath: validation.normalizedPath,
                 connected,
+                connectionReason,
             }
         } catch (error) {
             logger.warn('[lcu] failed to save manual League path:', getErrorMessage(error))

@@ -30,6 +30,8 @@ type DirectoryDiagnostic = {
   errorCode?: string
 }
 
+type ProcessLiveness = 'running' | 'not-running' | 'access-denied' | 'unknown'
+
 function getErrorCode(error: unknown): string {
   const code = (error as NodeJS.ErrnoException | null)?.code
   return typeof code === 'string' && code ? code : 'UNKNOWN'
@@ -40,6 +42,66 @@ function getCandidateMetadata(fileStat: Awaited<ReturnType<typeof stat>>) {
     size: Number(fileStat.size),
     modifiedAt: fileStat.mtime.toISOString(),
   }
+}
+
+function getCandidateAgeMs(fileStat: Awaited<ReturnType<typeof stat>>): number {
+  return Math.max(0, Date.now() - Number(fileStat.mtimeMs))
+}
+
+function getLockfileProcessId(content: string): number | null {
+  const processId = Number(content.trim().split(':')[1])
+  return Number.isInteger(processId) && processId > 0 ? processId : null
+}
+
+function getLogProcessId(filePath: string): number | null {
+  const match = path.basename(filePath).match(/_(\d+)_LeagueClientUx\.log$/)
+  const processId = Number(match?.[1])
+  return Number.isInteger(processId) && processId > 0 ? processId : null
+}
+
+function getProcessLiveness(processId: number | null): ProcessLiveness {
+  if (!processId) {
+    return 'unknown'
+  }
+
+  try {
+    process.kill(processId, 0)
+    return 'running'
+  } catch (error) {
+    const errorCode = getErrorCode(error)
+    if (errorCode === 'ESRCH') {
+      return 'not-running'
+    }
+    if (errorCode === 'EPERM' || errorCode === 'EACCES') {
+      return 'access-denied'
+    }
+    return 'unknown'
+  }
+}
+
+function logSelectedAuthCandidate(params: {
+  normalizedPath: string
+  source: 'lockfile' | 'LeagueClientUx-log'
+  candidatePath: string
+  fileStat: Awaited<ReturnType<typeof stat>>
+  port: string
+  processId: number | null
+}): void {
+  if (!shouldLogManualDiscoveryDiagnostic(params.normalizedPath)) {
+    return
+  }
+
+  logger.info('[LCU manual discovery] auth candidate selected', {
+    configuredPath: params.normalizedPath,
+    source: params.source,
+    candidatePath: params.candidatePath,
+    port: params.port,
+    processId: params.processId,
+    processLiveness: getProcessLiveness(params.processId),
+    candidateAgeMs: getCandidateAgeMs(params.fileStat),
+    ...getCandidateMetadata(params.fileStat),
+    sensitiveValuesLogged: false,
+  })
 }
 
 function shouldLogManualDiscoveryDiagnostic(normalizedPath: string): boolean {
@@ -102,6 +164,14 @@ async function readAuthFromManualLockfiles(
           path: lockfilePath,
           status: 'auth-found',
           ...getCandidateMetadata(fileStat),
+        })
+        logSelectedAuthCandidate({
+          normalizedPath,
+          source: 'lockfile',
+          candidatePath: lockfilePath,
+          fileStat,
+          port: result[1],
+          processId: getLockfileProcessId(content),
         })
         return result
       }
@@ -170,6 +240,16 @@ async function readAuthFromManualLogs(
           status: 'auth-found',
           ...(fileStat ? getCandidateMetadata(fileStat) : {}),
         })
+        if (fileStat) {
+          logSelectedAuthCandidate({
+            normalizedPath,
+            source: 'LeagueClientUx-log',
+            candidatePath: logFilePath,
+            fileStat,
+            port: result[1],
+            processId: getLogProcessId(logFilePath),
+          })
+        }
         return { result, candidateCount: logFiles.length }
       }
       diagnostics.push({

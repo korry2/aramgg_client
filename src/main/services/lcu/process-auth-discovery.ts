@@ -9,10 +9,13 @@ const execFileAsync = promisify(execFile)
 
 const LEAGUE_CLIENT_PROCESS_FILTER =
   "Name='LeagueClientUx.exe' OR Name='LeagueClient.exe'"
+const CIM_PROCESS_QUERY_TIMEOUT_MS = 8000
+const GET_PROCESS_QUERY_TIMEOUT_MS = 4000
 const DISCOVERY_DIAGNOSTIC_LOG_INTERVAL_MS = 30 * 1000
 let lastDiscoveryDiagnosticLogAt = 0
+let lastFallbackSuccessLogAt = 0
 
-type Win32ProcessRecord = {
+export type Win32ProcessRecord = {
   Name?: string
   ProcessId?: number
   CommandLine?: string | null
@@ -24,6 +27,50 @@ type LogCandidate = {
   mtimeMs: number
   processIdMatch: boolean
 }
+
+type ProcessQueryErrorDiagnostic = {
+  name: string
+  message: string
+  code: string | number | null
+  killed: boolean
+  signal: string | null
+  timedOut: boolean
+  stderr: string | null
+}
+
+export type ProcessQueryAttempt = {
+  strategy: 'get-cim-instance' | 'get-process'
+  timeoutMs: number
+  durationMs: number
+  succeeded: boolean
+  recordCount: number
+  usableRecordCount: number
+  error: ProcessQueryErrorDiagnostic | null
+}
+
+export type ProcessQueryResult = {
+  records: Win32ProcessRecord[]
+  attempts: ProcessQueryAttempt[]
+}
+
+export type ProcessQueryRunner = (script: string, timeoutMs: number) => Promise<string>
+
+const PROCESS_QUERY_STRATEGIES: Array<{
+  name: ProcessQueryAttempt['strategy']
+  timeoutMs: number
+  script: string
+}> = [
+  {
+    name: 'get-cim-instance',
+    timeoutMs: CIM_PROCESS_QUERY_TIMEOUT_MS,
+    script: `$ErrorActionPreference='Stop'; Get-CimInstance Win32_Process -Filter "${LEAGUE_CLIENT_PROCESS_FILTER}" | Select-Object Name,ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress`,
+  },
+  {
+    name: 'get-process',
+    timeoutMs: GET_PROCESS_QUERY_TIMEOUT_MS,
+    script: "$ErrorActionPreference='SilentlyContinue'; @(Get-Process -Name LeagueClientUx,LeagueClient -ErrorAction SilentlyContinue) | Select-Object @{Name='Name';Expression={$_.ProcessName + '.exe'}},@{Name='ProcessId';Expression={$_.Id}},@{Name='ExecutablePath';Expression={$_.Path}},@{Name='CommandLine';Expression={$null}} | ConvertTo-Json -Compress; exit 0",
+  },
+]
 
 function buildUrlWithAuth(token: string, port: string, protocol = 'https'): string {
   return `${protocol}://riot:${token}@127.0.0.1:${port}`
@@ -52,6 +99,120 @@ function parsePowerShellJson(stdout: string): Win32ProcessRecord[] {
     logger.debug('[LCU discovery] failed to parse process query output:', err.message)
     return []
   }
+}
+
+function hasUsableProcessMetadata(record: Win32ProcessRecord): boolean {
+  return Boolean(record.CommandLine || record.ExecutablePath)
+}
+
+function mergeProcessRecords(
+  currentRecords: Win32ProcessRecord[],
+  incomingRecords: Win32ProcessRecord[]
+): Win32ProcessRecord[] {
+  const merged = new Map<string, Win32ProcessRecord>()
+
+  for (const record of [...currentRecords, ...incomingRecords]) {
+    const key = record.ProcessId
+      ? `pid:${record.ProcessId}`
+      : `name:${record.Name || 'unknown'}:${merged.size}`
+    const previous = merged.get(key)
+    merged.set(key, {
+      ...previous,
+      ...record,
+      ExecutablePath: record.ExecutablePath || previous?.ExecutablePath || null,
+      CommandLine: record.CommandLine || previous?.CommandLine || null,
+    })
+  }
+
+  return [...merged.values()]
+}
+
+function summarizeProcessQueryError(error: unknown): ProcessQueryErrorDiagnostic {
+  const err = error as Error & {
+    code?: string | number
+    killed?: boolean
+    signal?: string
+    stderr?: string | Buffer
+  }
+  const stderr = String(err.stderr || '').trim()
+  const message = String(err.message || error || 'Unknown process query error')
+  const timedOut =
+    err.code === 'ETIMEDOUT' ||
+    err.killed === true ||
+    /timed out|timeout/i.test(message)
+
+  return {
+    name: err.name || 'Error',
+    message: message.slice(0, 500),
+    code: err.code ?? null,
+    killed: err.killed === true,
+    signal: err.signal || null,
+    timedOut,
+    stderr: stderr ? stderr.slice(0, 500) : null,
+  }
+}
+
+async function defaultProcessQueryRunner(script: string, timeoutMs: number): Promise<string> {
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script,
+    ],
+    {
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 1024 * 256,
+      encoding: 'utf8',
+    }
+  )
+
+  return String(stdout || '')
+}
+
+export async function queryLeagueClientProcessesWithRunner(
+  runner: ProcessQueryRunner
+): Promise<ProcessQueryResult> {
+  const attempts: ProcessQueryAttempt[] = []
+  let records: Win32ProcessRecord[] = []
+
+  for (const strategy of PROCESS_QUERY_STRATEGIES) {
+    const startedAt = Date.now()
+    try {
+      const stdout = await runner(strategy.script, strategy.timeoutMs)
+      const strategyRecords = parsePowerShellJson(stdout)
+      records = mergeProcessRecords(records, strategyRecords)
+      attempts.push({
+        strategy: strategy.name,
+        timeoutMs: strategy.timeoutMs,
+        durationMs: Date.now() - startedAt,
+        succeeded: true,
+        recordCount: strategyRecords.length,
+        usableRecordCount: strategyRecords.filter(hasUsableProcessMetadata).length,
+        error: null,
+      })
+
+      if (records.some(hasUsableProcessMetadata)) {
+        break
+      }
+    } catch (error) {
+      attempts.push({
+        strategy: strategy.name,
+        timeoutMs: strategy.timeoutMs,
+        durationMs: Date.now() - startedAt,
+        succeeded: false,
+        recordCount: 0,
+        usableRecordCount: 0,
+        error: summarizeProcessQueryError(error),
+      })
+    }
+  }
+
+  return { records, attempts }
 }
 
 function parseCommandLineArgument(commandLine: string, argumentName: string): string | null {
@@ -275,48 +436,33 @@ async function readLcuAuthFromProcessLog(record: Win32ProcessRecord): Promise<To
   return [null, null, null]
 }
 
-async function queryLeagueClientProcesses(): Promise<Win32ProcessRecord[]> {
+async function queryLeagueClientProcesses(): Promise<ProcessQueryResult> {
   if (process.platform !== 'win32') {
-    return []
+    return { records: [], attempts: [] }
   }
 
-  try {
-    const { stdout } = await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        `$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process -Filter "${LEAGUE_CLIENT_PROCESS_FILTER}" | Select-Object Name,ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress`,
-      ],
-      {
-        timeout: 3000,
-        windowsHide: true,
-        maxBuffer: 1024 * 256,
-      }
-    )
+  const result = await queryLeagueClientProcessesWithRunner(defaultProcessQueryRunner)
+  const fallbackAttempt = result.attempts.find((attempt) => attempt.strategy === 'get-process')
+  const now = Date.now()
 
-    return parsePowerShellJson(stdout)
-  } catch (error) {
-    const err = error as Error & { code?: unknown; killed?: unknown; signal?: unknown }
-    if (shouldLogDiscoveryDiagnostic()) {
-      logger.warn('[LCU discovery] process query failed', {
-        name: err.name,
-        message: err.message,
-        code: err.code || null,
-        killed: err.killed === true,
-        signal: err.signal || null,
-        timeoutMs: 3000,
-      })
-    }
-    return []
+  if (
+    fallbackAttempt?.succeeded &&
+    fallbackAttempt.usableRecordCount > 0 &&
+    now - lastFallbackSuccessLogAt >= DISCOVERY_DIAGNOSTIC_LOG_INTERVAL_MS
+  ) {
+    lastFallbackSuccessLogAt = now
+    logger.info('[LCU discovery] fallback process query recovered League metadata', {
+      attempts: result.attempts,
+      processes: result.records.map(summarizeProcessRecord),
+      sensitiveValuesLogged: false,
+    })
   }
+
+  return result
 }
 
 export async function discoverLcuAuthFromProcess(): Promise<TokenLoadResult> {
-  const records = await queryLeagueClientProcesses()
+  const { records, attempts } = await queryLeagueClientProcesses()
   const sortedRecords = records.sort((a, b) => {
     const aIsUx = a.Name === 'LeagueClientUx.exe' ? 1 : 0
     const bIsUx = b.Name === 'LeagueClientUx.exe' ? 1 : 0
@@ -349,14 +495,30 @@ export async function discoverLcuAuthFromProcess(): Promise<TokenLoadResult> {
     const metadataAccessLikelyRestricted =
       sortedRecords.length > 0 &&
       sortedRecords.every((record) => !record.ExecutablePath && !record.CommandLine)
+    const queryTimedOut = attempts.some((attempt) => attempt.error?.timedOut)
+    const queryFailed = attempts.some((attempt) => !attempt.succeeded)
+    const diagnosticHints: string[] = []
+    if (metadataAccessLikelyRestricted) {
+      diagnosticHints.push('League processes are visible, but executable paths and command lines are unavailable; check privilege mismatch or security software restrictions.')
+    }
+    if (queryTimedOut) {
+      diagnosticHints.push('PowerShell process discovery timed out; check WMI/CIM health, endpoint security software, or system load.')
+    } else if (queryFailed) {
+      diagnosticHints.push('A PowerShell process discovery strategy failed; inspect attempt error codes and stderr for policy, WMI, or PowerShell failures.')
+    }
+    if (sortedRecords.length === 0) {
+      diagnosticHints.push('No League client process was visible; verify LeagueClientUx.exe is running and both applications use the same privilege level.')
+    } else if (!metadataAccessLikelyRestricted) {
+      diagnosticHints.push('League processes were found, but no usable auth was present in command lines, lockfiles, or recent client logs.')
+    }
 
     logger.warn('[LCU discovery] no process auth found', {
       processCount: sortedRecords.length,
       processes: sortedRecords.map(summarizeProcessRecord),
+      attempts,
       metadataAccessLikelyRestricted,
-      diagnosticHint: metadataAccessLikelyRestricted
-        ? 'League processes are visible, but executable paths and command lines are unavailable; check privilege mismatch or security software restrictions.'
-        : null,
+      diagnosticHints,
+      sensitiveValuesLogged: false,
     })
   }
 

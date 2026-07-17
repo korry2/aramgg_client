@@ -37,7 +37,7 @@ describe('LCU manual directory auth discovery', () => {
     const leagueDir = await createTempLeagueDir()
     await writeFile(
       path.join(leagueDir, 'lockfile'),
-      'LeagueClient:1234:58123:manual-lock-token:https'
+      `LeagueClient:${process.pid}:58123:manual-lock-token:https`
     )
 
     const [token, port, url] = await discoverLcuAuthFromManualDirectory(leagueDir)
@@ -45,6 +45,17 @@ describe('LCU manual directory auth discovery', () => {
     expect(token).toBe('manual-lock-token')
     expect(port).toBe('58123')
     expect(url).toBe('https://riot:manual-lock-token@127.0.0.1:58123')
+    expect(logger.info).toHaveBeenCalledWith(
+      '[LCU manual discovery] auth candidate selected',
+      expect.objectContaining({
+        source: 'lockfile',
+        port: '58123',
+        processId: process.pid,
+        processLiveness: 'running',
+        sensitiveValuesLogged: false,
+      })
+    )
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('manual-lock-token')
   })
 
   it('extracts auth from LeagueClientUx logs under the LeagueClient directory', async () => {
