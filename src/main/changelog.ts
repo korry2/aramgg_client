@@ -13,6 +13,16 @@ const SUMMARY_TEXT_LIMIT = 220
 
 export const LOCAL_CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '0.2.1',
+    date: '2026-07-17',
+    title: '修复客户端数据热更新',
+    summary: '修复运行时数据文件保存方式不一致导致新数据版本无法通过完整性校验的问题。',
+    changes: [
+      '运行时更新现在会原样保存服务端 JSON 文本，与打包数据下载保持一致，避免文件末尾换行丢失。',
+      '修复完整数据已下载但客户端仍回退到旧数据版本的问题。',
+    ],
+  },
+  {
     version: '0.2.0',
     date: '2026-07-12',
     title: '多语言与客户端体验升级',

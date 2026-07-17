@@ -26,6 +26,15 @@ function jsonResponse(payload: any): any {
   }
 }
 
+function textResponse(body: string): any {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: async () => body,
+  }
+}
+
 async function seedOcrLocale(locale: string, dataVersion: string, augmentName: string): Promise<void> {
   const dataRoot = path.join(tempRoot, 'data')
   const pointerName = locale === DEFAULT_CLIENT_DATA_LOCALE
@@ -188,6 +197,75 @@ describe('runtime client data locale validation', () => {
     try {
       const config = await loadDataApiConfig({ locale: 'en-US' })
       expect(config.locale).toBe('zh-CN')
+    } finally {
+      clearCache()
+    }
+  })
+
+  it('preserves remote JSON text when caching a runtime data version', async () => {
+    const dataVersion = '16.14.1'
+    const versionPrefix = `/api/client/v1/data/${dataVersion}`
+    const dataFiles = new Map<string, string>([
+      ['augments.json', `${JSON.stringify({ augments: [] })}\n`],
+      ['champions.json', `${JSON.stringify({ champions: [] })}\n`],
+      ['items.json', `${JSON.stringify({ items: [] })}\n`],
+      ['champion-shards/index.json', `${JSON.stringify({ shards: [] })}\n`],
+    ])
+    const manifestText = `${JSON.stringify({
+      locale: 'zh-CN',
+      dataVersion,
+      files: [...dataFiles.entries()].map(([filePath, content]) => ({
+        path: filePath,
+        url: `${versionPrefix}/${filePath}`,
+        bytes: Buffer.byteLength(content),
+      })),
+    })}\n`
+    const configText = JSON.stringify({
+      locale: 'zh-CN',
+      dataVersion,
+      gamePatch: '16.14',
+      manifest: `${versionPrefix}/manifest.json`,
+    })
+
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/api/client/v1/config') {
+        return textResponse(configText)
+      }
+      if (url.pathname === `${versionPrefix}/manifest.json`) {
+        return textResponse(manifestText)
+      }
+
+      const relativePath = url.pathname.slice(`${versionPrefix}/`.length)
+      const content = dataFiles.get(relativePath)
+      if (content != null) {
+        return textResponse(content)
+      }
+
+      throw new Error(`Unexpected remote request: ${url}`)
+    }))
+
+    const { prepareDataLocale, clearCache } = await import('../../src/main/data-loader.ts')
+    try {
+      await expect(prepareDataLocale('zh-CN')).resolves.toEqual({
+        locale: 'zh-CN',
+        dataVersion,
+      })
+
+      const versionDir = path.join(tempRoot, 'data', 'versions', dataVersion)
+      await expect(readFile(path.join(versionDir, 'manifest.json'), 'utf8')).resolves.toBe(manifestText)
+      for (const [filePath, content] of dataFiles) {
+        await expect(readFile(path.join(versionDir, filePath), 'utf8')).resolves.toBe(content)
+      }
+
+      clearCache()
+      vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+        throw new Error(`Runtime data should load from the complete cache: ${String(input)}`)
+      }))
+      await expect(prepareDataLocale('zh-CN')).resolves.toEqual({
+        locale: 'zh-CN',
+        dataVersion,
+      })
     } finally {
       clearCache()
     }

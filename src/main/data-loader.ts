@@ -18,6 +18,11 @@ type FetchJsonOptions = {
   locale?: string
 }
 
+type JsonDocument = {
+  data: any
+  sourceText: string
+}
+
 type SupportedDataLocale = 'zh-CN' | 'en-US' | 'zh-TW'
 
 type ClientConfig = {
@@ -235,6 +240,58 @@ async function getTransportFetch(): Promise<any> {
   return fetch
 }
 
+async function requestJsonDocument(
+  resourcePath: string,
+  options: FetchJsonOptions = {}
+): Promise<JsonDocument> {
+  const url = getApiUrl(resourcePath)
+  const transportFetch = await getTransportFetch()
+  const timeoutMs = options.timeoutMs ?? DATA_FETCH_TIMEOUT_MS
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null
+
+  try {
+    const response = await transportFetch(url, {
+      headers: {
+        accept: 'application/json',
+      },
+      signal: controller?.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`Remote data request failed: ${response.status} ${response.statusText}`)
+    }
+
+    if (typeof response.text === 'function') {
+      const sourceText = await response.text()
+      return {
+        data: JSON.parse(sourceText),
+        sourceText,
+      }
+    }
+
+    const data = await response.json()
+    return {
+      data,
+      sourceText: JSON.stringify(data),
+    }
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`Remote data request timed out after ${timeoutMs}ms: ${url}`, {
+        cause: error,
+      })
+    }
+
+    throw error
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+  }
+}
+
 async function fetchJson(resourcePath: string, options: FetchJsonOptions = {}): Promise<any> {
   const url = getApiUrl(resourcePath)
   const force = options.force === true
@@ -249,39 +306,12 @@ async function fetchJson(resourcePath: string, options: FetchJsonOptions = {}): 
     return pending
   }
 
-  const transportFetch = await getTransportFetch()
-  const timeoutMs = options.timeoutMs ?? DATA_FETCH_TIMEOUT_MS
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timeout = controller
-    ? setTimeout(() => controller.abort(), timeoutMs)
-    : null
-
-  const request = transportFetch(url, {
-    headers: {
-      accept: 'application/json',
-    },
-    signal: controller?.signal,
-  })
-    .then(async (response: any) => {
-      if (!response.ok) {
-        throw new Error(`Remote data request failed: ${response.status} ${response.statusText}`)
-      }
-
-      const data = await response.json()
+  const request = requestJsonDocument(resourcePath, options)
+    .then(({ data }) => {
       cache.set(url, { data, createdAt: Date.now() })
       return data
     })
-    .catch((error: any) => {
-      if (error?.name === 'AbortError') {
-        throw new Error(`Remote data request timed out after ${timeoutMs}ms: ${url}`)
-      }
-
-      throw error
-    })
     .finally(() => {
-      if (timeout) {
-        clearTimeout(timeout)
-      }
       pendingRequests.delete(url)
     })
 
@@ -485,9 +515,13 @@ async function getJsonFileSize(filePath: string): Promise<number | null> {
 }
 
 async function writeJsonFileAtomic(filePath: string, payload: any): Promise<void> {
+  await writeTextFileAtomic(filePath, JSON.stringify(payload))
+}
+
+async function writeTextFileAtomic(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true })
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  await writeFile(tempPath, JSON.stringify(payload), 'utf8')
+  await writeFile(tempPath, content, 'utf8')
   await rename(tempPath, filePath)
 }
 
@@ -758,14 +792,14 @@ async function readDataFileFromDisk(
   return null
 }
 
-async function writeDataFileToDisk(
+async function writeDataTextToDisk(
   dataVersion: string,
   dataPath: string,
-  payload: any,
+  sourceText: string,
   locale: SupportedDataLocale = activeDataLocale
 ): Promise<void> {
   const versionDir = await getVersionDir(dataVersion, locale)
-  await writeJsonFileAtomic(resolveClientDataFilePath(versionDir, dataPath), payload)
+  await writeTextFileAtomic(resolveClientDataFilePath(versionDir, dataPath), sourceText)
 }
 
 async function readCachedVersionedDataFile(
@@ -841,11 +875,12 @@ async function fetchVersionedDataFile(
         resourcePath: resolvedResourcePath,
         force,
       })
-      const payload = await fetchJson(
+      const document = await requestJsonDocument(
         resolvedResourcePath,
         { force, ttlMs: options.ttlMs, timeoutMs: options.timeoutMs }
       )
-      await writeDataFileToDisk(dataVersion, normalizedPath, payload, locale)
+      const payload = document.data
+      await writeDataTextToDisk(dataVersion, normalizedPath, document.sourceText, locale)
       cache.set(cacheKey, { data: payload, createdAt: Date.now() })
       logger.debug('[data-loader] remote fetch completed', {
         locale,
@@ -1000,26 +1035,30 @@ async function loadManifestForConfig(
   }
 
   const candidates = getManifestResourceCandidates(config, dataVersion, locale)
-  let fallbackManifest: any | null = null
+  let fallbackManifest: (JsonDocument & { manifest: any }) | null = null
   let lastError: any = null
 
   for (const manifestPath of candidates) {
     try {
-      const manifest = await fetchJson(manifestPath, {
+      const document = await requestJsonDocument(manifestPath, {
         force: true,
         ttlMs: DATA_TTL_MS,
         timeoutMs: DATA_FETCH_TIMEOUT_MS,
       })
+      const manifest = document.data
       const declaredLocale = tryNormalizeDataLocale(manifest?.locale)
       const manifestLocale = declaredLocale || DEFAULT_DATA_LOCALE
       if (manifestLocale === locale && (locale === DEFAULT_DATA_LOCALE || declaredLocale)) {
-        await writeDataFileToDisk(dataVersion, 'manifest.json', manifest, locale)
+        await writeDataTextToDisk(dataVersion, 'manifest.json', document.sourceText, locale)
         setVersionedDataCache(locale, dataVersion, 'manifest.json', manifest)
         return { manifest, locale }
       }
 
       if (!fallbackManifest) {
-        fallbackManifest = manifest
+        fallbackManifest = {
+          ...document,
+          manifest,
+        }
       }
 
       logger.debug('[data-loader] manifest locale mismatch; trying next candidate', {
@@ -1036,14 +1075,20 @@ async function loadManifestForConfig(
   }
 
   if (fallbackManifest) {
-    const fallbackLocale = tryNormalizeDataLocale(fallbackManifest?.locale) || DEFAULT_DATA_LOCALE
-    await writeDataFileToDisk(dataVersion, 'manifest.json', fallbackManifest, fallbackLocale)
-    setVersionedDataCache(fallbackLocale, dataVersion, 'manifest.json', fallbackManifest)
+    const manifest = fallbackManifest.manifest
+    const fallbackLocale = tryNormalizeDataLocale(manifest?.locale) || DEFAULT_DATA_LOCALE
+    await writeDataTextToDisk(
+      dataVersion,
+      'manifest.json',
+      fallbackManifest.sourceText,
+      fallbackLocale
+    )
+    setVersionedDataCache(fallbackLocale, dataVersion, 'manifest.json', manifest)
     logger.warn('[data-loader] requested manifest locale unavailable; using returned locale', {
       requestedLocale: locale,
-      manifestLocale: fallbackManifest.locale || null,
+      manifestLocale: manifest.locale || null,
     })
-    return { manifest: fallbackManifest, locale: fallbackLocale }
+    return { manifest, locale: fallbackLocale }
   }
 
   throw lastError || new Error(`Remote client data manifest not found for ${locale}/${dataVersion}`)
