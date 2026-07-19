@@ -6,6 +6,7 @@ export type AppStoreKey =
   | 'championInsight.hideOnGameStart'
   | 'augments.showTopOverlay'
   | 'augments.showSidePanel'
+  | 'postGameShare.autoShow'
 
 export type SupportedDataLocale = 'zh-CN' | 'zh-TW' | 'en-US'
 

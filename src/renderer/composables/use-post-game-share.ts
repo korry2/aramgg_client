@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { LooseRecord, Unsubscribe } from '../../shared/ipc-contract.ts'
-import { electronAPI } from '../native/electron-api.js'
+import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
 import { trackAnalyticsEvent } from '../services/analytics.ts'
 import { useI18n } from 'vue-i18n'
 
@@ -27,6 +27,7 @@ interface PosterRequestOptions {
   refresh?: boolean
   silent?: boolean
   analyticsTrigger?: string
+  respectAutoShowPreference?: boolean
 }
 
 function getErrorMessage(error: unknown): string {
@@ -52,7 +53,9 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
   const showPostGameShare = ref(false)
   const postGamePoster = ref<PostGamePoster | null>(null)
   const postGameShareLoading = ref(false)
+  const postGameShareAutoShowEnabled = ref(true)
   let postGameShareTimer: ReturnType<typeof setTimeout> | null = null
+  let postGameSharePreferencePromise: Promise<void> | null = null
   const subscriptions: Unsubscribe[] = []
 
   const shouldShowPostGameFloatingShare = computed(() => hasPostGameStats(postGamePoster.value))
@@ -86,6 +89,52 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
     showPostGameShare.value = false
   }
 
+  const setPostGameShareAutoShowEnabled = (enabled: boolean) => {
+    postGameShareAutoShowEnabled.value = Boolean(enabled)
+    if (!postGameShareAutoShowEnabled.value) {
+      if (postGameShareTimer) {
+        clearTimeout(postGameShareTimer)
+        postGameShareTimer = null
+      }
+      closePostGameShare()
+    }
+  }
+
+  const loadPostGameShareAutoShowPreference = (): Promise<void> => {
+    if (!postGameSharePreferencePromise) {
+      postGameSharePreferencePromise = (async () => {
+        if (!hasElectronAPI()) return
+
+        try {
+          const storedValue = await electronAPI.store.get('postGameShare.autoShow')
+          if (storedValue == null) {
+            await electronAPI.store.set('postGameShare.autoShow', true)
+            setPostGameShareAutoShowEnabled(true)
+            return
+          }
+          setPostGameShareAutoShowEnabled(Boolean(storedValue))
+        } catch (error) {
+          console.warn('Failed to load post-game share preference:', error)
+        }
+      })()
+    }
+
+    return postGameSharePreferencePromise
+  }
+
+  const handleAutomaticPostGamePoster = (poster: unknown) => {
+    void loadPostGameShareAutoShowPreference().then(() => {
+      applyPostGamePoster(poster, postGameShareAutoShowEnabled.value)
+    })
+  }
+
+  const scheduleAutomaticPostGamePosterRequest = () => {
+    void loadPostGameShareAutoShowPreference().then(() => {
+      if (!postGameShareAutoShowEnabled.value) return
+      schedulePostGameSharePosterRequest()
+    })
+  }
+
   const applyPostGamePoster = (value: unknown, openOnReady = true): boolean => {
     const poster = asPoster(value)
     if (!poster || poster.status === 'unavailable') return false
@@ -103,6 +152,7 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
     refresh = false,
     silent = false,
     analyticsTrigger = '',
+    respectAutoShowPreference = false,
   }: PosterRequestOptions = {}) => {
     if (postGameShareLoading.value) return
 
@@ -111,9 +161,12 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
       const result = refresh
         ? await electronAPI.postGameShare.refresh()
         : await electronAPI.postGameShare.getLatest()
+      const shouldOpenOnReady = openOnReady && (
+        !respectAutoShowPreference || postGameShareAutoShowEnabled.value
+      )
 
-      if (applyPostGamePoster(result.data, openOnReady)) {
-        if (openOnReady && analyticsTrigger) {
+      if (applyPostGamePoster(result.data, shouldOpenOnReady)) {
+        if (shouldOpenOnReady && analyticsTrigger) {
           trackShareEvent('post_game_share_modal_open', { trigger: analyticsTrigger })
         }
         return
@@ -175,19 +228,25 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
   }
 
   const schedulePostGameSharePosterRequest = () => {
+    if (!postGameShareAutoShowEnabled.value) return
     if (postGameShareTimer) clearTimeout(postGameShareTimer)
     postGameShareTimer = setTimeout(() => {
       postGameShareTimer = null
-      void requestPostGameSharePoster({ openOnReady: true, silent: true })
+      void requestPostGameSharePoster({
+        openOnReady: true,
+        silent: true,
+        respectAutoShowPreference: true,
+      })
     }, 1200)
   }
 
   onMounted(() => {
     subscriptions.push(
-      electronAPI.events.on('post-game-share-ready', (poster) => applyPostGamePoster(poster, true)),
-      electronAPI.events.on('game-ended', schedulePostGameSharePosterRequest),
-      electronAPI.events.on('end-of-game', schedulePostGameSharePosterRequest),
+      electronAPI.events.on('post-game-share-ready', handleAutomaticPostGamePoster),
+      electronAPI.events.on('game-ended', scheduleAutomaticPostGamePosterRequest),
+      electronAPI.events.on('end-of-game', scheduleAutomaticPostGamePosterRequest),
     )
+    void loadPostGameShareAutoShowPreference()
     void requestPostGameSharePoster({ openOnReady: false, silent: true })
   })
 
@@ -209,5 +268,6 @@ export function usePostGameShare(statusSink: Ref<StatusMessage | null>) {
     openPostGameShareFromFloatingButton,
     createMockPostGameSharePoster,
     requestPostGameSharePoster,
+    setPostGameShareAutoShowEnabled,
   }
 }

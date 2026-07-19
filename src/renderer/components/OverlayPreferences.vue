@@ -47,6 +47,7 @@ import { electronAPI, hasElectronAPI } from '../native/electron-api.js'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+const emit = defineEmits(['post-game-auto-show-changed'])
 const preferenceDefinitions = [
   {
     key: 'hideChampionInsightOnGameStart',
@@ -68,6 +69,13 @@ const preferenceDefinitions = [
     defaultValue: true,
     titleKey: 'preferences.sidePanelTitle',
     descriptionKey: 'preferences.sidePanelDescription',
+  },
+  {
+    key: 'autoShowPostGameShare',
+    storeKey: 'postGameShare.autoShow',
+    defaultValue: true,
+    titleKey: 'preferences.postGameShareTitle',
+    descriptionKey: 'preferences.postGameShareDescription',
   },
 ]
 
@@ -101,6 +109,9 @@ const loadPreferences = async () => {
       }
 
       preferences[item.key] = Boolean(storedValue)
+      if (item.key === 'autoShowPostGameShare') {
+        emit('post-game-auto-show-changed', preferences[item.key])
+      }
     } catch (error) {
       console.warn('读取窗口偏好失败:', item.storeKey, error)
     }
@@ -136,6 +147,9 @@ const togglePreference = async (key) => {
     await electronAPI.store.set(item.storeKey, nextValue)
     preferences[key] = nextValue
     applyImmediateWindowEffect(key, nextValue)
+    if (key === 'autoShowPostGameShare') {
+      emit('post-game-auto-show-changed', nextValue)
+    }
   } catch (error) {
     console.warn('保存窗口偏好失败:', item.storeKey, error)
   } finally {
@@ -262,6 +276,7 @@ onMounted(loadPreferences)
 }
 
 .switch-control {
+  position: relative;
   width: 42px;
   height: 24px;
   flex: 0 0 auto;
@@ -270,7 +285,21 @@ onMounted(loadPreferences)
   border-radius: 999px;
   background: rgba(4, 15, 24, 0.64);
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease-out;
+}
+
+.switch-control::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 42px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+}
+
+.switch-control:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .switch-control.active {

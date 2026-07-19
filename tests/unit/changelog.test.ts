@@ -6,6 +6,19 @@ import {
 } from '../../src/main/changelog.ts'
 
 describe('changelog entries', () => {
+  it('includes the latest window and post-game experience announcement', () => {
+    const latestEntry = LOCAL_CHANGELOG_ENTRIES[0]
+
+    expect(latestEntry.version).toBe('0.2.2')
+    expect(latestEntry.date).toBe('2026-07-19')
+    expect(latestEntry.changes).toEqual(expect.arrayContaining([
+      expect.stringContaining('对局结束时不再自动跳出'),
+      expect.stringContaining('英雄胜率窗口会记住'),
+      expect.stringContaining('自动展示赛后海报'),
+      expect.stringContaining('语言切换统计'),
+    ]))
+  })
+
   it('normalizes array based remote changelog entries', () => {
     const entries = normalizeChangelogEntries([
       {

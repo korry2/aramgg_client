@@ -64,6 +64,9 @@ export default defineConfig({
     server: {
       port: 5173,
       strictPort: false,
+      headers: {
+        'Content-Security-Policy': "frame-ancestors 'none'"
+      },
       fs: {
         strict: false
       }

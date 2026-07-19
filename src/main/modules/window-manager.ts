@@ -15,6 +15,11 @@ import {
     isTrustedRendererUrl,
     registerTrustedRendererOrigin,
 } from '../security/renderer-origin.ts'
+import store from './app-store.ts'
+import {
+    fitWindowPositionToWorkArea,
+    parseWindowPosition,
+} from './window-position.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -40,6 +45,7 @@ let rendererServerPromise: Promise<string> | null = null
 
 const MAIN_WINDOW_SIZE = { width: 380, height: 620 }
 const POPUP_WINDOW_SIZE = { width: 360, height: 640 }
+const POPUP_WINDOW_POSITION_KEY = 'windows.championInsightPosition'
 const FLOATING_WINDOW_SIZE = { width: 760, height: 170 }
 const AUGMENT_SIDE_PANEL_WINDOW_SIZE = { width: 360, height: 640 }
 const OVERLAY_ALWAYS_ON_TOP_LEVEL = process.platform === 'win32' ? 'screen-saver' : 'floating'
@@ -83,18 +89,38 @@ function getDisplayForMainWindow() {
 }
 
 function getPopupBounds(): Rectangle {
-    const display = getDisplayForMainWindow()
+    const savedPosition = parseWindowPosition(store.get(POPUP_WINDOW_POSITION_KEY))
+    const display = savedPosition
+        ? screen.getDisplayNearestPoint(savedPosition)
+        : getDisplayForMainWindow()
     const area = display.workArea || display.bounds
     const width = Math.min(POPUP_WINDOW_SIZE.width, area.width)
     const height = Math.min(POPUP_WINDOW_SIZE.height, area.height)
     const rightAlignedX = area.x + area.width - width - 140
+    const defaultPosition = {
+        x: Math.max(area.x + 20, rightAlignedX),
+        y: area.y + Math.max(20, Math.round((area.height - height) / 2)),
+    }
+    const position = fitWindowPositionToWorkArea(
+        savedPosition || defaultPosition,
+        { width, height },
+        area,
+    )
 
     return {
         width,
         height,
-        x: Math.max(area.x + 20, rightAlignedX),
-        y: area.y + Math.max(20, Math.round((area.height - height) / 2)),
+        ...position,
     }
+}
+
+function savePopupWindowPosition(): void {
+    if (!popupWindow || popupWindow.isDestroyed()) {
+        return
+    }
+
+    const [x, y] = popupWindow.getPosition()
+    store.set(POPUP_WINDOW_POSITION_KEY, { x, y })
 }
 
 function getFloatingBounds(): Rectangle {
@@ -549,6 +575,12 @@ export const createPopupWindow = async (
     })
     setOverlayAlwaysOnTop(popupWindow, true, 'popup')
     attachWindowDiagnostics('popup', popupWindow)
+
+    if (process.platform === 'linux') {
+        popupWindow.on('move', savePopupWindowPosition)
+    } else {
+        popupWindow.on('moved', savePopupWindowPosition)
+    }
 
     popupWindow.on('closed', () => {
         logger.info('Popup window closed')

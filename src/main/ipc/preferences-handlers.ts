@@ -20,6 +20,7 @@ const RENDERER_STORE_KEYS = new Set<AppStoreKey>([
   'championInsight.hideOnGameStart',
   'augments.showTopOverlay',
   'augments.showSidePanel',
+  'postGameShare.autoShow',
 ])
 
 function assertRendererStoreKey(key: unknown): asserts key is AppStoreKey {

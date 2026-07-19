@@ -13,7 +13,6 @@ import {
     toggleMainWindow,
     getAugmentSidePanelWindow,
     getFloatingWindow,
-    getMainWindow,
     getPopupWindow,
     raiseOverlayWindow,
     setPopupWindowAlwaysOnTop,
@@ -799,25 +798,6 @@ async function showChampionInsightForChampSelect(lcuService) {
     await pollChampSelectSnapshot(lcuService, 'champ-select-insight', true)
 }
 
-function showMainWindowForPostGameShare() {
-    const mainWindow = getMainWindow()
-    if (!mainWindow || mainWindow.isDestroyed()) {
-        return
-    }
-
-    if (mainWindow.isMinimized()) {
-        mainWindow.restore()
-    }
-
-    if (!mainWindow.isVisible()) {
-        if (typeof mainWindow.showInactive === 'function') {
-            mainWindow.showInactive()
-        } else {
-            mainWindow.show()
-        }
-    }
-}
-
 async function prepareAndNotifyPostGameShare(lcuService, reason) {
     const result = await preparePostGameSharePosterData(lcuService, reason)
     if (!result?.data || result.data.status === 'unavailable') {
@@ -830,7 +810,6 @@ async function prepareAndNotifyPostGameShare(lcuService, reason) {
         return
     }
 
-    showMainWindowForPostGameShare()
     await notifyAllWindows('post-game-share-ready', result.data)
 }
 

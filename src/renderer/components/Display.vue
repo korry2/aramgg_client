@@ -144,6 +144,9 @@
                             :class="{ open: showAdvancedLcuConfig }"
                         />
                     </button>
+                    <p class="game-directory-hint">
+                        {{ t('display.gameDirectoryAdminHint') }}
+                    </p>
 
                     <section v-if="showAdvancedLcuConfig" class="advanced-lcu-panel">
                         <div class="manual-path-row">
@@ -202,7 +205,9 @@
                 </div>
 
                 <ItemSetInstaller />
-                <OverlayPreferences />
+                <OverlayPreferences
+                    @post-game-auto-show-changed="setPostGameShareAutoShowEnabled"
+                />
                 <ChampionMonitor />
 
                 <section class="post-game-panel">
@@ -391,6 +396,7 @@ import {
 import { useAppUpdate } from '../composables/use-app-update.ts'
 import { usePostGameShare } from '../composables/use-post-game-share.ts'
 import { electronAPI } from '../native/electron-api.js'
+import { trackAnalyticsEvent } from '../services/analytics.ts'
 import { useI18n } from 'vue-i18n'
 import {
     ChevronRight,
@@ -514,6 +520,7 @@ const {
     closePostGameShare,
     openPostGameShareFromFloatingButton,
     createMockPostGameSharePoster,
+    setPostGameShareAutoShowEnabled,
 } = usePostGameShare(testStatus)
 
 const loadVersionInfo = async () => {
@@ -556,6 +563,7 @@ const changeLocale = async (requestedLocale = selectedLocale.value) => {
         return
     }
 
+    const previousLocale = activeLocale.value
     selectedLocale.value = requestedLocale
     localeLoading.value = true
     try {
@@ -578,6 +586,11 @@ const changeLocale = async (requestedLocale = selectedLocale.value) => {
             type: 'success',
             message: t('display.localeChanged', { locale: selectedLocaleLabel.value }),
         }
+        trackAnalyticsEvent('language_switch', {
+            from_language: previousLocale,
+            to_language: activeLocale.value,
+            data_version: result?.dataVersion || '',
+        })
     } catch (error) {
         selectedLocale.value = activeLocale.value
         console.warn('Failed to change locale:', error)
@@ -585,6 +598,11 @@ const changeLocale = async (requestedLocale = selectedLocale.value) => {
             type: 'error',
             message: t('display.localeChangeFailed', { error: error.message || error }),
         }
+        trackAnalyticsEvent('language_switch_failure', {
+            from_language: previousLocale,
+            to_language: requestedLocale,
+            error_message: error?.message || String(error),
+        })
     } finally {
         localeLoading.value = false
     }
@@ -1489,7 +1507,7 @@ onBeforeUnmount(() => {
 
 .game-directory-toggle {
     width: 100%;
-    min-height: 36px;
+    min-height: 40px;
     margin-top: 10px;
     display: flex;
     align-items: center;
@@ -1504,6 +1522,15 @@ onBeforeUnmount(() => {
     font-size: 12px;
     font-weight: 900;
     text-align: left;
+}
+
+.game-directory-hint {
+    margin: 6px 2px 0;
+    color: #859491;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.45;
+    text-wrap: pretty;
 }
 
 .game-directory-toggle:hover {

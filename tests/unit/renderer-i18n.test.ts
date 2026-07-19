@@ -71,6 +71,8 @@ describe('renderer i18n', () => {
     )
 
     expect(changeLocaleBlock).not.toContain('await loadVersionInfo()')
+    expect(changeLocaleBlock).toContain("trackAnalyticsEvent('language_switch'")
+    expect(changeLocaleBlock).toContain("trackAnalyticsEvent('language_switch_failure'")
     expect(source).not.toContain('cursor: wait')
     expect(source).toContain('class="locale-loading-icon"')
   })
