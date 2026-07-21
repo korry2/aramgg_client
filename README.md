@@ -167,3 +167,7 @@ npm run release:push
 Renderer 不拥有 Node 能力，只能通过 preload 暴露的 `electronAPI` 调用主进程。Electron 窗口保持 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`、`webSecurity: true`。
 
 LCU 推荐链路只能读取状态和统计数据。禁止把 `pickOrBan`、`benchSwap`、`action`、`acceptTrade`、`declineTrade` 等改变选人结果的接口接入推荐模块。
+
+## 友情链接
+
+- [LINUX DO](https://linux.do/)
