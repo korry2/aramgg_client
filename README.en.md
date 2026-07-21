@@ -16,12 +16,16 @@ The application interface and display data can be switched together between Simp
 ## Star History
 
 <p align="center">
-  <a href="https://www.star-history.com/valkia/aramgg_client/">
-    <img src="./docs/assets/star-history.svg" alt="aramgg_client star history chart" width="900" />
+  <a href="https://www.star-history.com/?repos=valkia%2Faramgg_client&type=date&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&theme=dark&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" />
+      <img src="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" alt="aramgg_client star history chart" width="900" />
+    </picture>
   </a>
 </p>
 
-Chart generated with the open-source [Star History](https://github.com/star-history/star-history) project.
+Live chart provided by the open-source [Star History](https://github.com/star-history/star-history) project.
 
 ## Support the Project
 

@@ -14,12 +14,16 @@
 ## Star 趋势
 
 <p align="center">
-  <a href="https://www.star-history.com/valkia/aramgg_client/">
-    <img src="./docs/assets/star-history.svg" alt="aramgg_client Star 趋势图" width="900" />
+  <a href="https://www.star-history.com/?repos=valkia%2Faramgg_client&type=date&legend=top-left">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&theme=dark&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" />
+      <img src="https://api.star-history.com/chart?repos=valkia/aramgg_client&type=date&legend=top-left&sealed_token=4WUaLyfHuhwVpa6CaVWxo9JwrU2ORlLI9dAYuWiPKDmieAkfPBMEhZVkaRE_Uh1S09rcn68ut9p3OTdv9g44qUeyk6rhtzkLF2KZ2_fbpLsIYVIxlwgpXj4aGR84y6dlAebI8UBtjKZlyxHepOvNbgHdzcQZqUinKSJCfAOSVoRjwL1xngr9YyeBPBBN" alt="aramgg_client Star 趋势图" width="900" />
+    </picture>
   </a>
 </p>
 
-图表由开源项目 [Star History](https://github.com/star-history/star-history) 生成。
+动态图表由开源项目 [Star History](https://github.com/star-history/star-history) 提供。
 
 ## 支持项目
 
@@ -163,3 +167,7 @@ npm run release:push
 Renderer 不拥有 Node 能力，只能通过 preload 暴露的 `electronAPI` 调用主进程。Electron 窗口保持 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`、`webSecurity: true`。
 
 LCU 推荐链路只能读取状态和统计数据。禁止把 `pickOrBan`、`benchSwap`、`action`、`acceptTrade`、`declineTrade` 等改变选人结果的接口接入推荐模块。
+
+## 友情链接
+
+- [LINUX DO](https://linux.do/)
