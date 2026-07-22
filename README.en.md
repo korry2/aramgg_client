@@ -13,6 +13,17 @@ This project only assists with analysis and display. It does not automatically p
 
 The application interface and display data can be switched together between Simplified Chinese, English, and Traditional Chinese. This English README is provided for contributors and users who prefer English project documentation.
 
+## Project Preview
+
+<p align="center">
+  <img src="./docs/image.png" alt="ARAMGG assistant control panel" width="380" />
+  <img src="./docs/image0.png" alt="ARAMGG champion details and bench recommendations" width="360" />
+</p>
+
+<p align="center">
+  <img src="./docs/aramgg-in-game-preview.png" alt="ARAMGG in-game Augment recognition and recommendations" width="900" />
+</p>
+
 ## Star History
 
 <p align="center">

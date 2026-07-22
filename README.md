@@ -11,6 +11,17 @@
 
 本项目只做辅助判断和展示，不自动选英雄、不自动换 bench、不自动锁定或接受交换。
 
+## 项目预览
+
+<p align="center">
+  <img src="./docs/image.png" alt="ARAMGG 助手主控制台" width="380" />
+  <img src="./docs/image0.png" alt="ARAMGG 助手英雄详情与席位推荐" width="360" />
+</p>
+
+<p align="center">
+  <img src="./docs/aramgg-in-game-preview.png" alt="ARAMGG 助手游戏内海克斯识别与推荐" width="900" />
+</p>
+
 ## Star 趋势
 
 <p align="center">
