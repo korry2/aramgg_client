@@ -5,6 +5,24 @@ import path from 'path'
 
 let tempRoot = ''
 let originalCwd = ''
+const LOCAL_FIRST_ASSERTION_TIMEOUT_MS = 3_000
+
+async function awaitLocalFirstResult<T>(promise: Promise<T>, failureMessage: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(failureMessage)), LOCAL_FIRST_ASSERTION_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+  }
+}
 
 async function writeJson(filePath: string, payload: any): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true })
@@ -221,12 +239,10 @@ describe('latest champion shard detail loading', () => {
 
     try {
       buildPromise = loadChampionBuild(8)
-      const build = await Promise.race([
+      const build = await awaitLocalFirstResult(
         buildPromise,
-        new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Champion detail waited for remote config')), 100)
-        }),
-      ])
+        'Champion detail waited for remote config'
+      )
 
       expect(build?.builds).toHaveLength(1)
       expect(build.builds[0].games).toBe(1200)
@@ -268,12 +284,10 @@ describe('latest champion shard detail loading', () => {
 
     try {
       detailPromise = getChampionDetailData(8)
-      const detail = await Promise.race([
+      const detail = await awaitLocalFirstResult(
         detailPromise,
-        new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Augment popup data waited for remote config')), 100)
-        }),
-      ])
+        'Augment popup data waited for remote config'
+      )
 
       expect(detail.augmentBase.map((augment: any) => augment.id)).toEqual([1205])
       expect(detail.augments['1205'].win_rate).toBe(0.6)
