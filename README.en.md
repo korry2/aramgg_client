@@ -7,7 +7,7 @@ A League of Legends ARAM assistant built with Electron, Vue 3, and electron-vite
 - Reading champion select and gameflow state through read-only LCU APIs and the `OnJsonApiEvent` WebSocket.
 - Showing read-only recommendations for the current champion and bench champions at the top of the champion detail window during ARAM champion select.
 - Automatically taking screenshots during the in-game `InProgress` stage and recognizing Augments by card position.
-- Displaying champion, Augment, item, win-rate, and recommendation data through the champion detail view, the top Augment overlay, and the right-side in-game recommendation list.
+- Displaying champion, Augment, item-build, Summoner Spell, skill-order, win-rate, and recommendation data through the champion detail view, the top Augment overlay, and the right-side in-game recommendation list.
 
 This project only assists with analysis and display. It does not automatically pick champions, swap bench champions, lock in, or accept trades.
 
@@ -37,16 +37,6 @@ The application interface and display data can be switched together between Simp
 </p>
 
 Live chart provided by the open-source [Star History](https://github.com/star-history/star-history) project.
-
-## Support the Project
-
-If this project helps you, you can support ongoing development and maintenance through WeChat Pay or Alipay.
-
-<p align="center">
-  <img src="./docs/assets/support/wechat.jpg" alt="WeChat Pay donation QR code" width="220" />
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="./docs/assets/support/alipay.jpg" alt="Alipay donation QR code" width="220" />
-</p>
 
 ## Project Structure
 

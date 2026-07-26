@@ -234,6 +234,85 @@
                     </div>
                   </header>
 
+                  <section
+                    v-if="selectedBuildRoute.summonerSpells.length > 0"
+                    class="item-section recommendation-section"
+                  >
+                    <h4 class="recommendation-title">
+                      <Sparkles class="recommendation-title-icon spell" />
+                      {{ t('augment.summonerSpells') }}
+                    </h4>
+                    <div class="recommendation-list">
+                      <div
+                        v-for="(recommendation, recommendationIndex) in selectedBuildRoute.summonerSpells.slice(0, 3)"
+                        :key="`${selectedBuildRoute.key}-spells-${recommendation.summonerSpellIds.join('-')}-${recommendationIndex}`"
+                        class="recommendation-row"
+                      >
+                        <div class="recommendation-main">
+                          <span class="recommendation-rank">
+                            {{ t('augment.recommendationRank', { index: recommendationIndex + 1 }) }}
+                          </span>
+                          <div class="spell-icons">
+                            <img
+                              v-for="spellId in recommendation.summonerSpellIds"
+                              :key="spellId"
+                              :src="getSpellIconUrl(spellId)"
+                              class="spell-icon"
+                              :alt="t('augment.summonerSpellFallback', { id: spellId })"
+                              :title="t('augment.summonerSpellFallback', { id: spellId })"
+                            />
+                          </div>
+                        </div>
+                        <div class="recommendation-stats">
+                          <span>{{ t('augment.pickRate') }} <strong>{{ formatPercent(recommendation.pickRate) }}</strong></span>
+                          <span>{{ t('augment.winRate') }} <strong>{{ formatPercent(recommendation.winRate) }}</strong></span>
+                          <span>{{ t('augment.gameCount', { count: formatNumber(recommendation.games) }) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section
+                    v-if="selectedBuildRoute.skillOrders.length > 0"
+                    class="item-section recommendation-section"
+                  >
+                    <h4 class="recommendation-title">
+                      <ListOrdered class="recommendation-title-icon skill" />
+                      {{ t('augment.skillOrder') }}
+                    </h4>
+                    <div class="recommendation-list">
+                      <div
+                        v-for="(recommendation, recommendationIndex) in selectedBuildRoute.skillOrders.slice(0, 3)"
+                        :key="`${selectedBuildRoute.key}-skills-${recommendation.skillOrder.join('-')}-${recommendationIndex}`"
+                        class="recommendation-row skill-order-row"
+                      >
+                        <div class="skill-order-heading">
+                          <span class="recommendation-rank">
+                            {{ t('augment.recommendationRank', { index: recommendationIndex + 1 }) }}
+                          </span>
+                          <strong>{{ formatSkillPriority(recommendation.skillOrder) }}</strong>
+                        </div>
+                        <div class="skill-sequence">
+                          <span
+                            v-for="(skillNumber, levelIndex) in recommendation.skillOrder"
+                            :key="`${levelIndex}-${skillNumber}`"
+                            class="skill-step"
+                            :class="`skill-${getSkillKey(skillNumber).toLowerCase()}`"
+                            :title="t('augment.skillLevel', { level: levelIndex + 1, skill: getSkillKey(skillNumber) })"
+                          >
+                            <small>{{ levelIndex + 1 }}</small>
+                            <strong>{{ getSkillKey(skillNumber) }}</strong>
+                          </span>
+                        </div>
+                        <div class="recommendation-stats">
+                          <span>{{ t('augment.pickRate') }} <strong>{{ formatPercent(recommendation.pickRate) }}</strong></span>
+                          <span>{{ t('augment.winRate') }} <strong>{{ formatPercent(recommendation.winRate) }}</strong></span>
+                          <span>{{ t('augment.gameCount', { count: formatNumber(recommendation.games) }) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
                   <section v-if="selectedBuildRoute.startingItems.length > 0" class="item-section starter-section">
                     <h4>{{ t('augment.startingItems') }}</h4>
                     <div class="starter-list">
@@ -363,11 +442,21 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { ExternalLink, Minus, PackageCheck, PackagePlus, X } from 'lucide-vue-next'
-import { getChampionIconUrl, getChampionSquareIconUrl, getAugmentIconUrl, getItemIconUrl as getFallbackItemIconUrl } from '../service/cdn'
+import { ExternalLink, ListOrdered, Minus, PackageCheck, PackagePlus, Sparkles, X } from 'lucide-vue-next'
+import {
+  getAugmentIconUrl,
+  getChampionIconUrl,
+  getChampionSquareIconUrl,
+  getItemIconUrl as getFallbackItemIconUrl,
+  getSpellIconUrl,
+} from '../service/cdn'
 import { electronAPI } from '../native/electron-api.js'
 import { sortAugmentsByDetectedOrder } from '../service/augment-order.js'
-import { createBuildRoutes } from '../service/champion-build-routes.js'
+import {
+  createBuildRoutes,
+  getSkillKey,
+  getSkillPriority,
+} from '../service/champion-build-routes.js'
 import {
   formatDataSource,
   formatNumber,
@@ -800,6 +889,11 @@ const selectedBuildRoute = computed(() => {
 const selectBuildRoute = (index) => {
   selectedBuildRouteIndex.value = index
   hideAugmentTooltip()
+}
+
+const formatSkillPriority = (skillOrder) => {
+  const [primary = 'Q', secondary = 'W', tertiary = 'E'] = getSkillPriority(skillOrder)
+  return t('augment.skillPriority', { primary, secondary, tertiary })
 }
 
 const itemNameById = computed(() => {
@@ -2763,6 +2857,155 @@ defineExpose({
   color: #d7e4f1;
   font-size: 13px;
   font-weight: 900;
+}
+
+.recommendation-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.recommendation-title-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.recommendation-title-icon.spell {
+  color: #8ecae6;
+}
+
+.recommendation-title-icon.skill {
+  color: #c6a6ff;
+}
+
+.recommendation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.recommendation-row {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border-radius: 3px;
+  background: rgba(8, 21, 30, 0.48);
+  box-shadow: 0 0 0 1px rgba(133, 148, 145, 0.2);
+}
+
+.recommendation-main,
+.skill-order-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recommendation-rank {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(226, 192, 143, 0.12);
+  color: #e2c08f;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.spell-icons {
+  display: flex;
+  gap: 7px;
+}
+
+.spell-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 4px;
+  object-fit: cover;
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
+  background: rgba(4, 15, 24, 0.78);
+}
+
+.recommendation-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: #859491;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.recommendation-stats strong {
+  color: #d7e4f1;
+  font-weight: 900;
+}
+
+.skill-order-heading {
+  justify-content: space-between;
+}
+
+.skill-order-heading > strong {
+  overflow: hidden;
+  color: #d7e4f1;
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-sequence {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(26px, 1fr));
+  gap: 4px;
+}
+
+.skill-step {
+  min-width: 0;
+  min-height: 36px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  border-radius: 3px;
+  background: rgba(31, 43, 53, 0.82);
+  box-shadow: 0 0 0 1px rgba(133, 148, 145, 0.18);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-step small {
+  color: #859491;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.skill-step strong {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.skill-step.skill-q strong {
+  color: #8ecae6;
+}
+
+.skill-step.skill-w strong {
+  color: #9ed0a4;
+}
+
+.skill-step.skill-e strong {
+  color: #e2c384;
+}
+
+.skill-step.skill-r {
+  background: rgba(135, 91, 173, 0.2);
+  box-shadow: 0 0 0 1px rgba(198, 166, 255, 0.28);
+}
+
+.skill-step.skill-r strong {
+  color: #c6a6ff;
 }
 
 .starter-list {

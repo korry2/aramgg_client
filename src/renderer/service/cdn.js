@@ -75,5 +75,5 @@ export function getAugmentIconUrl(iconPath) {
  * @returns {string} Spell icon URL
  */
 export function getSpellIconUrl(spellId) {
-  return `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/spell/${spellId}.png`;
+  return `https://cdn.dtodo.cn/hextech/summoner-spell-icons/${spellId}.png`;
 }

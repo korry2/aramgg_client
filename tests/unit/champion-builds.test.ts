@@ -13,6 +13,24 @@ describe('champion build mapping', () => {
           coreItems: [{ items: [6653, 3020, 4645], games: 500, wins: 275 }],
           itemExtensions: [{ items: [3089], games: 80, wins: 45 }],
           situationalItems: [{ items: [3157], games: 90, wins: 50 }],
+          summonerSpells: [
+            {
+              summonerSpellIds: [4, 32],
+              games: 720,
+              wins: 400,
+              pick_rate: 0.72,
+              win_rate: 0.556,
+            },
+          ],
+          skillOrders: [
+            {
+              skillOrder: [1, 2, 3, 1, 1, 4, 1, 2, 1, 2, 4, 2, 2, 3, 3, 4, 3, 3],
+              games: 680,
+              wins: 370,
+              pick_rate: 0.68,
+              win_rate: 0.544,
+            },
+          ],
         },
         {
           queueId: 450,
@@ -27,5 +45,17 @@ describe('champion build mapping', () => {
     expect(mapped.coreItems[0].itemIds).toEqual(['6653', '3020', '4645'])
     expect(mapped.startingItems[0].itemIds).toEqual(['1056', '2003'])
     expect(mapped.situationalItems[0].itemId).toBe('3157')
+    expect(mapped.summonerSpells[0]).toMatchObject({
+      summonerSpellIds: [4, 32],
+      games: 720,
+      pickRate: 0.72,
+      winRate: 0.556,
+    })
+    expect(mapped.skillOrders[0]).toMatchObject({
+      skillOrder: [1, 2, 3, 1, 1, 4, 1, 2, 1, 2, 4, 2, 2, 3, 3, 4, 3, 3],
+      games: 680,
+      pickRate: 0.68,
+      winRate: 0.544,
+    })
   })
 })

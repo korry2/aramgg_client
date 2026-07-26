@@ -1,6 +1,6 @@
 # LOL Tips Client 需求规格文档
 
-维护状态：本文保留产品需求和识别算法背景，部分 UI 与流程描述早于 2026-05-25 的席位推荐独立浮窗、electron-vite 目录迁移和自动截图策略调整。LCU 凭据发现当前为进程优先，主界面「游戏目录」仅为高级兜底。实现细节以 `README.md`、`COMPLETE_ARCHITECTURE.md`、`docs/GAMEFLOW_DETECTION_GUIDE.md`、`docs/USER_GUIDE_AUTO_AUGMENT.md` 和源码为准。
+维护状态：本文保留产品需求和识别算法背景，部分 UI 与流程描述早于席位推荐并入英雄详情顶部、electron-vite 目录迁移和自动截图策略调整。LCU 凭据发现当前为进程优先，主界面「游戏目录」仅为高级兜底。实现细节以 `README.md`、`COMPLETE_ARCHITECTURE.md`、`docs/GAMEFLOW_DETECTION_GUIDE.md`、`docs/USER_GUIDE_AUTO_AUGMENT.md` 和源码为准。
 
 ## 1. 概述
 
@@ -314,7 +314,7 @@ data/
 | `champions.json` | 英雄基础信息与榜单统计 |
 | `items.json` | 装备基础信息 |
 | `champion-shards/index.json` | 英雄详情到固定分片的索引 |
-| `champion-shards/<shardId>.json` | 英雄海克斯、组合和出装统计 |
+| `champion-shards/<shardId>.json` | 英雄海克斯、组合和出装统计；出装路线可含召唤师技能组合与 18 级技能加点 |
 
 前台视图必须本地优先；远端检查和下载在后台完成，且只有必需文件完整后才能原子切换对应语言指针。非默认语言的 config 和 manifest 必须显式声明与请求一致的 locale，不能把默认中文数据写入英文或繁中目录。打包预加载和 release 校验覆盖 `zh-CN`、`en-US`、`zh-TW` 三种支持语言。
 
@@ -364,11 +364,13 @@ data/
 - 当前英雄信息展示
 - 海克斯胜率总览入口
 
-### 5.2 海克斯胜率弹窗
+### 5.2 英雄详情窗口
+- 顶部集中展示当前英雄和全部可用席位英雄，支持按钮、滚轮和触控板横向浏览
 - 可拖拽、可缩放
 - 支持按稀有度筛选
 - 支持按胜率/选取率排序
 - 展示英雄专属海克斯组合推荐
+- 出装页展示装备路线，以及 API 提供的召唤师技能组合和 18 级技能加点顺序
 
 ### 5.3 游戏内浮窗
 - 始终置顶
@@ -644,3 +646,4 @@ function findBestMatch(ocrResult, augmentNames) {
 | v0.4 | 2026-07-10 | 客户端展示数据、版本目录、打包预加载和 OCR 名称支持按语言隔离 |
 | v0.5 | 2026-07-10 | 主窗口、英雄详情、席位推荐、海克斯浮窗、右侧推荐列表和赛后海报接入三语言 Vue i18n，并与数据 locale 事务同步 |
 | v0.6 | 2026-07-10 | 语言菜单移至状态栏右上角，状态摘要恢复一行三列，切换进度限制在局部控件且远端版本刷新转为后台执行 |
+| v0.7 | 2026-07-26 | 优化英雄详情顶部席位列表横向操作，并在出装页接入召唤师技能组合和 18 级技能加点 |

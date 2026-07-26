@@ -189,6 +189,113 @@ export const getBuildStats = (build = {}) => {
   }
 }
 
+const parseRecommendationRecords = (value) => {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value !== 'string') {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const normalizePositiveIntegerIds = (value) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const ids = value.map(Number)
+  return ids.every(id => Number.isInteger(id) && id > 0) ? ids : []
+}
+
+const normalizeRecommendationStats = (record = {}) => {
+  const stats = record.stats || {}
+  return {
+    ...record,
+    games: toFiniteNumber(record.games ?? record.num_games ?? stats.games ?? stats.num_games),
+    wins: toFiniteNumber(record.wins ?? record.num_win_games ?? stats.wins ?? stats.num_win_games),
+    pickRate: normalizeRateValue(
+      record.pickRate ?? record.pick_rate ?? stats.pickRate ?? stats.pick_rate
+    ),
+    winRate: normalizeRateValue(
+      record.winRate ?? record.win_rate ?? stats.winRate ?? stats.win_rate
+    ),
+  }
+}
+
+const compareRecommendations = (left, right) =>
+  toFiniteNumber(right.games) - toFiniteNumber(left.games) ||
+  toFiniteNumber(right.pickRate) - toFiniteNumber(left.pickRate)
+
+export const normalizeSummonerSpellRecommendations = (build = {}) => {
+  return parseRecommendationRecords(build.summonerSpells)
+    .flatMap((record) => {
+      const summonerSpellIds = normalizePositiveIntegerIds(
+        record?.summonerSpellIds ?? record?.spellIds
+      )
+      if (summonerSpellIds.length !== 2) {
+        return []
+      }
+
+      return [{
+        ...normalizeRecommendationStats(record),
+        summonerSpellIds,
+      }]
+    })
+    .sort(compareRecommendations)
+}
+
+export const normalizeSkillOrderRecommendations = (build = {}) => {
+  return parseRecommendationRecords(build.skillOrders)
+    .flatMap((record) => {
+      const skillOrder = normalizePositiveIntegerIds(record?.skillOrder ?? record?.order)
+      if (skillOrder.length !== 18 || skillOrder.some(skill => skill > 4)) {
+        return []
+      }
+
+      return [{
+        ...normalizeRecommendationStats(record),
+        skillOrder,
+      }]
+    })
+    .sort(compareRecommendations)
+}
+
+const SKILL_KEYS = ['Q', 'W', 'E']
+
+export const getSkillPriority = (skillOrder = []) => {
+  const rankedSkills = SKILL_KEYS
+    .map((key, index) => {
+      const skillNumber = index + 1
+      let learnedCount = 0
+      let maxedAt = Number.POSITIVE_INFINITY
+
+      for (let levelIndex = 0; levelIndex < skillOrder.length; levelIndex += 1) {
+        if (skillOrder[levelIndex] === skillNumber) {
+          learnedCount += 1
+          if (learnedCount === 5) {
+            maxedAt = levelIndex
+            break
+          }
+        }
+      }
+
+      return { key, maxedAt }
+    })
+    .sort((left, right) => left.maxedAt - right.maxedAt)
+
+  return rankedSkills.map(skill => skill.key)
+}
+
+export const getSkillKey = (skillNumber) => ['Q', 'W', 'E', 'R'][Number(skillNumber) - 1] || '?'
+
 export const createBuildRoutes = (build) => collectBuildRoutes(build)
   .map((route, index) => {
     const stats = getBuildStats(route)
@@ -199,6 +306,8 @@ export const createBuildRoutes = (build) => collectBuildRoutes(build)
       route.situationalItems || [],
       compareSituationalRecords
     )
+    const summonerSpells = normalizeSummonerSpellRecommendations(route)
+    const skillOrders = normalizeSkillOrderRecommendations(route)
     const hasAnyItems = startingItems.length > 0 ||
       coreItems.length > 0 ||
       itemExtensions.length > 0 ||
@@ -216,6 +325,8 @@ export const createBuildRoutes = (build) => collectBuildRoutes(build)
       coreItems,
       itemExtensions,
       situationalItems,
+      summonerSpells,
+      skillOrders,
       hasAnyItems,
     }
   })

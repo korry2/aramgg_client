@@ -7,7 +7,7 @@
 - 通过 LCU 只读接口和 `OnJsonApiEvent` WebSocket 读取选人、游戏流程状态。
 - 在 ARAM 选人阶段通过英雄详情窗口顶部展示当前英雄与席位英雄的只读推荐。
 - 在实际对局 `InProgress` 阶段自动截图并按卡片位置识别海克斯强化。
-- 通过英雄详情、海克斯顶部浮窗和游戏右侧推荐列表展示英雄、海克斯、装备等胜率和推荐信息。
+- 通过英雄详情、海克斯顶部浮窗和游戏右侧推荐列表展示英雄、海克斯、出装、召唤师技能与技能加点等胜率和推荐信息。
 
 本项目只做辅助判断和展示，不自动选英雄、不自动换 bench、不自动锁定或接受交换。
 
@@ -35,16 +35,6 @@
 </p>
 
 动态图表由开源项目 [Star History](https://github.com/star-history/star-history) 提供。
-
-## 支持项目
-
-如果这个项目对你有帮助，欢迎通过微信或支付宝支持后续开发与维护。
-
-<p align="center">
-  <img src="./docs/assets/support/wechat.jpg" alt="微信赞赏码" width="220" />
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="./docs/assets/support/alipay.jpg" alt="支付宝收款码" width="220" />
-</p>
 
 ## 项目结构
 
@@ -182,3 +172,13 @@ LCU 推荐链路只能读取状态和统计数据。禁止把 `pickOrBan`、`ben
 ## 友情链接
 
 - [LINUX DO](https://linux.do/)
+
+## 支持项目
+
+如果这个项目对你有帮助，欢迎通过微信或支付宝支持后续开发与维护。
+
+<p align="center">
+  <img src="./docs/assets/support/wechat.jpg" alt="微信赞赏码" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./docs/assets/support/alipay.jpg" alt="支付宝收款码" width="220" />
+</p>

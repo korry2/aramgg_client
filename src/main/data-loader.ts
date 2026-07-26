@@ -2002,6 +2002,91 @@ function mapPublicAugmentTrio(record: any, augmentBaseById: Record<string, any> 
   }
 }
 
+function parseBuildRecommendationRecords(value: any): any[] {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value !== 'string') {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function normalizePositiveIntegerIds(value: any): number[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const ids = value.map(Number)
+  return ids.every((id) => Number.isInteger(id) && id > 0) ? ids : []
+}
+
+function mapBuildRecommendationStats(record: any): any {
+  const stats = record?.stats || {}
+
+  return {
+    games: toNumber(record?.games ?? record?.num_games ?? stats.games ?? stats.num_games),
+    wins: toNumber(record?.wins ?? record?.num_win_games ?? stats.wins ?? stats.num_win_games),
+    pickRate: toNumber(
+      record?.pickRate ?? record?.pick_rate ?? stats.pickRate ?? stats.pick_rate
+    ),
+    winRate: toNumber(
+      record?.winRate ?? record?.win_rate ?? stats.winRate ?? stats.win_rate
+    ),
+  }
+}
+
+function mapSummonerSpellRecommendations(value: any): any[] {
+  return parseBuildRecommendationRecords(value)
+    .map((record) => {
+      const summonerSpellIds = normalizePositiveIntegerIds(
+        record?.summonerSpellIds ?? record?.spellIds
+      )
+      if (summonerSpellIds.length !== 2) {
+        return null
+      }
+
+      return {
+        ...record,
+        summonerSpellIds,
+        ...mapBuildRecommendationStats(record),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) =>
+      right.games - left.games || right.pickRate - left.pickRate
+    )
+}
+
+function mapSkillOrderRecommendations(value: any): any[] {
+  return parseBuildRecommendationRecords(value)
+    .map((record) => {
+      const skillOrder = normalizePositiveIntegerIds(
+        record?.skillOrder ?? record?.order
+      )
+      if (skillOrder.length !== 18 || skillOrder.some((skill) => skill > 4)) {
+        return null
+      }
+
+      return {
+        ...record,
+        skillOrder,
+        ...mapBuildRecommendationStats(record),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) =>
+      right.games - left.games || right.pickRate - left.pickRate
+    )
+}
+
 function mapPublicBuild(publicBuild: any, championId: string | number): any {
   if (!publicBuild) {
     return null
@@ -2021,6 +2106,8 @@ function mapPublicBuild(publicBuild: any, championId: string | number): any {
   const itemExtensions = (publicBuild.itemExtensions || [])
     .filter((record: any) => hasItemSequence(record))
     .map((record: any) => mapBuildSet(record))
+  const summonerSpells = mapSummonerSpellRecommendations(publicBuild.summonerSpells)
+  const skillOrders = mapSkillOrderRecommendations(publicBuild.skillOrders)
 
   return {
     patch: publicBuild.patch || '',
@@ -2038,6 +2125,8 @@ function mapPublicBuild(publicBuild: any, championId: string | number): any {
     itemExtensions,
     situationalItems,
     startingItems,
+    summonerSpells,
+    skillOrders,
     games: toNumber(publicBuild.stats?.games),
     wins: toNumber(publicBuild.stats?.wins),
     pickRate: toNumber(publicBuild.stats?.pickRate),

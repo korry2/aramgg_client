@@ -152,9 +152,9 @@ data/
 | `/api/client/v1/data/{dataVersion}/champion-shards/{shardId}.json` | 固定分片的多个英雄详情 |
 | `/api/client/v1/data/{dataVersion}/champions/{championId}.json` | 客户端单英雄详情兜底 |
 
-单英雄详情应包含该英雄的海克斯胜率列表、装备表现、三强化组合和出装摘要。当前官方客户端的打包预加载和运行时版本更新会按 manifest 准备全部必需固定分片，完整校验后再激活该语言版本；单英雄接口只作为本地版本缺少目标文件时的兜底，不属于正常启动主路径。
+单英雄详情应包含该英雄的海克斯胜率列表、装备表现、三强化组合和 `builds` 出装路线。每条出装路线还可包含召唤师技能组合与 18 级技能加点顺序。当前官方客户端的打包预加载和运行时版本更新会按 manifest 准备全部必需固定分片，完整校验后再激活该语言版本；单英雄接口只作为本地版本缺少目标文件时的兜底，不属于正常启动主路径。
 
-客户端详情文件复用 `augments.json` 和 `items.json` 基础表：三强化只保留 `augmentIds` 和统计值，出装组合只保留 `itemIds` 和统计值，展示名称、图标、稀有度时由客户端从基础表补齐。客户端按这个新格式读取，不兼容旧的三强化/出装组合内嵌完整对象格式。
+客户端详情文件复用 `augments.json` 和 `items.json` 基础表：三强化只保留 `augmentIds` 和统计值，出装组合只保留 `itemIds` 和统计值，展示名称、图标、稀有度时由客户端从基础表补齐。`builds[].summonerSpells` 的每条记录使用两个正整数 `summonerSpellIds`；`builds[].skillOrders` 的每条记录使用长度为 18、取值为 `1..4` 的 `skillOrder`。两类记录均携带 `games`、`wins`、`pickRate` 和 `winRate`，客户端按场次、选取率排序并忽略不合法记录。客户端按这个新格式读取，不兼容旧的三强化/出装组合内嵌完整对象格式。
 
 
 这些文件由 `cf-data-api/scripts/build-public-api.ts` 在 `npm run build:public` 阶段生成到 `public/v1/zh-CN/client/v1/`，随后随 `npm run deploy:eo` 上传到 EdgeOne Blob。发布包不会把这些 JSON 打进 Functions 代码。
@@ -199,7 +199,28 @@ data/
       "augments": [],
       "items": [],
       "augmentTrios": [],
-      "build": {}
+      "builds": [
+        {
+          "summonerSpells": [
+            {
+              "summonerSpellIds": [4, 32],
+              "games": 720,
+              "wins": 400,
+              "pickRate": 0.72,
+              "winRate": 0.556
+            }
+          ],
+          "skillOrders": [
+            {
+              "skillOrder": [1, 2, 3, 1, 1, 4, 1, 2, 1, 2, 4, 2, 2, 3, 3, 4, 3, 3],
+              "games": 680,
+              "wins": 370,
+              "pickRate": 0.68,
+              "winRate": 0.544
+            }
+          ]
+        }
+      ]
     }
   }
 }
@@ -224,7 +245,7 @@ Content-Type: application/json
 
 {
   "ids": [1, 2, 3],
-  "fields": ["augments", "items", "augmentTrios", "build"]
+  "fields": ["augments", "items", "augmentTrios", "builds"]
 }
 ```
 
