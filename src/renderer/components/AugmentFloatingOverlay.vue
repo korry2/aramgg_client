@@ -446,7 +446,6 @@ onBeforeUnmount(() => {
   background:
     linear-gradient(145deg, rgba(18, 27, 38, 0.9), rgba(6, 9, 12, 0.92)),
     rgba(7, 10, 13, 0.92);
-  backdrop-filter: blur(18px);
   border: 1px solid rgba(200, 169, 106, 0.2);
   border-radius: 4px;
   padding: 8px;
@@ -715,7 +714,6 @@ onBeforeUnmount(() => {
   background: rgba(229, 83, 75, 0.2);
   color: #ffb0aa;
   border: 1px solid rgba(229, 83, 75, 0.34);
-  animation: pulse 2s ease-in-out infinite;
 }
 
 .badge.strong {
@@ -746,17 +744,6 @@ onBeforeUnmount(() => {
   background: rgba(244, 236, 220, 0.06);
   color: var(--lol-faint);
   border: 1px solid var(--lol-border-soft);
-}
-
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 2px 8px rgba(229, 83, 75, 0.32);
-  }
-  50% {
-    transform: scale(1.02);
-    box-shadow: 0 4px 16px rgba(229, 83, 75, 0.44);
-  }
 }
 
 @media (max-width: 760px) {

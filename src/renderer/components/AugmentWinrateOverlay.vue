@@ -2005,7 +2005,6 @@ defineExpose({
     rgba(8, 21, 30, 0.42);
   border-color: rgba(226, 195, 132, 0.2);
   box-shadow: 0 20px 58px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(3px);
 }
 
 .augment-overlay.side-panel-mode.overlay-fade-enter-from,

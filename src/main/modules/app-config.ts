@@ -51,6 +51,7 @@ import {
     shouldShowAugmentTopOverlay,
 } from './user-preferences.ts'
 import { GameSessionCoordinator } from '../services/game-session/game-session-machine.ts'
+import { shouldRaiseOverlayWindow } from './overlay-window-state.ts'
 
 const __dirname = import.meta.dirname
 
@@ -1490,12 +1491,11 @@ async function notifyAllWindows(channel, data) {
         let sentToOverlay = false
 
         if (floatingWin && !floatingWin.isDestroyed() && shouldShowAugmentTopOverlay()) {
-            applyFloatingWindowLayout()
-            // 显示浮动窗口
-            if (!floatingWin.isVisible()) {
+            if (shouldRaiseOverlayWindow(floatingWin)) {
+                applyFloatingWindowLayout()
                 logger.info('✨ 显示海克斯浮动窗口')
+                raiseOverlayWindow(floatingWin, 'floating')
             }
-            raiseOverlayWindow(floatingWin, 'floating')
             // 发送数据到浮动窗口
             floatingWin.webContents.send(channel, data)
             sentToOverlay = true
@@ -1504,11 +1504,11 @@ async function notifyAllWindows(channel, data) {
         }
 
         if (sidePanelWin && !sidePanelWin.isDestroyed() && shouldShowAugmentSidePanel()) {
-            applyAugmentSidePanelWindowLayout()
-            if (!sidePanelWin.isVisible()) {
+            if (shouldRaiseOverlayWindow(sidePanelWin)) {
+                applyAugmentSidePanelWindowLayout()
                 logger.info('✨ 显示海克斯右侧推荐列表')
+                raiseOverlayWindow(sidePanelWin, 'augment-side-panel')
             }
-            raiseOverlayWindow(sidePanelWin, 'augment-side-panel')
             sidePanelWin.webContents.send(channel, data)
             sentToOverlay = true
         } else if (sidePanelWin && !sidePanelWin.isDestroyed() && sidePanelWin.isVisible() && !shouldShowAugmentSidePanel()) {

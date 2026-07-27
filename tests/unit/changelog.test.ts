@@ -16,6 +16,7 @@ describe('changelog entries', () => {
       expect.stringContaining('18 级技能加点'),
       expect.stringContaining('16.14.3'),
       expect.stringContaining('席位列表'),
+      expect.stringContaining('海克斯浮窗显示开销'),
     ]))
   })
 

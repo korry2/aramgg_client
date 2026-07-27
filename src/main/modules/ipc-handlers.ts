@@ -43,6 +43,7 @@ import { getAramBenchRecommendation } from '../services/aram/bench-recommendatio
 import { registerPreferencesIpcHandlers } from '../ipc/preferences-handlers.ts'
 import { registerSystemIpcHandlers } from '../ipc/system-handlers.ts'
 import { trustedIpcMain as ipcMain } from '../security/trusted-ipc.ts'
+import { shouldRaiseOverlayWindow } from './overlay-window-state.ts'
 
 const TEST_AUGMENT_COUNT = 3
 const TEST_BENCH_CHAMPION_COUNT = 8
@@ -456,20 +457,20 @@ export function registerIpcHandlers(isDev: boolean): void {
             }
 
             if (floatingWindow && !floatingWindow.isDestroyed() && shouldShowAugmentTopOverlay()) {
-                applyFloatingWindowLayout()
-                if (!floatingWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(floatingWindow)) {
+                    applyFloatingWindowLayout()
                     logger.info('Floating window shown for test')
+                    raiseOverlayWindow(floatingWindow, 'floating')
                 }
-                raiseOverlayWindow(floatingWindow, 'floating')
                 floatingWindow.webContents.send('augment-detected', data)
             }
 
             if (sidePanelWindow && !sidePanelWindow.isDestroyed() && shouldShowAugmentSidePanel()) {
-                applyAugmentSidePanelWindowLayout()
-                if (!sidePanelWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(sidePanelWindow)) {
+                    applyAugmentSidePanelWindowLayout()
                     logger.info('Augment side panel window shown for test')
+                    raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 }
-                raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 sidePanelWindow.webContents.send('augment-detected', data)
             }
 
@@ -496,20 +497,20 @@ export function registerIpcHandlers(isDev: boolean): void {
             }
 
             if (floatingWindow && !floatingWindow.isDestroyed() && shouldShowAugmentTopOverlay()) {
-                applyFloatingWindowLayout()
-                if (!floatingWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(floatingWindow)) {
+                    applyFloatingWindowLayout()
                     logger.info('Floating window shown for random test')
+                    raiseOverlayWindow(floatingWindow, 'floating')
                 }
-                raiseOverlayWindow(floatingWindow, 'floating')
                 floatingWindow.webContents.send('augment-detected', data)
             }
 
             if (sidePanelWindow && !sidePanelWindow.isDestroyed() && shouldShowAugmentSidePanel()) {
-                applyAugmentSidePanelWindowLayout()
-                if (!sidePanelWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(sidePanelWindow)) {
+                    applyAugmentSidePanelWindowLayout()
                     logger.info('Augment side panel window shown for random test')
+                    raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 }
-                raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 sidePanelWindow.webContents.send('augment-detected', data)
             }
 

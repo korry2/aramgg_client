@@ -19,6 +19,7 @@ import {
     applyFloatingWindowLayout,
     raiseOverlayWindow,
 } from './modules/window-manager.ts'
+import { shouldRaiseOverlayWindow } from './modules/overlay-window-state.ts'
 import store from './modules/app-store.ts'
 import { getPartialOcrScreenshotDir } from './modules/app-paths.ts'
 import {
@@ -1058,11 +1059,11 @@ class AutoScreenshotService {
             let sentToOverlay = false
 
             if (floatingWindow && !floatingWindow.isDestroyed() && shouldShowAugmentTopOverlay()) {
-                applyFloatingWindowLayout()
-                if (!floatingWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(floatingWindow)) {
+                    applyFloatingWindowLayout()
                     logger.info('✨ 显示海克斯浮动窗口')
+                    raiseOverlayWindow(floatingWindow, 'floating')
                 }
-                raiseOverlayWindow(floatingWindow, 'floating')
                 // 发送数据到浮动窗口
                 floatingWindow.webContents.send('augment-detected', winrateData)
                 sentToOverlay = true
@@ -1071,11 +1072,11 @@ class AutoScreenshotService {
             }
 
             if (sidePanelWindow && !sidePanelWindow.isDestroyed() && shouldShowAugmentSidePanel()) {
-                applyAugmentSidePanelWindowLayout()
-                if (!sidePanelWindow.isVisible()) {
+                if (shouldRaiseOverlayWindow(sidePanelWindow)) {
+                    applyAugmentSidePanelWindowLayout()
                     logger.info('✨ 显示海克斯右侧推荐列表')
+                    raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 }
-                raiseOverlayWindow(sidePanelWindow, 'augment-side-panel')
                 sidePanelWindow.webContents.send('augment-detected', winrateData)
                 sentToOverlay = true
             } else if (sidePanelWindow && !sidePanelWindow.isDestroyed() && sidePanelWindow.isVisible() && !shouldShowAugmentSidePanel()) {

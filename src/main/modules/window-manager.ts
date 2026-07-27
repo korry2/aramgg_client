@@ -20,6 +20,7 @@ import {
     fitWindowPositionToWorkArea,
     parseWindowPosition,
 } from './window-position.ts'
+import { shouldRaiseOverlayWindow } from './overlay-window-state.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -208,7 +209,7 @@ export function raiseOverlayWindow(
     window: BrowserWindow | null,
     name: string = 'overlay'
 ): void {
-    if (!window || window.isDestroyed()) {
+    if (!window || window.isDestroyed() || !shouldRaiseOverlayWindow(window)) {
         return
     }
 
@@ -482,10 +483,6 @@ const getWebPreferences = (
     ...overrides,
 })
 
-const getOverlayWebPreferences = (isDev: boolean): WebPreferences => getWebPreferences(isDev, {
-    backgroundThrottling: false,
-})
-
 /**
  * 创建主窗口
  */
@@ -560,7 +557,7 @@ export const createPopupWindow = async (
     isDev: boolean,
     devServerUrl: string
 ): Promise<BrowserWindow> => {
-    const webPreferences = getOverlayWebPreferences(isDev)
+    const webPreferences = getWebPreferences(isDev)
     const bounds = getPopupBounds()
 
     popupWindow = new BrowserWindow({
@@ -605,7 +602,7 @@ export const createAugmentSidePanelWindow = async (
     isDev: boolean,
     devServerUrl: string
 ): Promise<BrowserWindow> => {
-    const webPreferences = getOverlayWebPreferences(isDev)
+    const webPreferences = getWebPreferences(isDev)
     const bounds = getAugmentSidePanelBounds()
 
     augmentSidePanelWindow = new BrowserWindow({
@@ -657,7 +654,7 @@ export const createFloatingWindow = async (
     isDev: boolean,
     devServerUrl: string
 ): Promise<BrowserWindow> => {
-    const webPreferences = getOverlayWebPreferences(isDev)
+    const webPreferences = getWebPreferences(isDev)
     const bounds = getFloatingBounds()
 
     floatingWindow = new BrowserWindow({
