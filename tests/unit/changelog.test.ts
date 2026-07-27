@@ -6,16 +6,16 @@ import {
 } from '../../src/main/changelog.ts'
 
 describe('changelog entries', () => {
-  it('includes the latest window and post-game experience announcement', () => {
+  it('includes the latest champion detail recommendation announcement', () => {
     const latestEntry = LOCAL_CHANGELOG_ENTRIES[0]
 
-    expect(latestEntry.version).toBe('0.2.2')
-    expect(latestEntry.date).toBe('2026-07-19')
+    expect(latestEntry.version).toBe('0.2.3')
+    expect(latestEntry.date).toBe('2026-07-28')
     expect(latestEntry.changes).toEqual(expect.arrayContaining([
-      expect.stringContaining('对局结束时不再自动跳出'),
-      expect.stringContaining('英雄胜率窗口会记住'),
-      expect.stringContaining('自动展示赛后海报'),
-      expect.stringContaining('语言切换统计'),
+      expect.stringContaining('召唤师技能组合'),
+      expect.stringContaining('18 级技能加点'),
+      expect.stringContaining('16.14.3'),
+      expect.stringContaining('席位列表'),
     ]))
   })
 
