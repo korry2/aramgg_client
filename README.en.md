@@ -1,30 +1,138 @@
-# aramgg_client
-
-Language: [Chinese](./README.md) | English
-
-A League of Legends ARAM assistant built with Electron, Vue 3, and electron-vite. The current feature set focuses on:
-
-- Reading champion select and gameflow state through read-only LCU APIs and the `OnJsonApiEvent` WebSocket.
-- Showing read-only recommendations for the current champion and bench champions at the top of the champion detail window during ARAM champion select.
-- Automatically taking screenshots during the in-game `InProgress` stage and recognizing Augments by card position.
-- Displaying champion, Augment, item-build, Summoner Spell, skill-order, win-rate, and recommendation data through the champion detail view, the top Augment overlay, and the right-side in-game recommendation list.
-
-This project only assists with analysis and display. It does not automatically pick champions, swap bench champions, lock in, or accept trades.
-
-The application interface and display data can be switched together between Simplified Chinese, English, and Traditional Chinese. This English README is provided for contributors and users who prefer English project documentation.
-
-## Project Preview
-
 <p align="center">
-  <img src="./docs/image.png" alt="ARAMGG assistant control panel" width="380" />
-  <img src="./docs/image0.png" alt="ARAMGG champion details and bench recommendations" width="360" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="ARAMGG Assistant with read-only LCU guidance, local Augment OCR, and in-game recommendation overlays" />
 </p>
 
 <p align="center">
-  <img src="./docs/aramgg-in-game-preview.png" alt="ARAMGG in-game Augment recognition and recommendations" width="900" />
+  <a href="./README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-## Star History
+<p align="center">
+  <a href="https://github.com/valkia/aramgg_client/releases/latest"><img src="https://img.shields.io/github/v/release/valkia/aramgg_client?style=flat-square&color=c8a96a&label=release" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20x64-111923?style=flat-square&logo=windows11&logoColor=f4ecdc" alt="Windows x64" />
+  <img src="https://img.shields.io/badge/LCU-read--only-54d884?style=flat-square" alt="Read-only LCU integration" />
+  <img src="https://img.shields.io/badge/UI-zh--CN%20%7C%20en--US%20%7C%20zh--TW-c29c6d?style=flat-square" alt="Simplified Chinese, English, and Traditional Chinese" />
+</p>
+
+<p align="center">
+  A Windows desktop companion for League of Legends ARAM: get champion and bench guidance in champion select, recognize all three Augment cards in-game, and keep win-rate, build, and skill recommendations beside the match.
+</p>
+
+<p align="center">
+  <a href="https://github.com/valkia/aramgg_client/releases/latest"><strong>Download for Windows</strong></a>
+  ·
+  <a href="./docs/USER_GUIDE_AUTO_AUGMENT.md">User guide</a>
+  ·
+  <a href="./docs/LCU_TROUBLESHOOTING.md">LCU troubleshooting</a>
+</p>
+
+## See it in a match
+
+<p align="center">
+  <img src="./docs/aramgg-in-game-preview.png" width="100%" alt="Three-card Augment overlay and right-side recommendation panel during an ARAM match" />
+</p>
+
+<p align="center">
+  <sub>The top overlay preserves left, center, and right card order; the side panel extends the result with win rates, recommendation scores, and related builds.</sub>
+</p>
+
+<p align="center">
+  <img src="./docs/image.png" alt="ARAMGG Assistant control panel" width="380" />
+  <img src="./docs/image0.png" alt="Champion details and ARAM bench recommendations" width="360" />
+</p>
+
+## What it does in one match
+
+| Stage | What ARAMGG reads | What you see |
+| --- | --- | --- |
+| `ChampSelect` | Read-only LCU champion-select, champion, and bench state | Current-champion data and guidance for every available bench candidate |
+| `InProgress` | The left, center, and right Augment title regions on screen | A three-card top overlay and a right-side win-rate and recommendation list |
+| Throughout | Complete bundled or cached data for the active locale | Champion, Augment, build, Summoner Spell, and skill-order guidance |
+
+> [!IMPORTANT]
+> Recommendation flows read state and statistics only. ARAMGG never picks a champion, swaps the bench, locks in, or accepts a trade; every game action stays with the player.
+
+## More than a data overlay
+
+- **Game-stage aware.** LCU gameflow decides when champion-select guidance is relevant and when in-game OCR may run. Stale results are cleared after the match stage ends.
+- **Position-stable recognition.** PaddleOCR reads dedicated left, center, and right title regions. An unread slot stays empty instead of borrowing broad OCR text that could reorder the cards.
+- **Local-first rendering.** Complete bundled or cached data renders first. Remote version checks run in the background, and a new dataset activates only after all required files are ready.
+- **One locale for UI and data.** `zh-CN`, `en-US`, and `zh-TW` switch transactionally so the interface cannot move to a new language while its data remains on the old one.
+
+## Install and use
+
+1. Download the latest `aramgg_client Setup <version>.exe` from [Releases](https://github.com/valkia/aramgg_client/releases/latest).
+2. Install and launch ARAMGG Assistant, then launch League Client. The app discovers LCU from the running client first.
+3. Enter ARAM: use the champion detail window during champion select, then wait for an Augment selection screen in-game.
+4. If automatic recognition misses, press `F1` to capture and analyze manually.
+
+The game-directory setting is not required for normal use. It is an advanced fallback for reading the LCU lockfile and logs only when process-first discovery fails.
+
+## How it works
+
+```text
+League Client ──read-only LCU──> stage router ──ChampSelect──> champion / bench guidance
+                                      └────────InProgress──> screen capture
+                                                               │
+local-first locale data <──────── PaddleOCR title regions <────┘
+          │
+          └──────────────────────> three-card overlay / side panel
+```
+
+The renderer has no Node access and reaches the main process only through business APIs exposed by the sandboxed preload. Electron windows keep `contextIsolation`, `sandbox`, and `webSecurity` enabled.
+
+## Develop locally
+
+Use Node `22.18.0` and npm 10.
+
+```bash
+git clone https://github.com/valkia/aramgg_client.git
+cd aramgg_client
+npm install
+npm run prepare:client-data
+npm run dev
+```
+
+Run the main quality gates before submitting changes:
+
+```bash
+npm run test:unit
+npm run test:augment-ocr
+npm run lint
+npm run type-check
+npm run build
+```
+
+The app uses Electron, Vue 3, electron-vite, TypeScript, and PaddleOCR. Process-boundary code lives in `src/main/`, `src/preload/`, `src/renderer/`, and `src/shared/`; tests live in `tests/unit/` and `tests/electron/`.
+
+## Documentation
+
+- [Complete architecture](./COMPLETE_ARCHITECTURE.md)
+- [Automatic Augment detection guide](./docs/USER_GUIDE_AUTO_AUGMENT.md)
+- [LCU troubleshooting](./docs/LCU_TROUBLESHOOTING.md)
+- [ARAM LCU read-only recommendation progress](./docs/ARAM_LCU_READONLY_RECOMMENDATION_PROGRESS.md)
+- [Client data API distribution strategy](./docs/client-api-strategy.md)
+- [Electron client update strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
+- [TypeScript development conventions](./docs/TYPESCRIPT_INTEGRATION.md)
+
+Client data APIs, API key applications, and integration notes are available on the [ARAMGG Data API developer page](https://data.dtodo.cn/developer.html).
+
+<details>
+<summary><strong>Maintainers: release and quality checks</strong></summary>
+
+GitHub Actions runs lint, type-check, unit tests, and packaging on a Windows runner. Official releases use `npm run release:patch|minor|major` to create the version commit and annotated tag, followed by `npm run release:push`.
+
+After dependency or lockfile changes, validate with npm 10 before publishing:
+
+```bash
+npx -p npm@10 npm ci --ignore-scripts
+```
+
+After publishing the installer, update `client.latestVersion`, `client.downloadUrl`, and the release notes in the remote `/api/client/v1/config` response. Keep `client.autoUpdateEnabled` off until the complete update path has been verified.
+
+</details>
+
+<details>
+<summary><strong>Star history</strong></summary>
 
 <p align="center">
   <a href="https://www.star-history.com/?repos=valkia%2Faramgg_client&type=date&legend=top-left">
@@ -36,137 +144,17 @@ The application interface and display data can be switched together between Simp
   </a>
 </p>
 
-Live chart provided by the open-source [Star History](https://github.com/star-history/star-history) project.
+</details>
 
-## Project Structure
+<details>
+<summary><strong>Support the project</strong></summary>
 
-- `src/main/`: Electron main process code for windows, IPC, LCU integration, screenshots, OCR, and data loading.
-- `src/preload/`: sandboxed preload bridge exposing the minimal `window.electronAPI` surface.
-- `src/renderer/`: Vue renderer app, pages, components, services, and styles.
-- `src/shared/`: IPC contracts shared across the main, preload, and renderer type boundaries.
-- `tests/unit/`: focused Vitest coverage for pure utilities and state transitions.
-- `tests/electron/`: Electron/Node-side test scripts.
-- `docs/`: current feature guides, troubleshooting notes, architecture progress, and archived documentation.
-- `legacy/`: archived material only. Do not add new source code here.
+If ARAMGG helps you, you can support its continued development and maintenance.
 
-`dist/`, `dist-electron/`, and `build/` are generated build outputs and should not be committed.
+<p align="center">
+  <img src="./docs/assets/support/wechat.jpg" alt="WeChat support QR code" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./docs/assets/support/alipay.jpg" alt="Alipay support QR code" width="220" />
+</p>
 
-## Common Commands
-
-```bash
-npm install
-npm run dev
-npm run prepare:client-data
-npm run test:unit
-npm run test:augment-ocr
-npm run lint
-npm run type-check
-npm run build
-npm run pack
-```
-
-Targeted scripts:
-
-```bash
-node tests/electron/test-aram-bench-recommendation.js
-node tests/electron/test-winrate-query.js
-node tests/electron/test-screenshot-analysis.js
-node tests/electron/test-augment-ocr-fixtures.js
-```
-
-## Release Flow
-
-GitHub Actions runs lint, type-check, unit tests, and `npm run pack` on a Windows runner.
-
-- Push to `master`: creates an Actions artifact for installer inspection.
-- Push a `v*` tag: creates a GitHub Release and uploads the installer, `.blockmap`, and `latest.yml`.
-- Manually trigger `Build Windows Release`: creates an Actions artifact only, without publishing a GitHub Release.
-
-The release workflow uses Node `22.18.0` and npm 10, and installs dependencies with `npm ci --ignore-scripts`. After dependency or `package-lock.json` changes, validate the lockfile with npm 10 before publishing:
-
-```bash
-npx -p npm@10 npm ci --ignore-scripts
-```
-
-Use `npm version` for official releases. It updates `package.json` and `package-lock.json`, creates the version commit, and creates a `v*` tag. Choose the command that matches the release scope:
-
-```bash
-npm run release:patch
-npm run release:minor
-npm run release:major
-```
-
-Then push the version commit and tag:
-
-```bash
-npm run release:push
-```
-
-After publishing the installer, update the remote client config at `/api/client/v1/config` so older clients can see the new version and release notes:
-
-- `client.latestVersion`: the new version number.
-- `client.downloadUrl`: the new installer or latest download page.
-- `client.autoUpdateEnabled`: the global auto-download/install switch. Keep it `false`, or omit it, until the full updater feed has been tested.
-- `client.updateFeedUrl`: the auto-update feed directory. It is used only when `client.autoUpdateEnabled: true`.
-- `client.changelog` / `client.releaseNotes`: release notes for the new version.
-
-The auto-update feed directory must contain `latest.yml`, `aramgg_client Setup <version>.exe`, and the matching `.exe.blockmap`. For now, prefer updating `latestVersion`, `downloadUrl`, and release notes so older clients use manual downloads. Enable `autoUpdateEnabled` only after the full auto-update path has been verified.
-
-Remote config cannot extend updater trust roots. Before enabling automatic updates, add the approved HTTPS feed origin and Windows certificate publisher CN to `src/main/app-update-service.ts`, and publish an Authenticode-signed installer. Development-only overrides through `ARAMGG_UPDATE_ALLOWED_ORIGINS` and `ARAMGG_UPDATE_PUBLISHER_NAMES` are read only when `ARAMGG_ALLOW_DEV_UPDATE_CHECK` is enabled.
-
-Example: from `0.1.0`, running `npm run release:patch` creates the `0.1.1` version commit and `v0.1.1` tag. After pushing, GitHub Actions verifies that the tag matches the `package.json` version before publishing the Release.
-
-Do not create lightweight tags manually instead of using the release scripts. If a bad release tag must be cleaned up, first confirm the exact local and remote tag to delete, then recreate only the confirmed annotated version tag.
-
-## Development Conventions
-
-- Prefer TypeScript for new source files, services, utilities, IPC contracts, and tests. Add `.js` only when extending an existing JavaScript module or when a dependency/tooling boundary makes TypeScript impractical.
-- Keep Vue UI in single-file components. Move business logic into services or utilities where possible.
-- When adding or changing an Electron API, update `src/shared/ipc-contract.ts` first, then keep the main handler, preload bridge, and renderer callers in sync.
-- TypeScript migration and troubleshooting details are documented in [TypeScript Integration Summary](./docs/TYPESCRIPT_INTEGRATION.md).
-
-## Data API
-
-Client data APIs, API key application, and integration notes are available on the [ARAMGG Data API developer page](https://data.dtodo.cn/developer.html).
-
-This repository does not commit real API keys. For local configuration, copy `.env.local.example` to `.env.local`, then fill in your own `ARAMGG_DATA_API_KEY`.
-
-Manifest paths and client-data resource URLs pass through a shared security validator. `ARAMGG_DATA_ALLOWED_ORIGINS` may explicitly add trusted origins as a comma-separated list; production origins must use HTTPS, while HTTP is accepted only for localhost development.
-
-Client display data uses a locale-isolated, local-first strategy. Default Chinese keeps the compatible `current.json` / `versions/<dataVersion>/` layout; English and Traditional Chinese use `current.<locale>.json` / `versions/<locale>/<dataVersion>/`. Bundled and runtime data render champion details, Augment popups, and recommendation lists before remote checks run. Background updates may activate only complete data for the same locale; non-default config and manifest responses must explicitly declare the requested locale.
-
-## Key Documents
-
-- [Complete Architecture](./COMPLETE_ARCHITECTURE.md)
-- [ARAM LCU Read-only Recommendation Progress](./docs/ARAM_LCU_READONLY_RECOMMENDATION_PROGRESS.md)
-- [Gameflow Detection Guide](./docs/GAMEFLOW_DETECTION_GUIDE.md)
-- [LCU Troubleshooting Guide](./docs/LCU_TROUBLESHOOTING.md)
-- [Auto Augment Detection User Guide](./docs/USER_GUIDE_AUTO_AUGMENT.md)
-- [Client Data API Distribution Strategy](./docs/client-api-strategy.md)
-- [Localized Client Data Review](./docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md)
-- [Full Code Review and Remediation Status](./docs/CODE_REVIEW_2026-07-10.md)
-- [Electron Client Update Strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)
-- [Electron / electron-vite Architecture Migration Progress](./docs/ELECTRON_VITE_MIGRATION_PROGRESS.md)
-- [TypeScript Development Conventions](./docs/TYPESCRIPT_INTEGRATION.md)
-- [Project Recommendations and Implementation Progress](./docs/PROJECT_RECOMMENDATIONS_2026-07-10.md)
-- [Requirements](./docs/requirements.md)
-
-Older implementation summaries, plans, and completion reports have been archived under [docs/archive/2026-01-legacy](./docs/archive/2026-01-legacy/). They are kept only for historical context. The documents listed above and the current source code are the source of truth.
-
-## UI, Installation, and Runtime Data
-
-- The language menu in the upper-right corner of the main status header supports `zh-CN`, `en-US`, and `zh-TW`; the row below remains a three-column client version, data version, and LCU connection summary. A successful switch updates the main window, champion details, bench recommendations, Augment overlays, the right-side recommendation list, and the post-game poster together.
-- Locale changes are transactional: the target dataset is prepared first, and `locale-changed` updates Vue i18n only after an exact locale match is ready. Only the language control shows local progress while preparing; the post-commit remote version refresh runs in the background, and a failed preparation leaves both the interface and data on the previous locale.
-- Renderer messages live in `src/renderer/i18n/messages.ts`. New user-visible copy must include all three locales and preserve message-key parity.
-- The main window is shown on the right side of the primary display work area by default. The champion detail window, top Augment overlay, and right-side recommendation list are still positioned by the main process.
-- The main window's window preference controls can decide whether to close the champion detail page when entering a match, whether to show the top Augment overlay, and whether to show the right-side Augment recommendation list.
-- LCU credentials are discovered automatically from the running League Client process by default. The main window's game directory setting is an advanced fallback for reading the LCU lockfile and logs only when automatic discovery fails.
-- The Windows installer uses an NSIS assisted install flow and allows the installation directory to be selected. The installer normalizes the selected parent directory to an `...\aramgg_client` application subdirectory.
-- Mutable runtime data is managed through `src/main/modules/app-paths.ts`. Installed builds prefer writing to `aramgg_client-data/` next to the installation directory, and fall back to Electron `userData` when that location is not writable.
-- Subdirectory conventions: `config/` stores electron-store configuration, `logs/` stores application logs, `data/` stores versioned client data caches, and `ocr-partial-screenshots/` stores OCR debug screenshots.
-
-## Security Boundaries
-
-The renderer has no Node access and can call the main process only through the `electronAPI` exposed by the preload bridge. Electron windows keep `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`, and `webSecurity: true`.
-
-LCU recommendation flows may only read state and statistics. Do not connect mutating APIs such as `pickOrBan`, `benchSwap`, `action`, `acceptTrade`, or `declineTrade` to recommendation modules.
+</details>
