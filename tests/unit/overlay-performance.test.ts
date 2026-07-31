@@ -26,7 +26,7 @@ describe('augment overlay performance safeguards', () => {
     expect(sidePanelOverlay).not.toContain('backdrop-filter')
   })
 
-  it('uses rank-backed recommendations without displaying a missing augment win rate', async () => {
+  it('uses rank-backed recommendations while displaying grouped augment tiers', async () => {
     const [floatingOverlay, championDetailOverlay] = await Promise.all([
       readFile(
         new URL('../../src/renderer/components/AugmentFloatingOverlay.vue', import.meta.url),
@@ -39,11 +39,13 @@ describe('augment overlay performance safeguards', () => {
     ])
 
     expect(floatingOverlay).toContain('formatPercent(augment.pickRate)')
-    expect(floatingOverlay).toContain("t('augment.rank')")
-    expect(floatingOverlay).toContain('formatAugmentRank(augment.rank)')
+    expect(floatingOverlay).toContain("t('augment.tierLabel')")
+    expect(floatingOverlay).toContain('formatAugmentTier(augment.tier)')
+    expect(floatingOverlay).not.toContain('formatAugmentTier(augment.rank)')
     expect(championDetailOverlay).toContain('rankAugmentRecommendations')
-    expect(championDetailOverlay).toContain("t('augment.rank')")
-    expect(championDetailOverlay).toContain('formatAugmentRank(augment.rank)')
+    expect(championDetailOverlay).toContain("t('augment.tierLabel')")
+    expect(championDetailOverlay).toContain('formatAugmentTier(augment.tier)')
+    expect(championDetailOverlay).not.toContain('formatAugmentTier(augment.rank)')
   })
 
   it('uses Electron background throttling defaults and guards every overlay raise path', async () => {

@@ -49,9 +49,9 @@ export function normalizeTooltipText(value: unknown): string {
     .trim()
 }
 
-export function formatAugmentRank(value: unknown): string {
-  const rank = Number(value)
-  return Number.isInteger(rank) && rank > 0 ? `T${rank}` : '--'
+export function formatAugmentTier(value: unknown): string {
+  const tier = Number(value)
+  return Number.isInteger(tier) && tier > 0 ? `T${tier}` : '--'
 }
 
 export function formatPercent(value: unknown): string {
