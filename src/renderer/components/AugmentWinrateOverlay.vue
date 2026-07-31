@@ -187,7 +187,8 @@
                     <div class="augment-name">{{ augment.name }}</div>
                   </div>
                   <div class="augment-rate">
-                    <strong>{{ formatPercent(augment.winRate) }}</strong>
+                    <small>{{ t(augment.winRate == null ? 'augment.pickRate' : 'augment.winRate') }}</small>
+                    <strong>{{ formatPercent(augment.winRate ?? augment.pickRate) }}</strong>
                   </div>
                 </div>
               </div>
@@ -452,6 +453,7 @@ import {
 } from '../service/cdn'
 import { electronAPI } from '../native/electron-api.js'
 import { sortAugmentsByDetectedOrder } from '../service/augment-order.js'
+import { rankAugmentRecommendations } from '../../shared/augment-ranking.ts'
 import {
   createBuildRoutes,
   getSkillKey,
@@ -799,17 +801,26 @@ const mapIncomingAugmentsForFallback = (augments = []) => augments.map(aug => ({
   rarity: aug.rarity || 'unknown',
   rarityName: aug.rarityName || null,
   rarityDisplayName: aug.rarityDisplayName || null,
+  tier: aug.tier ?? null,
+  rank: aug.rank ?? null,
+  total: aug.total ?? null,
   winRate: aug.winRate ?? null,
   pickRate: aug.pickRate ?? null,
-  playCount: aug.playCount ?? 0,
+  playCount: aug.playCount ?? null,
   recommendScore: aug.recommendScore ?? null,
   iconPath: aug.iconPath || aug.iconUrl || null,
   description: aug.description || null,
   tooltip: aug.tooltip || null,
 }))
 
+const toNullableNumber = (value) => {
+  if (value == null || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 const mapChampionAugmentRows = (augments = [], statsById = {}) => {
-  return augments
+  const rows = augments
     .map(augment => {
       const augmentId = augment.id || augment.augmentId
       const stats = statsById[String(augmentId)]
@@ -817,26 +828,26 @@ const mapChampionAugmentRows = (augments = [], statsById = {}) => {
         return null
       }
 
-      const winRate = Number(stats.win_rate) || 0
-      const pickRate = Number(stats.pick_rate) || 0
-      const games = Number(stats.num_games) || 0
-
       return {
         ...augment,
         id: augmentId,
         augmentId,
-        winRate,
-        pickRate,
-        playCount: games,
-        winCount: Number(stats.num_win_games) || 0,
-        recommendScore: winRate * 0.6 + pickRate * 0.2 + Math.min(games / 1000, 1) * 0.2,
+        tier: toNullableNumber(stats.tier),
+        rank: toNullableNumber(stats.rank),
+        total: toNullableNumber(stats.total),
+        winRate: toNullableNumber(stats.win_rate),
+        pickRate: toNullableNumber(stats.pick_rate),
+        playCount: toNullableNumber(stats.num_games),
+        winCount: toNullableNumber(stats.num_win_games),
+        recommendScore: toNullableNumber(stats.recommendScore),
         iconPath: augment.iconPath || augment.iconUrl || null,
         description: augment.description || null,
         tooltip: augment.tooltip || null,
       }
     })
     .filter(Boolean)
-    .sort((a, b) => b.recommendScore - a.recommendScore)
+
+  return rankAugmentRecommendations(rows)
 }
 
 const applyFallbackChampionData = (data) => {
@@ -2638,6 +2649,13 @@ defineExpose({
 
 .augment-rate {
   text-align: right;
+}
+
+.augment-rate small {
+  display: block;
+  color: #869b96;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .augment-rate strong {

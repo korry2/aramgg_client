@@ -8,6 +8,7 @@ import {
   resolveClientDataFilePath,
   resolveTrustedClientDataUrl,
 } from '../shared/client-data-security.ts'
+import { rankAugmentRecommendations } from '../shared/augment-ranking.ts'
 
 declare const fetch: any
 
@@ -1911,13 +1912,26 @@ function mapPublicAugmentStats(augment: any): any {
 
   return {
     tier: toNullableNumber(stats.tier),
-    num_win_games: toNumber(stats.wins ?? stats.num_win_games),
-    win_rate: toNumber(stats.winRate ?? stats.win_rate),
-    num_games: toNumber(stats.games ?? stats.num_games),
-    pick_rate: toNumber(stats.pickRate ?? stats.pick_rate),
+    rank: toNullableNumber(stats.rank ?? augment?.rank),
+    total: toNullableNumber(stats.total ?? augment?.total),
+    num_win_games: toNullableNumber(stats.wins ?? stats.num_win_games),
+    win_rate: toNullableNumber(stats.winRate ?? stats.win_rate),
+    num_games: toNullableNumber(stats.games ?? stats.num_games),
+    pick_rate: toNullableNumber(stats.pickRate ?? stats.pick_rate),
     gamePatch: stats.gamePatch || null,
     date: stats.date || null,
   }
+}
+
+function getLegacyAugmentRecommendScore(stats: any): number | null {
+  const winRate = toNullableNumber(stats.win_rate)
+  if (winRate == null) {
+    return null
+  }
+
+  const pickRate = toNullableNumber(stats.pick_rate) ?? 0
+  const games = toNullableNumber(stats.num_games) ?? 0
+  return winRate * 0.6 + pickRate * 0.2 + Math.min(games / 1000, 1) * 0.2
 }
 
 function mapPublicAugmentRecommendation(
@@ -1927,22 +1941,24 @@ function mapPublicAugmentRecommendation(
   const augmentId = augment?.id
   const augmentBase = mapAugmentWithBase(augmentId, augmentBaseById)
   const stats = mapPublicAugmentStats(augment)
-  const winRate = toNumber(stats.win_rate)
-  const pickRate = toNumber(stats.pick_rate)
-  const games = toNumber(stats.num_games)
+  const winRate = toNullableNumber(stats.win_rate)
+  const pickRate = toNullableNumber(stats.pick_rate)
+  const games = toNullableNumber(stats.num_games)
 
   return {
     ...augmentBase,
     tier: stats.tier,
+    rank: stats.rank,
+    total: stats.total,
     winRate,
     pickRate,
     playCount: games,
-    winCount: toNumber(stats.num_win_games),
+    winCount: toNullableNumber(stats.num_win_games),
     win_rate: winRate,
     pick_rate: pickRate,
     num_games: games,
-    num_win_games: toNumber(stats.num_win_games),
-    recommendScore: winRate * 0.6 + pickRate * 0.2 + Math.min(games / 1000, 1) * 0.2,
+    num_win_games: toNullableNumber(stats.num_win_games),
+    recommendScore: getLegacyAugmentRecommendScore(stats),
   }
 }
 
@@ -2414,12 +2430,22 @@ export async function loadChampionAugments(
   try {
     const detail = await loadChampionDetailPayload(championId, normalizeDataLocale(requestedLocale))
 
-    if (detail?.augments) {
-      return (detail.augments as any[]).reduce((result: Record<string, any>, augment: any) => {
-        const augmentId = augment?.id
-        if (augmentId != null) {
-          result[String(augmentId)] = mapPublicAugmentStats(augment)
-        }
+    if (Array.isArray(detail?.augments)) {
+      const rankedStats = rankAugmentRecommendations(
+        detail.augments
+          .filter((augment: any) => augment?.id != null)
+          .map((augment: any) => {
+            const stats = mapPublicAugmentStats(augment)
+            return {
+              augmentId: augment.id,
+              ...stats,
+              recommendScore: getLegacyAugmentRecommendScore(stats),
+            }
+          })
+      )
+
+      return rankedStats.reduce((result: Record<string, any>, stats: any) => {
+        result[String(stats.augmentId)] = stats
         return result
       }, {})
     }
@@ -2540,10 +2566,14 @@ export async function getAugmentWinrate(
   const winrateData = augments[augmentIdStr]
   return {
     augmentId: parseInt(augmentIdStr, 10),
-    winRate: toNumber(winrateData.win_rate),
-    pickRate: toNumber(winrateData.pick_rate),
-    playCount: toNumber(winrateData.num_games),
-    winCount: toNumber(winrateData.num_win_games),
+    tier: toNullableNumber(winrateData.tier),
+    rank: toNullableNumber(winrateData.rank),
+    total: toNullableNumber(winrateData.total),
+    winRate: toNullableNumber(winrateData.win_rate),
+    pickRate: toNullableNumber(winrateData.pick_rate),
+    playCount: toNullableNumber(winrateData.num_games),
+    winCount: toNullableNumber(winrateData.num_win_games),
+    recommendScore: toNullableNumber(winrateData.recommendScore),
   }
 }
 
@@ -2571,10 +2601,11 @@ export async function getChampionAugmentStats(
     ])
     const augments = Array.isArray(detail?.augments) ? detail.augments : []
 
-    const result = augments
-      .filter((augment: any) => augment?.id != null)
-      .map((augment: any) => mapPublicAugmentRecommendation(augment, augmentBaseById))
-      .sort((a: any, b: any) => b.recommendScore - a.recommendScore)
+    const result = rankAugmentRecommendations(
+      augments
+        .filter((augment: any) => augment?.id != null)
+        .map((augment: any) => mapPublicAugmentRecommendation(augment, augmentBaseById))
+    )
 
     championAugmentStatsCache.set(cacheKey, result)
     return result

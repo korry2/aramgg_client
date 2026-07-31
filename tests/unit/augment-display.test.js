@@ -70,4 +70,14 @@ describe('augment floating display merge', () => {
     expect(result[1].id).toBeNull()
     expect(getTopPickKey(result)).toBe(103)
   })
+
+  it('uses the official rank for the floating overlay top pick', () => {
+    const result = [
+      detected(101, 0, { rank: 12, tier: 1, pickRate: 0.4 }),
+      detected(102, 1, { rank: 1, tier: 2, pickRate: 0.01 }),
+      detected(103, 2, { rank: 8, tier: 1, pickRate: 0.2 }),
+    ]
+
+    expect(getTopPickKey(result)).toBe(102)
+  })
 })

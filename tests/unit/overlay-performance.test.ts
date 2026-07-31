@@ -26,6 +26,27 @@ describe('augment overlay performance safeguards', () => {
     expect(sidePanelOverlay).not.toContain('backdrop-filter')
   })
 
+  it('uses rank-backed recommendations without displaying a missing augment win rate', async () => {
+    const [floatingOverlay, championDetailOverlay] = await Promise.all([
+      readFile(
+        new URL('../../src/renderer/components/AugmentFloatingOverlay.vue', import.meta.url),
+        'utf8',
+      ),
+      readFile(
+        new URL('../../src/renderer/components/AugmentWinrateOverlay.vue', import.meta.url),
+        'utf8',
+      ),
+    ])
+
+    expect(floatingOverlay).toContain('formatPercent(augment.pickRate)')
+    expect(floatingOverlay).toContain('v-if="augment.winRate != null"')
+    expect(championDetailOverlay).toContain('rankAugmentRecommendations')
+    expect(championDetailOverlay).toContain(
+      "t(augment.winRate == null ? 'augment.pickRate' : 'augment.winRate')",
+    )
+    expect(championDetailOverlay).toContain('formatPercent(augment.winRate ?? augment.pickRate)')
+  })
+
   it('uses Electron background throttling defaults and guards every overlay raise path', async () => {
     const [windowManager, autoScreenshotService, appConfig, ipcHandlers] = await Promise.all([
       readFile(new URL('../../src/main/modules/window-manager.ts', import.meta.url), 'utf8'),

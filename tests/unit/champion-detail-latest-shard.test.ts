@@ -99,6 +99,21 @@ function latestVladimirShard(): any {
   }
 }
 
+function latestVladimirRankedWithoutAugmentWinRatesShard(): any {
+  return {
+    champions: {
+      8: {
+        champion: { id: 8, name: 'Vladimir' },
+        augments: [
+          { id: 1205, stats: { rank: 2, total: 3, tier: 2, games: null, wins: null, winRate: null, pickRate: 0.5 } },
+          { id: 1103, stats: { rank: 1, total: 3, tier: 1, games: null, wins: null, winRate: null, pickRate: 0.01 } },
+          { id: 1180, stats: { rank: 3, total: 3, tier: 1, games: null, wins: null, winRate: null, pickRate: 0.2 } },
+        ],
+      },
+    },
+  }
+}
+
 async function seedData(): Promise<void> {
   const dataRoot = path.join(tempRoot, 'data')
   const activeVersionDir = path.join(dataRoot, 'versions', '16.12.1')
@@ -296,6 +311,42 @@ describe('latest champion shard detail loading', () => {
     } finally {
       releaseConfig?.()
       await detailPromise?.catch(() => null)
+      clearCache()
+    }
+  })
+
+  it('uses the API rank when the latest data has no augment win rate', async () => {
+    const activeVersionDir = path.join(tempRoot, 'data', 'versions', '16.12.1')
+    const latestVersionDir = path.join(tempRoot, 'data', 'versions', '16.12.2')
+    await writeJson(path.join(activeVersionDir, 'augments.json'), {
+      augments: [
+        { id: 1205, name: 'Deft', rarity: 'gold', iconUrl: '/augment/deft.png' },
+        { id: 1103, name: 'Scoped Weapons', rarity: 'silver', iconUrl: '/augment/scoped.png' },
+        { id: 1180, name: 'Infernal Conduit', rarity: 'prismatic', iconUrl: '/augment/infernal.png' },
+      ],
+    })
+    await writeJson(
+      path.join(latestVersionDir, 'champion-shards', '1.json'),
+      latestVladimirRankedWithoutAugmentWinRatesShard(),
+    )
+
+    const {
+      clearCache,
+      getChampionAugmentStats,
+      loadChampionAugments,
+    } = await import('../../src/main/data-loader.ts')
+
+    try {
+      const recommendations = await getChampionAugmentStats(8)
+      const stats = await loadChampionAugments(8)
+
+      expect(recommendations.map((augment: any) => augment.augmentId)).toEqual([1103, 1205, 1180])
+      expect(recommendations.map((augment: any) => augment.rank)).toEqual([1, 2, 3])
+      expect(recommendations.map((augment: any) => augment.recommendScore)).toEqual([1, 0.5, 0])
+      expect(recommendations.every((augment: any) => augment.winRate === null)).toBe(true)
+      expect(stats['1103'].win_rate).toBeNull()
+      expect(stats['1103'].rank).toBe(1)
+    } finally {
       clearCache()
     }
   })
