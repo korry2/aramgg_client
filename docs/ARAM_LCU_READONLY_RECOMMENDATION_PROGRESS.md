@@ -223,6 +223,10 @@
 - [x] gameflow phase 接入 `GameSessionCoordinator`，统一生命周期映射并去重重复阶段入口效果。
 - [x] 新增连续对局、重复事件、未知阶段和完整生命周期单元测试；推荐链路仍保持只读。
 
+### 2026-07-31
+
+- [x] 当前 gameflow 轮询兜底间隔已是 1 秒；正式包性能结论需按 `PERFORMANCE_DIAGNOSTICS.md` 在 `InProgress` 场景采样，不能沿用开发环境或 League 未运行时的结论。
+
 ## 后续注意事项
 
 - LeagueAkari 为 GPL-3.0，后续实现只参考思路，不复制实现代码。

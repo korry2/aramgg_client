@@ -109,6 +109,7 @@ The app uses Electron, Vue 3, electron-vite, TypeScript, and PaddleOCR. Process-
 - [Complete architecture](./COMPLETE_ARCHITECTURE.md)
 - [Automatic Augment detection guide](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [LCU troubleshooting](./docs/LCU_TROUBLESHOOTING.md)
+- [Performance and thermal diagnostics](./docs/PERFORMANCE_DIAGNOSTICS.md)
 - [ARAM LCU read-only recommendation progress](./docs/ARAM_LCU_READONLY_RECOMMENDATION_PROGRESS.md)
 - [Client data API distribution strategy](./docs/client-api-strategy.md)
 - [Electron client update strategy](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)

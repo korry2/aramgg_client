@@ -125,7 +125,7 @@ await electronAPI.autoScreenshot.setConfig({
 - `Auto screenshot summary` 和 `Auto screenshot first augment detection latency`：自动截图运行状态和首次识别耗时。
 - `Augment overlay cleared after OCR miss`：旧浮窗因连续 miss 被清空。
 
-更细的成功流水如 `Augment winrate enriched in main`、`Augment detection notification sent`、renderer 侧胜率查询分段耗时会写入 `debug` 日志；需要深查 IPC 或胜率补齐链路时，用 `LOG_LEVEL=DEBUG` 运行后再看 `rendererToMainDelayMs`、`mainDurationMs` 和 `mainToRendererDelayMs`。`notifyMode=main-winrate-inline` 表示主进程已随首包补齐胜率；`main-winrate-pending` 表示先显示基础结果；`main-winrate-late` 表示随后补齐胜率。英雄详情窗口和海克斯浮窗已关闭 Electron `backgroundThrottling`，用于减少隐藏窗口刚显示时的 IPC 延迟。
+更细的成功流水如 `Augment winrate enriched in main`、`Augment detection notification sent`、renderer 侧胜率查询分段耗时会写入 `debug` 日志；需要深查 IPC 或胜率补齐链路时，用 `LOG_LEVEL=DEBUG` 运行后再看 `rendererToMainDelayMs`、`mainDurationMs` 和 `mainToRendererDelayMs`。`notifyMode=main-winrate-inline` 表示主进程已随首包补齐胜率；`main-winrate-pending` 表示先显示基础结果；`main-winrate-late` 表示随后补齐胜率。英雄详情窗口和海克斯浮窗沿用 Electron 默认的后台节流策略；正式包的性能与发热采样方法见 `PERFORMANCE_DIAGNOSTICS.md`。
 
 ## 常见问题
 

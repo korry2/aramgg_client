@@ -14,6 +14,13 @@ const GET_PROCESS_QUERY_TIMEOUT_MS = 4000
 const DISCOVERY_DIAGNOSTIC_LOG_INTERVAL_MS = 30 * 1000
 let lastDiscoveryDiagnosticLogAt = 0
 let lastFallbackSuccessLogAt = 0
+let processDiscoveryQueryCount = 0
+let processDiscoveryPowershellAttemptCount = 0
+let processDiscoveryTotalDurationMs = 0
+let lastProcessDiscoveryQueryAt: number | null = null
+let lastProcessDiscoveryQueryDurationMs = 0
+let lastProcessDiscoveryAttemptDurationsMs: number[] = []
+let lastProcessDiscoveryRecordCount = 0
 
 export type Win32ProcessRecord = {
   Name?: string
@@ -51,6 +58,16 @@ export type ProcessQueryAttempt = {
 export type ProcessQueryResult = {
   records: Win32ProcessRecord[]
   attempts: ProcessQueryAttempt[]
+}
+
+export type LcuProcessDiscoveryStats = {
+  queryCount: number
+  powershellAttemptCount: number
+  totalDurationMs: number
+  lastQueryAt: number | null
+  lastQueryDurationMs: number
+  lastAttemptDurationsMs: number[]
+  lastRecordCount: number
 }
 
 export type ProcessQueryRunner = (script: string, timeoutMs: number) => Promise<string>
@@ -441,7 +458,16 @@ async function queryLeagueClientProcesses(): Promise<ProcessQueryResult> {
     return { records: [], attempts: [] }
   }
 
+  const startedAt = Date.now()
   const result = await queryLeagueClientProcessesWithRunner(defaultProcessQueryRunner)
+  const durationMs = Date.now() - startedAt
+  processDiscoveryQueryCount += 1
+  processDiscoveryPowershellAttemptCount += result.attempts.length
+  processDiscoveryTotalDurationMs += durationMs
+  lastProcessDiscoveryQueryAt = Date.now()
+  lastProcessDiscoveryQueryDurationMs = durationMs
+  lastProcessDiscoveryAttemptDurationsMs = result.attempts.map(attempt => attempt.durationMs)
+  lastProcessDiscoveryRecordCount = result.records.length
   const fallbackAttempt = result.attempts.find((attempt) => attempt.strategy === 'get-process')
   const now = Date.now()
 
@@ -459,6 +485,18 @@ async function queryLeagueClientProcesses(): Promise<ProcessQueryResult> {
   }
 
   return result
+}
+
+export function getLcuProcessDiscoveryStats(): LcuProcessDiscoveryStats {
+  return {
+    queryCount: processDiscoveryQueryCount,
+    powershellAttemptCount: processDiscoveryPowershellAttemptCount,
+    totalDurationMs: processDiscoveryTotalDurationMs,
+    lastQueryAt: lastProcessDiscoveryQueryAt,
+    lastQueryDurationMs: lastProcessDiscoveryQueryDurationMs,
+    lastAttemptDurationsMs: [...lastProcessDiscoveryAttemptDurationsMs],
+    lastRecordCount: lastProcessDiscoveryRecordCount,
+  }
 }
 
 export async function discoverLcuAuthFromProcess(): Promise<TokenLoadResult> {

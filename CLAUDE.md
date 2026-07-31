@@ -103,6 +103,7 @@ node tests/electron/test-augment-ocr-fixtures.js
 - LCU 排障：`docs/LCU_TROUBLESHOOTING.md`
 - 游戏阶段：`docs/GAMEFLOW_DETECTION_GUIDE.md`
 - 自动海克斯：`docs/USER_GUIDE_AUTO_AUGMENT.md`
+- 性能与发热排查：`docs/PERFORMANCE_DIAGNOSTICS.md`
 - 客户端数据 API：`docs/client-api-strategy.md`
 - 客户端多语言数据专项审查：`docs/LOCALIZED_CLIENT_DATA_REVIEW_2026-07-10.md`
 - 全项目代码审查与整改状态：`docs/CODE_REVIEW_2026-07-10.md`

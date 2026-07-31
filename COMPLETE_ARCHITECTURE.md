@@ -120,7 +120,7 @@ OCR 会通过 LCU `/riotclient/region-locale` 获取当前游戏语言提示。�
 
 海克斯浮窗的胜率补齐优先在主进程完成，短等待内完成则随 `augment-detected` 一起发送；超时则先发送 pending payload，稍后再发送补齐后的结果。英雄海克斯推荐和基础海克斯详情按数据版本/英雄缓存，避免同一英雄刷新时重复映射和排序全量数据。
 
-海克斯详情弹窗、席位推荐弹窗和游戏内浮窗是隐藏后按事件显示的 overlay 窗口，创建时关闭 `backgroundThrottling`，避免刚显示时 renderer IPC 被 Chromium 后台节流延迟。
+海克斯详情弹窗和游戏内浮窗是隐藏后按事件显示的 overlay 窗口，并沿用 Electron 默认的后台节流策略。性能排查不得通过全局关闭 `backgroundThrottling` 掩盖问题；正式包发热的采样口径见 `docs/PERFORMANCE_DIAGNOSTICS.md`。
 
 ### 客户端版本提示、自动更新和更新日志
 

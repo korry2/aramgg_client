@@ -104,7 +104,7 @@ Select-String -Path "C:\Riot Games\League of Legends\LeagueClient\LeagueClientUx
 
 处理：
 
-- 主进程会自动重连 WebSocket，并用 5 秒一次的 `/lol-gameflow/v1/gameflow-phase` 轮询兜底。
+- 主进程会自动重连 WebSocket；当前实现用 1 秒一次的 `/lol-gameflow/v1/gameflow-phase` 轮询兜底。频繁凭据发现的性能判断见 `PERFORMANCE_DIAGNOSTICS.md`。
 - 如果日志长期只有 `lcu-auth-unavailable`，优先检查 League Client 是否仍在运行，以及进程发现或手动目录兜底是否拿到了新的端口/token。
 - 如果看到 `游戏阶段变化(poll)` 但没有 `游戏阶段变化(websocket)`，说明轮询兜底正在工作，问题集中在 LCU WebSocket 握手或事件推送。
 

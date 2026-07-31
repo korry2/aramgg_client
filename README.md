@@ -109,6 +109,7 @@ npm run build
 - [完整架构](./COMPLETE_ARCHITECTURE.md)
 - [自动海克斯检测使用指南](./docs/USER_GUIDE_AUTO_AUGMENT.md)
 - [LCU 排障指南](./docs/LCU_TROUBLESHOOTING.md)
+- [性能与发热排查](./docs/PERFORMANCE_DIAGNOSTICS.md)
 - [大乱斗 LCU 只读推荐进度](./docs/ARAM_LCU_READONLY_RECOMMENDATION_PROGRESS.md)
 - [客户端数据 API 分发策略](./docs/client-api-strategy.md)
 - [Electron 客户端版本更新方案](./docs/ELECTRON_APP_UPDATE_STRATEGY.md)

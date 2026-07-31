@@ -44,6 +44,10 @@ import logger from './logger.ts'
 import store from './app-store.ts'
 import { getAppDataDir } from './app-paths.ts'
 import { logDiagnosticSnapshot } from './diagnostic-logger.ts'
+import {
+    startPerformanceMonitor,
+    stopPerformanceMonitor,
+} from './performance-monitor.ts'
 import { createAppTray } from './tray.ts'
 import {
     shouldHideChampionInsightOnGameStart,
@@ -163,6 +167,7 @@ export async function init() {
         augmentSidePanel: !!augmentSidePanelWindow,
         tray: true,
     })
+    startPerformanceMonitor()
 
     initializeAppUpdateService({ isDev })
     setAppUpdateInstallCleanup(() => ensureQuitCleanup('app update install'))
@@ -1382,6 +1387,7 @@ async function initGameFlowMonitor() {
 async function runQuitCleanup(reason = 'app quit') {
     logger.info('App is quitting, cleaning up...', { reason })
     markAnalyticsAppCleanExit()
+    stopPerformanceMonitor(reason)
 
     stopGameflowMonitorRuntime('app will quit')
 

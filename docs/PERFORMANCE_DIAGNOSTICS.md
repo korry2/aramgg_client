@@ -1,0 +1,75 @@
+# 性能与发热排查
+
+更新时间：2026-07-31
+
+## 当前现场记录
+
+- 2026-07-31 的用户现场是 Windows 正式安装包，不是 `npm run dev`。
+- League of Legends 已经打开；ARAMGG 客户端保持打开时电脑明显发热，退出 ARAMGG 客户端后改善。是否已经处于 gameflow `InProgress` 阶段，当前没有日志可以确认。
+- 因此，开发环境自动打开的 DevTools 只能解释开发运行的额外内存和负载，不能解释这次正式包发热。
+- 最初报告发热的已发布正式包不包含本轮新增的 `[performance]` 资源采样日志，无法回溯当时的进程负载。
+
+## 已有证据及边界
+
+2026-07-31 曾对开发环境、League 未运行的场景做约 30 秒采样：
+
+- Electron 空闲总 CPU 约为 `0.6%–0.8%`，启动阶段峰值约为 `4.6%–5%`。
+- 开发环境的 4 个 DevTools 进程占用约 `780 MB`，属于开发专有开销。
+- League 未运行时，gameflow 的 1 秒轮询会强制刷新失效 LCU 凭据，约每分钟触发 60 次进程查询和 120 次 PowerShell 尝试。
+- 该采样期间自动截图和 OCR 没有运行。
+
+这些结果证明“League 未运行时存在 LCU 凭据发现抖动”，但不能证明它导致了“正式包 + League 已运行”的发热。League 运行后 LCU 连接状态可能不同，自动截图/OCR 则只在 `InProgress` 阶段启动，各场景的负载路径也不同。
+
+## 本地正式包基线
+
+2026-07-31 使用包含性能监控的本地 `0.2.6` 正式包完成一局游戏，用户未感到明显发热：
+
+- `app.isPackaged=true`，所有窗口均未打开 DevTools。
+- `InProgress` 持续约 12 分 47 秒，共采集 76 个资源样本。
+- Electron 总 CPU 平均 `4.18%`、峰值 `9.3%`，没有触发持续高 CPU 告警。
+- 自动截图完成 668 次，图像分析完成 668 次，检测命中 9 次；最终平均截图耗时约 `639 ms`，因背压跳过 623 次调度。
+- 总工作集在 `InProgress` 阶段约为 `1036–1265 MB`，赛后仍约为 `1162–1234 MB`。需要通过连续多局判断 OCR 模型驻留之外是否还有持续增长。
+- League 连接后不再出现反复 LCU 进程发现告警；本局不支持“LCU 凭据发现抖动导致对局发热”的判断。
+
+这是一次有效的未复现样本，并不排除间歇性发热。500 ms 截图循环在本局长期受到背压，仍是后续热样本对比时的主要观察对象。当前日志只能记录 Electron GPU 进程的 CPU 和 GPU 功能状态，不能替代 Windows 任务管理器中的真实 GPU 引擎利用率。
+
+## 新增性能日志
+
+性能监控默认每 10 秒向当日 `app-YYYY-MM-DD.log` 写入一次 `[performance] resource sample`，包含：
+
+- Electron 主进程、各 renderer、GPU/utility 进程的 CPU 与工作集内存。
+- 当前窗口路由、可见性、焦点状态以及 DevTools 状态。
+- 主进程 event loop 利用率、延迟和定时器漂移。
+- 自动截图/OCR 是否运行、截图数、分析数和最近一次分析耗时。
+- LCU 进程发现查询数、PowerShell 尝试数和单次耗时。
+
+启动时还会记录 `[performance] GPU diagnostics`。连续三个样本的 Electron 总 CPU 不低于 `25%` 时，会记录 `[performance] sustained Electron CPU usage detected`；单个采样周期内反复发现 LCU 进程时，会记录 `[performance] repeated LCU process discovery detected`。
+
+可用环境变量：
+
+- `ARAMGG_PERFORMANCE_LOG_INTERVAL_MS`：采样间隔，限制为 5–60 秒，默认 10 秒。
+- `ARAMGG_PERFORMANCE_LOGGING=0`：关闭资源采样。
+- `LOG_LEVEL=DEBUG`：补充 OCR 与 IPC 的详细耗时日志。
+
+日志目录由 `src/main/modules/app-paths.ts` 统一解析。正式包优先使用安装目录旁的 `aramgg_client-data/logs`；该目录不可写时回退到 Electron userData 下的 `logs`。启动日志中的 `App runtime context` 会给出实际 `logFile`。
+
+## 后续复现采样
+
+继续使用同一台电脑和包含上述日志的正式包；再次出现发热时，至少保留以下阶段：
+
+1. ARAMGG 已打开、League 未运行：3–5 分钟。
+2. League 客户端已打开、尚未进入对局：3–5 分钟。
+3. gameflow 为 `InProgress`：5–10 分钟，覆盖至少一次海克斯选择界面。
+4. 退出 ARAMGG 后继续观察 2–3 分钟，作为温度、风扇和系统负载的对照。
+
+同时在 Windows 任务管理器记录 ARAMGG 相关进程的 CPU、GPU、GPU 引擎和内存。日志中的北京时间可用于和任务管理器观察、进入对局及打开海克斯界面的时间对齐。
+
+## 判断口径
+
+- 如果高负载只在 `InProgress` 出现，并且 `ocr.screenshotCount`、`ocr.analysisCount` 持续增长，优先排查 500 ms 截图调度、屏幕捕获和 PaddleOCR 分析链路。
+- 如果 Electron CPU 较低而 GPU 持续较高，优先排查透明置顶 overlay 和 Chromium GPU 合成。
+- 如果 League 已连接时 `lcuDiscovery.queriesSinceLastSample` 或 `powershellAttemptsSinceLastSample` 仍持续增长，说明 LCU 凭据刷新抖动也进入了正式对局路径。
+- 如果高负载与 OCR、GPU、LCU 都不相关，再对齐远端数据刷新、更新检查和 renderer 活动。
+- `npm run dev` 中的 DevTools 数据只用于解释开发开销，不得作为正式包根因证据。
+
+在获得一次可感知发热的正式包样本前，截图/OCR、GPU 合成和 LCU 轮询都只是待验证候选，不能单独写成已确认根因。

@@ -45,6 +45,8 @@ There is a focused Vitest unit suite, but not broad end-to-end coverage. Before 
 
 Name new test scripts with the existing pattern: `tests/electron/test-<feature>.js`.
 
+Performance investigations must distinguish packaged runs with League open from development or League-offline runs. Do not use DevTools-only load as evidence for packaged-app heat; capture gameflow, screenshot/OCR, GPU, and LCU metrics before assigning a root cause. See `docs/PERFORMANCE_DIAGNOSTICS.md`.
+
 ## Commit & Pull Request Guidelines
 
 Follow the repository’s conventional commit style: `feat:`, `fix:`, `chore:`, `docs:`, or `style:`. Examples: `fix: load sandbox preload in dev`, `style: refine app ui system`.
