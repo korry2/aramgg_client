@@ -13,6 +13,17 @@ const SUMMARY_TEXT_LIMIT = 220
 
 export const LOCAL_CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '0.2.7',
+    date: '2026-07-31',
+    title: '海克斯梯队与性能诊断',
+    summary: '修正海克斯 T1、T2 等梯队标签，并增加正式包性能采样日志，便于排查间歇性发热。',
+    changes: [
+      '英雄详情和海克斯浮窗将 T1、T2 等数值明确展示为梯队，不再误写为排名。',
+      '正式包定期记录 Electron 各进程的 CPU、内存、窗口和 OCR 状态。',
+      '新增 LCU 进程发现与持续高 CPU 告警，便于区分截图 OCR、GPU 和连接轮询负载。',
+    ],
+  },
+  {
     version: '0.2.6',
     date: '2026-07-31',
     title: '海克斯官方排名展示',

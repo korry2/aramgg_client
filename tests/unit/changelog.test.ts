@@ -6,13 +6,27 @@ import {
 } from '../../src/main/changelog.ts'
 
 describe('changelog entries', () => {
-  it('includes the latest official augment rank display announcement', () => {
+  it('includes the latest augment tier and performance diagnostics announcement', () => {
     const latestEntry = LOCAL_CHANGELOG_ENTRIES[0]
 
-    expect(latestEntry.version).toBe('0.2.6')
+    expect(latestEntry.version).toBe('0.2.7')
     expect(latestEntry.date).toBe('2026-07-31')
-    expect(latestEntry.title).toBe('海克斯官方排名展示')
+    expect(latestEntry.title).toBe('海克斯梯队与性能诊断')
     expect(latestEntry.changes).toEqual(expect.arrayContaining([
+      expect.stringContaining('英雄详情'),
+      expect.stringContaining('海克斯浮窗'),
+      expect.stringContaining('CPU'),
+      expect.stringContaining('LCU'),
+    ]))
+  })
+
+  it('records 0.2.6 as the official augment rank display release', () => {
+    const rankDisplayEntry = LOCAL_CHANGELOG_ENTRIES[1]
+
+    expect(rankDisplayEntry.version).toBe('0.2.6')
+    expect(rankDisplayEntry.date).toBe('2026-07-31')
+    expect(rankDisplayEntry.title).toBe('海克斯官方排名展示')
+    expect(rankDisplayEntry.changes).toEqual(expect.arrayContaining([
       expect.stringContaining('英雄详情'),
       expect.stringContaining('海克斯浮窗'),
       expect.stringContaining('原胜率位置'),
@@ -20,7 +34,7 @@ describe('changelog entries', () => {
   })
 
   it('records 0.2.5 as the official augment rank compatibility release', () => {
-    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[1]
+    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[2]
 
     expect(compatibilityEntry.version).toBe('0.2.5')
     expect(compatibilityEntry.date).toBe('2026-07-31')
@@ -33,7 +47,7 @@ describe('changelog entries', () => {
   })
 
   it('records 0.2.4 as the 16.15 compatibility release', () => {
-    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[2]
+    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[3]
 
     expect(compatibilityEntry.version).toBe('0.2.4')
     expect(compatibilityEntry.date).toBe('2026-07-28')
