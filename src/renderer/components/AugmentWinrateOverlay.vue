@@ -187,8 +187,8 @@
                     <div class="augment-name">{{ augment.name }}</div>
                   </div>
                   <div class="augment-rate">
-                    <small>{{ t(augment.winRate == null ? 'augment.pickRate' : 'augment.winRate') }}</small>
-                    <strong>{{ formatPercent(augment.winRate ?? augment.pickRate) }}</strong>
+                    <small>{{ t('augment.rank') }}</small>
+                    <strong>{{ formatAugmentRank(augment.rank) }}</strong>
                   </div>
                 </div>
               </div>
@@ -460,6 +460,7 @@ import {
   getSkillPriority,
 } from '../service/champion-build-routes.js'
 import {
+  formatAugmentRank,
   formatDataSource,
   formatNumber,
   formatPercent,

@@ -6,17 +6,41 @@ import {
 } from '../../src/main/changelog.ts'
 
 describe('changelog entries', () => {
-  it('includes the latest champion detail recommendation announcement', () => {
+  it('includes the latest official augment rank display announcement', () => {
     const latestEntry = LOCAL_CHANGELOG_ENTRIES[0]
 
-    expect(latestEntry.version).toBe('0.2.3')
-    expect(latestEntry.date).toBe('2026-07-28')
+    expect(latestEntry.version).toBe('0.2.6')
+    expect(latestEntry.date).toBe('2026-07-31')
+    expect(latestEntry.title).toBe('海克斯官方排名展示')
     expect(latestEntry.changes).toEqual(expect.arrayContaining([
-      expect.stringContaining('召唤师技能组合'),
-      expect.stringContaining('18 级技能加点'),
-      expect.stringContaining('16.14.3'),
-      expect.stringContaining('席位列表'),
-      expect.stringContaining('海克斯浮窗显示开销'),
+      expect.stringContaining('英雄详情'),
+      expect.stringContaining('海克斯浮窗'),
+      expect.stringContaining('原胜率位置'),
+    ]))
+  })
+
+  it('records 0.2.5 as the official augment rank compatibility release', () => {
+    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[1]
+
+    expect(compatibilityEntry.version).toBe('0.2.5')
+    expect(compatibilityEntry.date).toBe('2026-07-31')
+    expect(compatibilityEntry.changes).toEqual(expect.arrayContaining([
+      expect.stringContaining('rank'),
+      expect.stringContaining('海克斯浮窗'),
+      expect.stringContaining('不再提供海克斯胜率'),
+      expect.stringContaining('旧缓存'),
+    ]))
+  })
+
+  it('records 0.2.4 as the 16.15 compatibility release', () => {
+    const compatibilityEntry = LOCAL_CHANGELOG_ENTRIES[2]
+
+    expect(compatibilityEntry.version).toBe('0.2.4')
+    expect(compatibilityEntry.date).toBe('2026-07-28')
+    expect(compatibilityEntry.title).toBe('兼容 16.15 版本')
+    expect(compatibilityEntry.changes).toEqual(expect.arrayContaining([
+      expect.stringContaining('兼容 16.15'),
+      expect.stringContaining('Windows 完整安装包'),
     ]))
   })
 

@@ -49,6 +49,11 @@ export function normalizeTooltipText(value: unknown): string {
     .trim()
 }
 
+export function formatAugmentRank(value: unknown): string {
+  const rank = Number(value)
+  return Number.isInteger(rank) && rank > 0 ? `T${rank}` : '--'
+}
+
 export function formatPercent(value: unknown): string {
   const normalized = normalizeRateValue(value)
   return normalized == null ? '--' : `${(normalized * 100).toFixed(1)}%`

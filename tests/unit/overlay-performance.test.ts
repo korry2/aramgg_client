@@ -39,12 +39,11 @@ describe('augment overlay performance safeguards', () => {
     ])
 
     expect(floatingOverlay).toContain('formatPercent(augment.pickRate)')
-    expect(floatingOverlay).toContain('v-if="augment.winRate != null"')
+    expect(floatingOverlay).toContain("t('augment.rank')")
+    expect(floatingOverlay).toContain('formatAugmentRank(augment.rank)')
     expect(championDetailOverlay).toContain('rankAugmentRecommendations')
-    expect(championDetailOverlay).toContain(
-      "t(augment.winRate == null ? 'augment.pickRate' : 'augment.winRate')",
-    )
-    expect(championDetailOverlay).toContain('formatPercent(augment.winRate ?? augment.pickRate)')
+    expect(championDetailOverlay).toContain("t('augment.rank')")
+    expect(championDetailOverlay).toContain('formatAugmentRank(augment.rank)')
   })
 
   it('uses Electron background throttling defaults and guards every overlay raise path', async () => {

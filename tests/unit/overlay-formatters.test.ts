@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatAugmentRank,
   formatDataSource,
   formatNumber,
   formatPercent,
@@ -12,6 +13,13 @@ describe('overlay formatters', () => {
     expect(formatPercent(0.523)).toBe('52.3%')
     expect(formatPercent(52.3)).toBe('52.3%')
     expect(formatPercent(null)).toBe('--')
+  })
+
+  it('formats augment recommendation ranks as T labels', () => {
+    expect(formatAugmentRank(1)).toBe('T1')
+    expect(formatAugmentRank('12')).toBe('T12')
+    expect(formatAugmentRank(0)).toBe('--')
+    expect(formatAugmentRank(null)).toBe('--')
   })
 
   it('uses stable localized text fallbacks and strips tooltip markup', () => {

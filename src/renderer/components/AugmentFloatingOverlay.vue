@@ -41,9 +41,9 @@
                 <span>{{ t('augment.pickRateShort') }}</span>
                 <strong>{{ formatPercent(augment.pickRate) }}</strong>
               </div>
-              <div v-if="augment.winRate != null" class="stat-line">
-                <span>{{ t('augment.winRate') }}</span>
-                <strong>{{ formatPercent(augment.winRate) }}</strong>
+              <div class="stat-line">
+                <span>{{ t('augment.rank') }}</span>
+                <strong>{{ formatAugmentRank(augment.rank) }}</strong>
               </div>
             </div>
             <span v-if="!augment.missing" class="recommend-label" :class="getBadgeClass(augment.recommendScore)">
@@ -76,7 +76,7 @@ import {
   mergeWinrateWithDetectedSlots
 } from '../service/augment-display.js'
 import { getAugmentIconUrl } from '../service/cdn'
-import { formatPercent } from '../service/overlay-formatters.ts'
+import { formatAugmentRank, formatPercent } from '../service/overlay-formatters.ts'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
