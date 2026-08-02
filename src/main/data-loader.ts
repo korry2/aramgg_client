@@ -2087,7 +2087,11 @@ function mapSkillOrderRecommendations(value: any): any[] {
       const skillOrder = normalizePositiveIntegerIds(
         record?.skillOrder ?? record?.order
       )
-      if (skillOrder.length !== 18 || skillOrder.some((skill) => skill > 4)) {
+      if (
+        skillOrder.length < 15
+        || skillOrder.length > 18
+        || skillOrder.some((skill) => skill > 4)
+      ) {
         return null
       }
 
@@ -2109,6 +2113,9 @@ function mapPublicBuild(publicBuild: any, championId: string | number): any {
   }
 
   const coreItems = (publicBuild.coreItems || [])
+    .filter((record: any) => hasItemSequence(record))
+    .map((record: any) => mapBuildSet(record))
+  const fullItems = (publicBuild.fullItems || [])
     .filter((record: any) => hasItemSequence(record))
     .map((record: any) => mapBuildSet(record))
   const startingItems = (publicBuild.startingItems || [])
@@ -2136,6 +2143,7 @@ function mapPublicBuild(publicBuild: any, championId: string | number): any {
       ? publicBuild.tags.join(', ')
       : Object.values(publicBuild.tags || {}).join(', '),
     coreItems,
+    fullItems,
     recommended: coreItems,
     itemSequences: {},
     itemExtensions,
