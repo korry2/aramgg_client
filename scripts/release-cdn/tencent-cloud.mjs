@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 
 const MAX_ATTEMPTS = 5;
 const EDGEONE_ENDPOINT = 'teo.tencentcloudapi.com';
@@ -14,9 +13,9 @@ function errorMessage(error) {
   return String(error || 'unknown error');
 }
 
-function putObject(cos, params) {
+function uploadFile(cos, params) {
   return new Promise((resolve, reject) => {
-    cos.putObject(params, (error, data) => {
+    cos.uploadFile(params, (error, data) => {
       if (error) reject(error);
       else resolve(data);
     });
@@ -26,7 +25,15 @@ function putObject(cos, params) {
 export async function createCosClient({ secretId, secretKey }) {
   const cosModule = await import('cos-nodejs-sdk-v5');
   const COS = cosModule.default || cosModule;
-  return new COS({ SecretId: secretId, SecretKey: secretKey, KeepAlive: true });
+  return new COS({
+    SecretId: secretId,
+    SecretKey: secretKey,
+    KeepAlive: true,
+    ChunkParallelLimit: 6,
+    ChunkSize: 5 * 1024 * 1024,
+    SliceSize: 5 * 1024 * 1024,
+    ProgressInterval: 10000,
+  });
 }
 
 export async function uploadCosFile({
@@ -40,14 +47,19 @@ export async function uploadCosFile({
   const key = `${prefix}/${remoteDirectory}/${file.remoteName}`;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
-      await putObject(cos, {
+      await uploadFile(cos, {
         Bucket: bucket,
         Region: region,
         Key: key,
-        Body: fs.createReadStream(file.sourcePath),
-        ContentLength: file.size,
+        FilePath: file.sourcePath,
+        SliceSize: 5 * 1024 * 1024,
+        ChunkSize: 5 * 1024 * 1024,
         ContentType: file.contentType,
         CacheControl: file.cacheControl,
+        onProgress({ loaded, total, speed }) {
+          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+          console.log(`COS 上传进度: ${key} ${percent}% (${loaded}/${total}, ${Math.round(speed)} B/s)`);
+        },
       });
       console.log(`OK COS uploaded: ${key} (${file.size} bytes)`);
       return;
