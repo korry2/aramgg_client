@@ -165,5 +165,6 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/upload-tencent-cdn.yml
+    secrets: inherit
     with:
       release-tag: ${{ github.ref_name }}
