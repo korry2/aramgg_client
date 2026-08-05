@@ -5,13 +5,13 @@
 - OpenAPI 3.1：[`api/match-history-upload.openapi.yaml`](./api/match-history-upload.openapi.yaml)
 - 真实采集脱敏请求：[`samples/match-history-upload.real-sanitized.json`](./samples/match-history-upload.real-sanitized.json)
 
-样本从本机真实 `GZ100` SGP SUMMARY 记录中选取最近 3 场生成，保留真实的对局 ID、时间、英雄、海克斯、装备、KDA、队伍和胜负数据。样本移除了 PUUID、Riot ID、召唤师名称和本地玩家表；不包含 LCU 密码、LCU Authorization、entitlements Token 或 SGP 响应正文。
+样本从本机真实 `GZ100` SGP SUMMARY 记录中选取最近 3 场生成，保留真实的对局 ID、时间、英雄、海克斯、装备、KDA、队伍和胜负数据。为避免把真实玩家身份提交到仓库，样本保留 `puuid`、`gameName`、`tagLine` 字段，但将值分别置为 `null`、空字符串和空字符串；正式客户端会上传上游实际返回的 PUUID 与 Riot ID。样本不包含 LCU 密码、LCU Authorization、entitlements Token 或 SGP 响应正文。
 
 ## 目标
 
 服务端接收客户端已经完成采集和规范化的 `KIWI / queue 2400 / map 12` 对局。服务端按 `platformId + gameId` upsert，因此不同客户端重复遇到同一场对局不会重复计数。
 
-该接口只接收完成的比赛样本，不下发 PUUID 任务，也不允许通过上传结果自动扩展下一层玩家。
+该接口只接收完成的比赛样本。每名参与者都必须携带 `puuid`、`gameName`、`tagLine` 字段；PUUID 在上游确实缺失时可以为 `null`，Riot ID 两段在缺失时使用空字符串。接口不下发 PUUID 任务，也不允许通过上传结果自动扩展下一层玩家。
 
 ## 接口
 
@@ -25,7 +25,7 @@ Content-Type: application/json
 ```json
 {
   "schemaVersion": 1,
-  "clientVersion": "0.2.8",
+  "clientVersion": "0.2.9",
   "platformId": "GZ100"
 }
 ```
@@ -38,13 +38,14 @@ Content-Type: application/json
 POST /api/client/v1/match-history/batches
 Authorization: Bearer <short-lived-upload-session>
 Content-Type: application/json
-Content-Encoding: gzip
+Content-Encoding: identity
 ```
 
 - 每批最多 20 场。
+- `Content-Encoding` 可以是 `identity` 或 `gzip`；0.2.9 默认发送普通 JSON。
 - `sourceKey` 固定为 `match-history:v1:{platformId}:{gameId}`。
 - `idempotencyKey` 是客户端 outbox 当前版本的幂等标识。
-- `payloadHash` 是客户端生成的不透明版本摘要；因为网络载荷主动移除了玩家身份字段，服务端不应根据请求 JSON 重新计算它。
+- `payloadHash` 是客户端基于上传用 `game` 对象生成的不透明版本摘要，包含参与者 PUUID 与 Riot ID；服务端不根据请求 JSON 重新计算它。
 - `sourceKey`、`game.platformId`、`game.gameId` 必须互相匹配。
 - 服务端只接受 `gameMode=KIWI`、`queueId=2400`、`mapId=12`。
 
@@ -82,27 +83,31 @@ UNIQUE (idempotency_key)
 
 服务端返回的 `message` 不得回显完整请求体或任何 Authorization header。
 
-## 数据最小化
+## 身份与敏感信息边界
+
+上传载荷包含完成比赛参与者的：
+
+- `puuid`（确实缺失时为 `null`）
+- Riot ID 的 `gameName` 与 `tagLine`（确实缺失时为空字符串）
 
 上传载荷明确不包含：
 
-- PUUID、Riot ID、召唤师名称和 tag line
 - 本地当前玩家标识
 - LCU Basic Authorization、端口和安装目录
 - entitlements accessToken
 - SGP URL 中的玩家标识或原始响应正文
 - 本地 `players` 表
 
-中心统计所需的数据只有比赛身份、英雄、海克斯、终局装备、KDA 和胜负。若未来要实现服务端 PUUID 任务分发，应使用独立接口、独立授权和独立隐私评审，不能扩展本接口的字段。
+客户端日志不得记录上传会话 Token、请求正文、PUUID 或 Riot ID。若未来要实现服务端 PUUID 任务分发，应使用独立接口、独立授权和独立隐私评审，不能借本接口的 acknowledgement 自动扩展采集范围。
 
 ## 上线开关
 
-在服务端完成验签、限流、唯一约束和 acknowledgement 测试之前，客户端上传开关必须保持关闭。建议以后从同源 `/api/client/v1/config` 下发：
+生产开关由同源 `/api/client/v1/config` 下发；客户端只在 `enabled=true` 且两个路径都通过内置受信任端点校验时上传：
 
 ```json
 {
   "matchHistoryUpload": {
-    "enabled": false,
+    "enabled": true,
     "sessionPath": "/api/client/v1/match-history/upload-session",
     "batchPath": "/api/client/v1/match-history/batches",
     "maxBatchSize": 20
@@ -110,4 +115,4 @@ UNIQUE (idempotency_key)
 }
 ```
 
-远端配置只能启用内置受信任 HTTPS origin，不能注入任意上传域名。
+远端配置只能启用内置受信任 HTTPS origin，并且 pathname 必须精确等于以上两个 cf-api 路径，不能注入任意上传域名或写接口。

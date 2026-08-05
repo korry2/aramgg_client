@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "clientVersion": "0.2.8",
+  "clientVersion": "0.2.9",
   "sentAt": "2026-08-05T13:52:39.678Z",
   "samples": [
     {
       "sourceKey": "match-history:v1:GZ100:600925866630",
-      "idempotencyKey": "0ac865038f6133a4ef994a6a50c7c01154df7ab4e1a637d157719d9f55b15cb0",
-      "payloadHash": "9307bdcdc03905cc3b650b0ba34570fac32d49956cb580a5ed6095af43d49aa3",
+      "idempotencyKey": "dbf662e10dacbca77803f2cf34436e24f6e46104c81e0f61b19b10b5a89aca0a",
+      "payloadHash": "b902eccd4b3abc36bb5b775f51a6f2dcdd877b8502cc1a8c219900feb3190dcb",
       "observedAt": "2026-08-05T13:52:39.676Z",
       "game": {
         "platformId": "GZ100",
@@ -25,6 +25,9 @@
         "participants": [
           {
             "participantId": 1,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 53,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -51,6 +54,9 @@
           },
           {
             "participantId": 2,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 21,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -78,6 +84,9 @@
           },
           {
             "participantId": 3,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 38,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -104,6 +113,9 @@
           },
           {
             "participantId": 4,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 114,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -131,6 +143,9 @@
           },
           {
             "participantId": 5,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 84,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -157,6 +172,9 @@
           },
           {
             "participantId": 6,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 141,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -184,6 +202,9 @@
           },
           {
             "participantId": 7,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 157,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -210,6 +231,9 @@
           },
           {
             "participantId": 8,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 107,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -237,6 +261,9 @@
           },
           {
             "participantId": 9,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 106,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -262,6 +289,9 @@
           },
           {
             "participantId": 10,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 910,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -291,8 +321,8 @@
     },
     {
       "sourceKey": "match-history:v1:GZ100:600925833735",
-      "idempotencyKey": "824dad8d0857302508e741f5b71159f2bf3324054a644e950852b72d37ff5073",
-      "payloadHash": "903cb8a27b95f43b9b182beb49d7ee0ce8ca331f022442b5a02ffe353ac31c1d",
+      "idempotencyKey": "2f3d2e4377d076a094dedf0fe7592d2275a1d634196cdabcb2f093f3572a774e",
+      "payloadHash": "b40e400d122bbe2cdd9057a4eea609c62f73ffe0a7d9ceb1ea2ed2dd288efc56",
       "observedAt": "2026-08-05T13:52:39.676Z",
       "game": {
         "platformId": "GZ100",
@@ -309,6 +339,9 @@
         "participants": [
           {
             "participantId": 1,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 901,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -335,6 +368,9 @@
           },
           {
             "participantId": 2,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 223,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -359,6 +395,9 @@
           },
           {
             "participantId": 3,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 50,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -386,6 +425,9 @@
           },
           {
             "participantId": 4,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 21,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -413,6 +455,9 @@
           },
           {
             "participantId": 5,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 107,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -439,6 +484,9 @@
           },
           {
             "participantId": 6,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 888,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -466,6 +514,9 @@
           },
           {
             "participantId": 7,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 29,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -493,6 +544,9 @@
           },
           {
             "participantId": 8,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 157,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -520,6 +574,9 @@
           },
           {
             "participantId": 9,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 246,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -545,6 +602,9 @@
           },
           {
             "participantId": 10,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 104,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -575,8 +635,8 @@
     },
     {
       "sourceKey": "match-history:v1:GZ100:600925790803",
-      "idempotencyKey": "940df422bd283492859b55b104126d20072e1948036e8bf2dee7e1137d7ef83a",
-      "payloadHash": "534210832a67240bc2ba1bfd58e0af5220c3fdc8ad416754876e2efff6705f4a",
+      "idempotencyKey": "85cc5cbfcb595bbe344c728231c8d99de38b9f6dae326d3f5c8fd75c29d1abaa",
+      "payloadHash": "f3cb8dcb416858b05fc3c36ccddb4459fbf9ec32e8d0132b1aac0386c77953ba",
       "observedAt": "2026-08-05T13:52:39.676Z",
       "game": {
         "platformId": "GZ100",
@@ -595,6 +655,9 @@
         "participants": [
           {
             "participantId": 1,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 41,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -622,6 +685,9 @@
           },
           {
             "participantId": 2,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 54,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -649,6 +715,9 @@
           },
           {
             "participantId": 3,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 134,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -676,6 +745,9 @@
           },
           {
             "participantId": 4,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 20,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -703,6 +775,9 @@
           },
           {
             "participantId": 5,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 35,
             "teamId": 100,
             "playerSubteamId": 0,
@@ -730,6 +805,9 @@
           },
           {
             "participantId": 6,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 141,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -757,6 +835,9 @@
           },
           {
             "participantId": 7,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 901,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -784,6 +865,9 @@
           },
           {
             "participantId": 8,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 60,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -811,6 +895,9 @@
           },
           {
             "participantId": 9,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 14,
             "teamId": 200,
             "playerSubteamId": 0,
@@ -838,6 +925,9 @@
           },
           {
             "participantId": 10,
+            "puuid": null,
+            "gameName": "",
+            "tagLine": "",
             "championId": 4,
             "teamId": 200,
             "playerSubteamId": 0,

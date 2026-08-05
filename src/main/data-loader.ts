@@ -26,7 +26,14 @@ type JsonDocument = {
 
 type SupportedDataLocale = 'zh-CN' | 'en-US' | 'zh-TW'
 
-type ClientConfig = {
+export type MatchHistoryUploadConfig = {
+  enabled?: boolean
+  sessionPath?: string
+  batchPath?: string
+  maxBatchSize?: number
+}
+
+export type ClientConfig = {
   service?: string
   apiVersion?: string
   locale?: string
@@ -62,6 +69,7 @@ type ClientConfig = {
     firebaseConfig?: Record<string, string>
     sampleRate?: number
   }
+  matchHistoryUpload?: MatchHistoryUploadConfig
 }
 
 type ActiveDataSet = {

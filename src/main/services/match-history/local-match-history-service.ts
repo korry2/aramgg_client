@@ -24,12 +24,20 @@ import {
   SgpMatchHistoryInterruptedError,
   SgpMatchHistoryService,
 } from './sgp-match-history-service.ts'
-import { getGameKey, queueGameForUpload } from './upload-outbox.ts'
+import {
+  claimMatchHistoryUploadBatch,
+  getGameKey,
+  getNextPendingMatchHistoryUploadPlatform,
+  queueGameForUpload,
+  resolveMatchHistoryUploadBatch,
+} from './upload-outbox.ts'
 import {
   LOCAL_MATCH_HISTORY_SCHEMA_VERSION,
+  type ClaimedMatchHistoryUploadSample,
   type LocalMatchHistoryData,
   type MatchHistoryCollectionSource,
   type MatchHistoryUploadOutboxEntry,
+  type MatchHistoryUploadResolution,
   type StoredMatchHistoryGame,
   type StoredMatchHistoryParticipant,
   type StoredMatchHistoryPlayer,
@@ -416,6 +424,8 @@ class LocalMatchHistoryRepository {
           if (entry.status === 'uploading') {
             entry.status = 'pending'
           }
+          entry.nextAttemptAt ??= null
+          entry.lastErrorCode ??= null
         })
         Object.values(data.games).forEach((game) => {
           if (!Array.isArray(game.gameModeMutators)) {
@@ -454,6 +464,33 @@ export class LocalMatchHistoryService {
 
   runBackgroundBatch(): Promise<LocalMatchHistorySummary> {
     return this.enqueue('background-batch', () => this.runBackgroundBatchInternal())
+  }
+
+  getNextPendingUploadPlatform(now = Date.now()): Promise<string | null> {
+    return this.enqueue('upload-next-platform', async () => (
+      getNextPendingMatchHistoryUploadPlatform(await this.repository.getData(), now)
+    ))
+  }
+
+  claimUploadBatch(
+    platformId: string,
+    limit: number,
+    now = Date.now(),
+  ): Promise<ClaimedMatchHistoryUploadSample[]> {
+    return this.enqueue('upload-claim', async () => {
+      const data = await this.repository.getData()
+      const claimed = claimMatchHistoryUploadBatch(data, platformId, limit, now)
+      await this.repository.save(data, 'upload-claim')
+      return claimed
+    })
+  }
+
+  resolveUploadBatch(resolutions: MatchHistoryUploadResolution[], now = Date.now()): Promise<void> {
+    return this.enqueue('upload-resolve', async () => {
+      const data = await this.repository.getData()
+      resolveMatchHistoryUploadBatch(data, resolutions, now)
+      await this.repository.save(data, 'upload-resolve')
+    })
   }
 
   private enqueue<T>(name: string, operation: () => Promise<T>): Promise<T> {

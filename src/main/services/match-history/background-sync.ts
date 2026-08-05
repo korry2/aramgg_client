@@ -1,11 +1,15 @@
 import logger from '../../modules/logger.ts'
 import { getLCUServiceInstance } from '../lcu/lcu-service.ts'
+import {
+  BACKGROUND_SYNC_MIN_GAP_MS,
+  getBackgroundSyncCoalesceCause,
+} from './collection-policy.ts'
 import { logMatchHistoryDev } from './dev-diagnostics.ts'
 import { getLocalMatchHistoryService } from './local-match-history-service.ts'
+import { drainMatchHistoryUploads } from './upload/uploader.ts'
 
 const BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000
 const BACKGROUND_SYNC_START_DELAY_MS = 15 * 1000
-const BACKGROUND_SYNC_MIN_GAP_MS = 60 * 1000
 
 let backgroundSyncTimer: NodeJS.Timeout | null = null
 let backgroundSyncStartTimer: NodeJS.Timeout | null = null
@@ -13,21 +17,7 @@ let backgroundSyncRequestTimer: NodeJS.Timeout | null = null
 let backgroundSyncInFlight = false
 let lastBackgroundSyncCompletedAt = 0
 let backgroundSyncUpdatedCallback: ((updatedAt: number) => void) | null = null
-
-export function getBackgroundSyncCoalesceCause(params: {
-  inFlight: boolean
-  lastCompletedAt: number
-  now: number
-  minimumGapMs?: number
-}): 'in-flight' | 'minimum-gap' | null {
-  if (params.inFlight) {
-    return 'in-flight'
-  }
-  const minimumGapMs = params.minimumGapMs ?? BACKGROUND_SYNC_MIN_GAP_MS
-  return params.lastCompletedAt > 0 && params.now - params.lastCompletedAt < minimumGapMs
-    ? 'minimum-gap'
-    : null
-}
+let backgroundSyncClientVersion = '0.0.0'
 
 async function runBackgroundSync(reason: string): Promise<void> {
   const now = Date.now()
@@ -57,7 +47,11 @@ async function runBackgroundSync(reason: string): Promise<void> {
     }
 
     const service = getLocalMatchHistoryService(lcuService)
-    const summary = await service.runBackgroundBatch()
+    await service.runBackgroundBatch()
+    const uploadResult = await drainMatchHistoryUploads(service, {
+      clientVersion: backgroundSyncClientVersion,
+    })
+    const summary = await service.getLocalSummary()
     lastBackgroundSyncCompletedAt = Date.now()
     backgroundSyncUpdatedCallback?.(summary.updatedAt)
     logger.debug('[match-history] background batch completed', {
@@ -65,6 +59,10 @@ async function runBackgroundSync(reason: string): Promise<void> {
       platformId: summary.overview.platformId,
       gameCount: summary.overview.gameCount,
       pendingUploadCount: summary.overview.pendingUploadCount,
+      uploadBatches: uploadResult.batches,
+      uploadedCount: uploadResult.uploaded,
+      retryUploadCount: uploadResult.retried,
+      rejectedUploadCount: uploadResult.rejected,
       durationMs: Date.now() - startedAt,
     })
   } catch (error) {
@@ -79,13 +77,15 @@ async function runBackgroundSync(reason: string): Promise<void> {
 }
 
 /**
- * Runs only when `LocalMatchHistoryService` sees LCU in None/Lobby. It reads
- * SGP SUMMARY batches from index zero and stores new games in an idempotent outbox.
+ * Runs only in None/Lobby. It stores SGP SUMMARY games locally, then drains the
+ * idempotent outbox through the cf-api short-session upload protocol.
  */
 export function startLocalMatchHistoryBackgroundSync(
   onUpdated?: (updatedAt: number) => void,
+  clientVersion = '0.0.0',
 ): void {
   backgroundSyncUpdatedCallback = onUpdated ?? null
+  backgroundSyncClientVersion = clientVersion
   if (backgroundSyncTimer) {
     return
   }
@@ -131,4 +131,5 @@ export function stopLocalMatchHistoryBackgroundSync(): void {
   }
   lastBackgroundSyncCompletedAt = 0
   backgroundSyncUpdatedCallback = null
+  backgroundSyncClientVersion = '0.0.0'
 }

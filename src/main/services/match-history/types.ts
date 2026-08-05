@@ -1,7 +1,7 @@
 export const LOCAL_MATCH_HISTORY_SCHEMA_VERSION = 2
 
 export type MatchHistoryCollectionSource = 'current' | 'matched'
-export type MatchHistoryUploadStatus = 'pending' | 'uploading' | 'uploaded'
+export type MatchHistoryUploadStatus = 'pending' | 'uploading' | 'uploaded' | 'rejected'
 
 export interface StoredMatchHistoryPlayer {
   playerKey: string
@@ -55,8 +55,32 @@ export interface StoredMatchHistoryGame {
   collectedAt: number
 }
 
+/** Exact game object accepted by cf-api; local storage metadata is omitted. */
+export type MatchHistoryUploadGame = Omit<StoredMatchHistoryGame, 'gameKey' | 'collectedAt'>
+
+export interface MatchHistoryUploadSample {
+  sourceKey: string
+  idempotencyKey: string
+  payloadHash: string
+  observedAt: string
+  game: MatchHistoryUploadGame
+}
+
+export interface ClaimedMatchHistoryUploadSample {
+  sample: MatchHistoryUploadSample
+  attempts: number
+}
+
+export interface MatchHistoryUploadResolution {
+  sourceKey: string
+  idempotencyKey: string
+  outcome: 'uploaded' | 'retry' | 'rejected'
+  code?: string
+  nextAttemptAt?: number | null
+}
+
 /**
- * Uploads remain in this local outbox until a server endpoint is explicitly configured.
+ * Uploads remain in this local outbox until cf-api explicitly acknowledges them.
  * `sourceKey` is the server-side unique key; `idempotencyKey` identifies this exact payload.
  */
 export interface MatchHistoryUploadOutboxEntry {
@@ -69,6 +93,8 @@ export interface MatchHistoryUploadOutboxEntry {
   attempts: number
   queuedAt: number
   lastAttemptAt: number | null
+  nextAttemptAt: number | null
+  lastErrorCode: string | null
   uploadedAt: number | null
 }
 

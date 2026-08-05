@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto'
 import type {
+  ClaimedMatchHistoryUploadSample,
   LocalMatchHistoryData,
+  MatchHistoryUploadGame,
+  MatchHistoryUploadResolution,
+  MatchHistoryUploadSample,
   StoredMatchHistoryGame,
 } from './types.ts'
 
@@ -16,9 +20,13 @@ function getLegacyLcuSourceKey(game: StoredMatchHistoryGame): string {
   return `lcu-match-history:v1:${game.platformId}:${game.gameId}`
 }
 
+export function toMatchHistoryUploadGame(game: StoredMatchHistoryGame): MatchHistoryUploadGame {
+  const { gameKey: _gameKey, collectedAt: _collectedAt, ...uploadGame } = game
+  return uploadGame
+}
+
 function getGamePayloadHash(game: StoredMatchHistoryGame): string {
-  const { collectedAt: _collectedAt, ...payload } = game
-  return createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+  return createHash('sha256').update(JSON.stringify(toMatchHistoryUploadGame(game))).digest('hex')
 }
 
 function getIdempotencyKey(sourceKey: string, payloadHash: string): string {
@@ -43,6 +51,8 @@ export function queueGameForUpload(data: LocalMatchHistoryData, game: StoredMatc
       sourceKey,
       idempotencyKey: getIdempotencyKey(sourceKey, payloadHash),
       status: existing.status === 'uploading' ? 'pending' : existing.status,
+      nextAttemptAt: existing.nextAttemptAt ?? null,
+      lastErrorCode: existing.lastErrorCode ?? null,
     }
     return
   }
@@ -57,6 +67,102 @@ export function queueGameForUpload(data: LocalMatchHistoryData, game: StoredMatc
     attempts: existing?.attempts || 0,
     queuedAt: existing?.queuedAt || Date.now(),
     lastAttemptAt: null,
+    nextAttemptAt: null,
+    lastErrorCode: null,
     uploadedAt: null,
+  }
+}
+
+export function createMatchHistoryUploadSample(
+  entry: LocalMatchHistoryData['uploadOutbox'][string],
+  game: StoredMatchHistoryGame,
+): MatchHistoryUploadSample {
+  return {
+    sourceKey: entry.sourceKey,
+    idempotencyKey: entry.idempotencyKey,
+    payloadHash: entry.payloadHash,
+    observedAt: new Date(game.collectedAt).toISOString(),
+    game: toMatchHistoryUploadGame(game),
+  }
+}
+
+function isDue(entry: LocalMatchHistoryData['uploadOutbox'][string], now: number): boolean {
+  return entry.status === 'pending' &&
+    entry.platformId !== 'UNKNOWN' &&
+    /^[A-Z0-9]{2,16}$/.test(entry.platformId) &&
+    (entry.nextAttemptAt ?? 0) <= now
+}
+
+export function getNextPendingMatchHistoryUploadPlatform(
+  data: LocalMatchHistoryData,
+  now = Date.now(),
+): string | null {
+  return Object.values(data.uploadOutbox)
+    .filter((entry) => isDue(entry, now))
+    .sort((left, right) => left.queuedAt - right.queuedAt || left.sourceKey.localeCompare(right.sourceKey))[0]
+    ?.platformId ?? null
+}
+
+export function claimMatchHistoryUploadBatch(
+  data: LocalMatchHistoryData,
+  platformId: string,
+  limit: number,
+  now = Date.now(),
+): ClaimedMatchHistoryUploadSample[] {
+  const claimed: ClaimedMatchHistoryUploadSample[] = []
+  const candidates = Object.values(data.uploadOutbox)
+    .filter((entry) => entry.platformId === platformId && isDue(entry, now))
+    .sort((left, right) => left.queuedAt - right.queuedAt || left.sourceKey.localeCompare(right.sourceKey))
+
+  for (const entry of candidates) {
+    if (claimed.length >= limit) {
+      break
+    }
+    const game = data.games[getGameKey(entry.platformId, entry.gameId)]
+    if (!game) {
+      entry.status = 'rejected'
+      entry.nextAttemptAt = null
+      entry.lastErrorCode = 'missing_local_game'
+      continue
+    }
+
+    entry.status = 'uploading'
+    entry.attempts += 1
+    entry.lastAttemptAt = now
+    entry.nextAttemptAt = null
+    entry.lastErrorCode = null
+    claimed.push({
+      sample: createMatchHistoryUploadSample(entry, game),
+      attempts: entry.attempts,
+    })
+  }
+  return claimed
+}
+
+export function resolveMatchHistoryUploadBatch(
+  data: LocalMatchHistoryData,
+  resolutions: MatchHistoryUploadResolution[],
+  now = Date.now(),
+): void {
+  for (const resolution of resolutions) {
+    const entry = data.uploadOutbox[resolution.sourceKey]
+    if (!entry || entry.idempotencyKey !== resolution.idempotencyKey) {
+      continue
+    }
+
+    entry.lastErrorCode = resolution.code ?? null
+    if (resolution.outcome === 'uploaded') {
+      entry.status = 'uploaded'
+      entry.uploadedAt = now
+      entry.nextAttemptAt = null
+    } else if (resolution.outcome === 'retry') {
+      entry.status = 'pending'
+      entry.uploadedAt = null
+      entry.nextAttemptAt = resolution.nextAttemptAt ?? now
+    } else {
+      entry.status = 'rejected'
+      entry.uploadedAt = null
+      entry.nextAttemptAt = null
+    }
   }
 }

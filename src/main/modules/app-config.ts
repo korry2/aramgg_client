@@ -197,7 +197,7 @@ export async function init() {
     })
     startLocalMatchHistoryBackgroundSync((updatedAt) => {
         notifyAllWindows('match-history-updated', { updatedAt })
-    })
+    }, app.getVersion())
 
     // 初始化游戏流程监控（延迟初始化，避免阻塞应用启动）
     logger.info('将在后台初始化游戏流程监控...')

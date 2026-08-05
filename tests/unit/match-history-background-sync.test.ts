@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { getBackgroundSyncCoalesceCause } from '../../src/main/services/match-history/background-sync.ts'
 import {
   BACKGROUND_INITIAL_CURRENT_MATCH_LIMIT,
   BACKGROUND_MATCHED_MATCH_LIMIT,
   BACKGROUND_MATCHED_PLAYER_LIMIT,
   BACKGROUND_REFRESH_CURRENT_MATCH_LIMIT,
   getBackgroundCurrentMatchLimit,
+  getBackgroundSyncCoalesceCause,
 } from '../../src/main/services/match-history/collection-policy.ts'
 
 describe('match-history background sync scheduling', () => {

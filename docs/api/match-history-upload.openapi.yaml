@@ -3,16 +3,17 @@ info:
   title: ARAMGG Client Match History Ingestion API
   version: 1.0.0
   description: >-
-    Receives completed, identity-minimized ARAM: Mayhem match samples from the
-    official client. LCU credentials, entitlements tokens, PUUIDs, Riot IDs,
-    summoner names, and response bodies from SGP are never accepted.
+    Receives completed ARAM: Mayhem match samples from the official client.
+    Every participant includes a nullable PUUID and the two Riot ID fields.
+    LCU credentials, entitlements tokens, local player tables, and raw response
+    bodies from SGP are never accepted.
 servers:
   - url: https://data.dtodo.cn
 paths:
   /api/client/v1/match-history/upload-session:
     post:
       operationId: createMatchHistoryUploadSession
-      summary: Create a short-lived anonymous upload session
+      summary: Create a short-lived upload session
       requestBody:
         required: true
         content:
@@ -243,6 +244,9 @@ components:
       additionalProperties: false
       required:
         - participantId
+        - puuid
+        - gameName
+        - tagLine
         - championId
         - teamId
         - playerSubteamId
@@ -259,6 +263,18 @@ components:
           type: integer
           minimum: 1
           maximum: 20
+        puuid:
+          type: [string, 'null']
+          pattern: '^[a-zA-Z0-9-]{8,128}$'
+          description: Null only when the upstream match payload has no usable PUUID.
+        gameName:
+          type: string
+          maxLength: 128
+          description: Riot ID game name; empty only when unavailable upstream.
+        tagLine:
+          type: string
+          maxLength: 32
+          description: Riot ID tag line; empty only when unavailable upstream.
         championId:
           type: integer
           minimum: 1

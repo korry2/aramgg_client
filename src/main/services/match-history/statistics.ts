@@ -154,7 +154,9 @@ export function buildLocalMatchHistorySummary(data: LocalMatchHistoryData): Loca
       (player) => player.isDirectEncounter === true && !player.isCurrentUser && !player.lastHistoryScanAt,
     ).length,
     pendingUploadCount: Object.values(data.uploadOutbox).filter(
-      (entry) => entry.platformId === data.activePlatformId && entry.status !== 'uploaded',
+      (entry) => entry.platformId === data.activePlatformId && (
+        entry.status === 'pending' || entry.status === 'uploading'
+      ),
     ).length,
   }
 
