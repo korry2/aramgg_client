@@ -17,6 +17,8 @@ export interface StoredMatchHistoryPlayer {
   lastSeenAt: number
   historyCollectedAt: number | null
   lastHistoryScanAt: number | null
+  /** Largest successfully completed history request, used for one-time backfills. */
+  historyScanLimit?: number
   collectionSource: MatchHistoryCollectionSource | null
 }
 

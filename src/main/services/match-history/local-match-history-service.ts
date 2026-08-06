@@ -533,7 +533,7 @@ export class LocalMatchHistoryService {
 
     const shouldContinue = () => this.isSafeBackgroundPhase()
     const currentMatchLimit = getBackgroundCurrentMatchLimit(
-      data.players[currentPlayer.playerKey]?.historyCollectedAt,
+      data.players[currentPlayer.playerKey]?.historyScanLimit,
     )
     logMatchHistoryDev('background collection batch prepared', {
       platformId: currentPlayer.platformId,
@@ -762,6 +762,7 @@ export class LocalMatchHistoryService {
       player.lastSeenAt = collectedAt
       if (!failed && !interrupted) {
         player.lastHistoryScanAt = collectedAt
+        player.historyScanLimit = Math.max(player.historyScanLimit ?? 0, options.matchLimit)
       }
     }
 
@@ -906,6 +907,7 @@ export class LocalMatchHistoryService {
       lastSeenAt: params.collectedAt,
       historyCollectedAt: existing?.historyCollectedAt ?? null,
       lastHistoryScanAt: existing?.lastHistoryScanAt ?? null,
+      historyScanLimit: existing?.historyScanLimit,
       collectionSource: params.source || existing?.collectionSource || null,
     }
   }

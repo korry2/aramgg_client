@@ -4,6 +4,7 @@ import {
   BACKGROUND_MATCHED_MATCH_LIMIT,
   BACKGROUND_MATCHED_PLAYER_LIMIT,
   BACKGROUND_REFRESH_CURRENT_MATCH_LIMIT,
+  BACKGROUND_SYNC_INTERVAL_MS,
   getBackgroundCurrentMatchLimit,
   getBackgroundSyncCoalesceCause,
 } from '../../src/main/services/match-history/collection-policy.ts'
@@ -34,9 +35,13 @@ describe('match-history background sync scheduling', () => {
   })
 
   it('uses a shallow current-player refresh to spend the budget on player coverage', () => {
+    expect(BACKGROUND_INITIAL_CURRENT_MATCH_LIMIT).toBe(200)
     expect(getBackgroundCurrentMatchLimit(null)).toBe(BACKGROUND_INITIAL_CURRENT_MATCH_LIMIT)
-    expect(getBackgroundCurrentMatchLimit(Date.now())).toBe(BACKGROUND_REFRESH_CURRENT_MATCH_LIMIT)
-    expect(BACKGROUND_MATCHED_PLAYER_LIMIT).toBe(2)
+    expect(getBackgroundCurrentMatchLimit(50)).toBe(BACKGROUND_INITIAL_CURRENT_MATCH_LIMIT)
+    expect(getBackgroundCurrentMatchLimit(199)).toBe(BACKGROUND_INITIAL_CURRENT_MATCH_LIMIT)
+    expect(getBackgroundCurrentMatchLimit(200)).toBe(BACKGROUND_REFRESH_CURRENT_MATCH_LIMIT)
+    expect(BACKGROUND_MATCHED_PLAYER_LIMIT).toBe(3)
     expect(BACKGROUND_MATCHED_MATCH_LIMIT).toBe(20)
+    expect(BACKGROUND_SYNC_INTERVAL_MS).toBe(3 * 60 * 1000)
   })
 })

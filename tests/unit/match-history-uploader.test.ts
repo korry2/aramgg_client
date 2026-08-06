@@ -9,6 +9,7 @@ import type {
   UploadResponse,
 } from '../../src/main/services/match-history/upload/protocol.ts'
 import {
+  DEFAULT_MAX_BATCHES,
   drainMatchHistoryUploads,
   type MatchHistoryUploadService,
 } from '../../src/main/services/match-history/upload/uploader.ts'
@@ -115,6 +116,10 @@ function fakeService(samples: ClaimedMatchHistoryUploadSample[]): {
 }
 
 describe('match-history uploader', () => {
+  it('drains at most 100 matches per default round', () => {
+    expect(DEFAULT_MAX_BATCHES).toBe(5)
+  })
+
   it('does nothing while the cf-api config switch is disabled', async () => {
     const { service } = fakeService([claimed()])
     const fetcher = vi.fn()

@@ -17,7 +17,7 @@ import {
   type UploadSession,
 } from './protocol.ts'
 
-const DEFAULT_MAX_BATCHES = 3
+export const DEFAULT_MAX_BATCHES = 5
 
 export type MatchHistoryUploadService = Pick<
   LocalMatchHistoryService,

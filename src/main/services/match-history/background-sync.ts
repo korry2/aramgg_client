@@ -1,6 +1,7 @@
 import logger from '../../modules/logger.ts'
 import { getLCUServiceInstance } from '../lcu/lcu-service.ts'
 import {
+  BACKGROUND_SYNC_INTERVAL_MS,
   BACKGROUND_SYNC_MIN_GAP_MS,
   getBackgroundSyncCoalesceCause,
 } from './collection-policy.ts'
@@ -8,7 +9,6 @@ import { logMatchHistoryDev } from './dev-diagnostics.ts'
 import { getLocalMatchHistoryService } from './local-match-history-service.ts'
 import { drainMatchHistoryUploads } from './upload/uploader.ts'
 
-const BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000
 const BACKGROUND_SYNC_START_DELAY_MS = 15 * 1000
 
 let backgroundSyncTimer: NodeJS.Timeout | null = null
