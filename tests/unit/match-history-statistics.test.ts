@@ -68,6 +68,7 @@ function source(games: StoredMatchHistoryGame[]): LocalMatchHistoryData {
   return {
     schemaVersion: 2,
     updatedAt: 500,
+    installationId: '11111111-1111-4111-8111-111111111111',
     activePlatformId: 'HN10',
     currentPlayerKey: `HN10:${playerOne}`,
     players: {
@@ -104,6 +105,7 @@ function source(games: StoredMatchHistoryGame[]): LocalMatchHistoryData {
     },
     games: Object.fromEntries(games.map((entry) => [entry.gameKey, entry])),
     uploadOutbox: {},
+    uploadedGameTombstones: {},
   }
 }
 

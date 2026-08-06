@@ -5,17 +5,24 @@ import {
   resolveMatchHistoryUploadBatch,
   toMatchHistoryUploadGame,
 } from '../../src/main/services/match-history/upload-outbox.ts'
+import {
+  compactLocalMatchHistoryData,
+  MAX_STORED_MATCH_HISTORY_GAMES,
+  MAX_UPLOADED_MATCH_HISTORY_TOMBSTONES,
+} from '../../src/main/services/match-history/storage/retention.ts'
 import type { LocalMatchHistoryData, StoredMatchHistoryGame } from '../../src/main/services/match-history/types.ts'
 
 function createData(): LocalMatchHistoryData {
   return {
     schemaVersion: 2,
     updatedAt: 0,
+    installationId: '11111111-1111-4111-8111-111111111111',
     activePlatformId: 'HN10',
     currentPlayerKey: null,
     players: {},
     games: {},
     uploadOutbox: {},
+    uploadedGameTombstones: {},
   }
 }
 
@@ -107,6 +114,26 @@ describe('match-history upload outbox', () => {
     expect(data.uploadOutbox['match-history:v1:HN10:123'].idempotencyKey).not.toBe(firstIdempotencyKey)
   })
 
+  it('uses a compact upload tombstone until the game payload changes', () => {
+    const data = createData()
+    const game = createGame()
+    data.games[game.gameKey] = game
+    queueGameForUpload(data, game)
+    const claimed = claimMatchHistoryUploadBatch(data, 'HN10', 20, 200)
+    resolveMatchHistoryUploadBatch(data, [{
+      sourceKey: claimed[0].sample.sourceKey,
+      idempotencyKey: claimed[0].sample.idempotencyKey,
+      outcome: 'uploaded',
+    }], 300)
+
+    queueGameForUpload(data, { ...game, collectedAt: 400 })
+    expect(data.uploadOutbox).toEqual({})
+
+    queueGameForUpload(data, { ...game, gameVersion: '16.15.1', collectedAt: 500 })
+    expect(data.uploadedGameTombstones).toEqual({})
+    expect(data.uploadOutbox['match-history:v1:HN10:123']).toMatchObject({ status: 'pending' })
+  })
+
   it('removes only local metadata and keeps PUUID plus Riot ID in the upload game', () => {
     const uploadGame = toMatchHistoryUploadGame(createGame())
 
@@ -148,10 +175,10 @@ describe('match-history upload outbox', () => {
       idempotencyKey: retried[0].sample.idempotencyKey,
       outcome: 'uploaded',
     }], 600)
-    expect(data.uploadOutbox[retried[0].sample.sourceKey]).toMatchObject({
-      status: 'uploaded',
+    expect(data.uploadOutbox[retried[0].sample.sourceKey]).toBeUndefined()
+    expect(data.uploadedGameTombstones[retried[0].sample.sourceKey]).toMatchObject({
       uploadedAt: 600,
-      lastErrorCode: null,
+      payloadHash: retried[0].sample.payloadHash,
     })
 
     const rejectedGame = createGame({ gameKey: 'HN10:456', gameId: 456 })
@@ -168,5 +195,34 @@ describe('match-history upload outbox', () => {
       status: 'rejected',
       lastErrorCode: 'unsupported_game',
     })
+  })
+
+  it('compacts uploaded bodies but never removes a pending game', () => {
+    const data = createData()
+    for (let index = 1; index <= MAX_STORED_MATCH_HISTORY_GAMES + 1; index += 1) {
+      const game = createGame({
+        gameKey: `HN10:${index}`,
+        gameId: index,
+        gameCreation: index,
+        collectedAt: index,
+      })
+      data.games[game.gameKey] = game
+      queueGameForUpload(data, game)
+      const entry = data.uploadOutbox[`match-history:v1:HN10:${index}`]
+      entry.status = 'uploaded'
+      entry.uploadedAt = index
+    }
+    const pending = createGame({ gameKey: 'HN10:999999', gameId: 999999, gameCreation: 0 })
+    data.games[pending.gameKey] = pending
+    queueGameForUpload(data, pending)
+
+    compactLocalMatchHistoryData(data)
+
+    expect(Object.keys(data.games)).toHaveLength(MAX_STORED_MATCH_HISTORY_GAMES)
+    expect(data.games[pending.gameKey]).toBeDefined()
+    expect(data.games['HN10:1']).toBeUndefined()
+    expect(data.uploadOutbox['match-history:v1:HN10:999999']).toMatchObject({ status: 'pending' })
+    expect(Object.keys(data.uploadedGameTombstones)).toHaveLength(MAX_STORED_MATCH_HISTORY_GAMES + 1)
+    expect(MAX_UPLOADED_MATCH_HISTORY_TOMBSTONES).toBeGreaterThan(MAX_STORED_MATCH_HISTORY_GAMES)
   })
 })

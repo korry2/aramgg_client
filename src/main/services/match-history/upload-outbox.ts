@@ -42,8 +42,15 @@ export function queueGameForUpload(data: LocalMatchHistoryData, game: StoredMatc
   const legacySourceKey = getLegacyLcuSourceKey(game)
   const payloadHash = getGamePayloadHash(game)
   const existing = data.uploadOutbox[sourceKey] || data.uploadOutbox[legacySourceKey]
+  const tombstone = data.uploadedGameTombstones[sourceKey]
   if (legacySourceKey !== sourceKey) {
     delete data.uploadOutbox[legacySourceKey]
+  }
+  if (!existing && tombstone?.payloadHash === payloadHash) {
+    return
+  }
+  if (tombstone) {
+    delete data.uploadedGameTombstones[sourceKey]
   }
   if (existing?.payloadHash === payloadHash) {
     data.uploadOutbox[sourceKey] = {
@@ -152,9 +159,11 @@ export function resolveMatchHistoryUploadBatch(
 
     entry.lastErrorCode = resolution.code ?? null
     if (resolution.outcome === 'uploaded') {
-      entry.status = 'uploaded'
-      entry.uploadedAt = now
-      entry.nextAttemptAt = null
+      data.uploadedGameTombstones[entry.sourceKey] = {
+        payloadHash: entry.payloadHash,
+        uploadedAt: now,
+      }
+      delete data.uploadOutbox[entry.sourceKey]
     } else if (resolution.outcome === 'retry') {
       entry.status = 'pending'
       entry.uploadedAt = null

@@ -21,7 +21,7 @@ export const DEFAULT_MAX_BATCHES = 5
 
 export type MatchHistoryUploadService = Pick<
   LocalMatchHistoryService,
-  'getNextPendingUploadPlatform' | 'claimUploadBatch' | 'resolveUploadBatch'
+  'getNextPendingUploadPlatform' | 'getUploadTelemetry' | 'claimUploadBatch' | 'resolveUploadBatch'
 >
 
 export type MatchHistoryUploadResult = {
@@ -82,10 +82,18 @@ export async function drainMatchHistoryUploads(
     const attemptAt = now()
     const platformId = await service.getNextPendingUploadPlatform(attemptAt)
     if (!platformId) break
+    const telemetry = await service.getUploadTelemetry()
 
     if (!session || sessionPlatformId !== platformId || session.expiresAt <= attemptAt + 5000) {
       try {
-        session = await createSession(fetcher, settings, options.clientVersion, platformId, attemptAt)
+        session = await createSession(
+          fetcher,
+          settings,
+          options.clientVersion,
+          platformId,
+          telemetry.installationId,
+          attemptAt,
+        )
       } catch {
         break
       }
@@ -98,9 +106,10 @@ export async function drainMatchHistoryUploads(
     if (!claimed.length) continue
     result.batches += 1
     const requestBody = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       clientVersion: options.clientVersion,
       sentAt: new Date(attemptAt).toISOString(),
+      pendingUploadCount: telemetry.pendingUploadCount,
       samples: claimed.map((item) => item.sample),
     })
 
@@ -117,7 +126,14 @@ export async function drainMatchHistoryUploads(
     try {
       response = await postJson(fetcher, settings.batchUrl, requestBody, session.token)
       if (response.status === 401) {
-        session = await createSession(fetcher, settings, options.clientVersion, platformId, now())
+        session = await createSession(
+          fetcher,
+          settings,
+          options.clientVersion,
+          platformId,
+          telemetry.installationId,
+          now(),
+        )
         if (session) {
           response = await postJson(fetcher, settings.batchUrl, requestBody, session.token)
         }

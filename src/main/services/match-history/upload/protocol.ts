@@ -151,12 +151,14 @@ export async function createSession(
   settings: UploadSettings,
   clientVersion: string,
   platformId: string,
+  installationId: string,
   now: number,
 ): Promise<UploadSession | null> {
   const response = await postJson(fetcher, settings.sessionUrl, JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     clientVersion,
     platformId,
+    installationId,
   }))
   if (response.status !== 200) {
     return null

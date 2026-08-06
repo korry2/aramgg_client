@@ -15,6 +15,7 @@ import {
 } from '../../src/main/services/match-history/upload/uploader.ts'
 
 const NOW = Date.parse('2026-08-05T14:00:00.000Z')
+const INSTALLATION_ID = '11111111-1111-4111-8111-111111111111'
 
 function config(enabled = true): ClientConfig {
   return {
@@ -108,6 +109,12 @@ function fakeService(samples: ClaimedMatchHistoryUploadSample[]): {
         available = false
         return samples.slice(0, limit)
       },
+      async getUploadTelemetry() {
+        return {
+          installationId: INSTALLATION_ID,
+          pendingUploadCount: available ? samples.length : 0,
+        }
+      },
       async resolveUploadBatch(next) {
         resolutions.push(...next)
       },
@@ -183,7 +190,14 @@ describe('match-history uploader', () => {
       '/api/client/v1/match-history/upload-session',
       '/api/client/v1/match-history/batches',
     ])
+    expect(requests[0].body).toEqual({
+      schemaVersion: 2,
+      clientVersion: '0.2.9',
+      platformId: 'HN10',
+      installationId: INSTALLATION_ID,
+    })
     expect(requests[1].authorization).toBe('Bearer session-token-1234567890')
+    expect(requests[1].body).toMatchObject({ schemaVersion: 2, pendingUploadCount: 1 })
     expect((requests[1].body as any).samples[0].game.participants[0]).toMatchObject({
       puuid: 'test-puuid-12345678',
       gameName: '测试玩家',

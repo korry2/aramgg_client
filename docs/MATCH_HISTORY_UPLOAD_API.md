@@ -24,13 +24,16 @@ Content-Type: application/json
 
 ```json
 {
-  "schemaVersion": 1,
-  "clientVersion": "0.2.9",
-  "platformId": "GZ100"
+  "schemaVersion": 2,
+  "clientVersion": "0.2.10",
+  "platformId": "GZ100",
+  "installationId": "11111111-1111-4111-8111-111111111111"
 }
 ```
 
-成功后返回短期 Bearer Token、过期时间、批量上限和请求体上限。官方开源客户端不得内置长期 API Key；该会话仍需配合 IP、区服、客户端版本和行为速率限制。
+`installationId` 是客户端首次采集时通过 `crypto.randomUUID()` 生成并在本地持久化的 UUID v4，不来自账号、硬件、系统用户名或安装路径。Edge Function 只在内存中将它转换为 HMAC 摘要，内部服务再按北京时间日期二次散列；比赛 Blob 和贡献统计均不保存原始 UUID，按日统计也不能直接跨日关联同一安装。
+
+成功后返回短期 Bearer Token、过期时间、批量上限和请求体上限。官方开源客户端不得内置长期 API Key；该会话仍需配合 IP、区服、客户端版本和行为速率限制。服务端继续兼容 0.2.9 使用的协议 v1，但新客户端必须使用 v2。
 
 ### 2. 上传比赛批次
 
@@ -42,6 +45,7 @@ Content-Encoding: identity
 ```
 
 - 每批最多 20 场。
+- v2 批次携带发送前的 `pendingUploadCount`；服务端结合 acknowledgement 估算该安装在本批后的剩余积压。
 - `Content-Encoding` 可以是 `identity` 或 `gzip`；0.2.9 默认发送普通 JSON。
 - `sourceKey` 固定为 `match-history:v1:{platformId}:{gameId}`。
 - `idempotencyKey` 是客户端 outbox 当前版本的幂等标识。
@@ -93,12 +97,21 @@ UNIQUE (idempotency_key)
 上传载荷明确不包含：
 
 - 本地当前玩家标识
+- 原始匿名安装 UUID（只在创建会话时发送到 Edge Function，不进入比赛或贡献 Blob）
 - LCU Basic Authorization、端口和安装目录
 - entitlements accessToken
 - SGP URL 中的玩家标识或原始响应正文
 - 本地 `players` 表
 
 客户端日志不得记录上传会话 Token、请求正文、PUUID 或 Riot ID。若未来要实现服务端 PUUID 任务分发，应使用独立接口、独立授权和独立隐私评审，不能借本接口的 acknowledgement 自动扩展采集范围。
+
+## 本地保留与逻辑压缩
+
+- `pending`、`uploading` 对应的比赛正文始终保留，不因容量策略丢失待上传数据。
+- 已确认上传的完整 outbox 项会收缩为 `sourceKey + payloadHash + uploadedAt` 墓碑，重复读取同一 SGP 窗口时不会再次上传。
+- 最多保留最近 2,000 场已完成比赛正文、50,000 个上传墓碑、1,000 个永久拒绝诊断和 5,000 名已扫描玩家。
+- 当前玩家、保留比赛涉及的玩家以及尚未扫描的直接相遇玩家不受玩家上限删除；待上传比赛超过正文上限时也全部保留，因此这些上限是安全软上限。
+- 本地 JSON 使用无缩进序列化和原子替换；不使用整文件 gzip，避免在 Electron 后台反复压缩大文件和增加损坏恢复复杂度。
 
 ## 上线开关
 

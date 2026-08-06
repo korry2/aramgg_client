@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type {
@@ -19,6 +20,7 @@ import {
   logMatchHistoryDev,
 } from './dev-diagnostics.ts'
 import { buildLocalMatchHistorySummary, isHextechAramGame } from './statistics.ts'
+import { compactLocalMatchHistoryData } from './storage/retention.ts'
 import {
   SGP_MATCH_HISTORY_MAX_PAGE_SIZE,
   SgpMatchHistoryInterruptedError,
@@ -35,17 +37,22 @@ import {
   LOCAL_MATCH_HISTORY_SCHEMA_VERSION,
   type ClaimedMatchHistoryUploadSample,
   type LocalMatchHistoryData,
+  type MatchHistoryUploadTelemetry,
   type MatchHistoryCollectionSource,
   type MatchHistoryUploadOutboxEntry,
   type MatchHistoryUploadResolution,
   type StoredMatchHistoryGame,
   type StoredMatchHistoryParticipant,
   type StoredMatchHistoryPlayer,
+  type UploadedMatchHistoryTombstone,
 } from './types.ts'
 
 const HISTORY_PAGE_SIZE = SGP_MATCH_HISTORY_MAX_PAGE_SIZE
 const HISTORY_PAGE_OVERLAP = 20
 const MAX_RETURNED_STAT_ROWS = 50
+const INSTALLATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PAYLOAD_HASH_PATTERN = /^[a-f0-9]{64}$/
+const UPLOAD_SOURCE_KEY_PATTERN = /^match-history:v1:[A-Z0-9]{2,16}:[0-9]+$/
 
 type AnyRecord = Record<string, unknown>
 
@@ -95,6 +102,26 @@ function asNonNegativeInteger(value: unknown): number {
   return Number.isInteger(numberValue) && numberValue >= 0 ? numberValue : 0
 }
 
+function normalizeInstallationId(value: unknown): string {
+  return typeof value === 'string' && INSTALLATION_ID_PATTERN.test(value)
+    ? value.toLowerCase()
+    : randomUUID()
+}
+
+function normalizeUploadedGameTombstones(value: unknown): Record<string, UploadedMatchHistoryTombstone> {
+  if (!isRecord(value)) return {}
+  const tombstones: Record<string, UploadedMatchHistoryTombstone> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (!UPLOAD_SOURCE_KEY_PATTERN.test(key)
+      || !isRecord(entry)
+      || !PAYLOAD_HASH_PATTERN.test(asString(entry.payloadHash))) continue
+    const uploadedAt = asFiniteNumber(entry.uploadedAt)
+    if (uploadedAt <= 0) continue
+    tombstones[key] = { payloadHash: asString(entry.payloadHash), uploadedAt }
+  }
+  return tombstones
+}
+
 function isValidPuuid(value: unknown): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9-]{8,128}$/.test(value)
 }
@@ -112,11 +139,13 @@ function createEmptyData(): LocalMatchHistoryData {
   return {
     schemaVersion: LOCAL_MATCH_HISTORY_SCHEMA_VERSION,
     updatedAt: 0,
+    installationId: randomUUID(),
     activePlatformId: null,
     currentPlayerKey: null,
     players: {},
     games: {},
     uploadOutbox: {},
+    uploadedGameTombstones: {},
   }
 }
 
@@ -334,6 +363,7 @@ class LocalMatchHistoryRepository {
   }
 
   async save(data: LocalMatchHistoryData, reason = 'unspecified'): Promise<void> {
+    const compaction = compactLocalMatchHistoryData(data)
     data.updatedAt = Date.now()
     const filePath = path.join(getMatchHistoryDataDir(), 'records-v1.json')
     const serializeStartedAt = performance.now()
@@ -351,6 +381,7 @@ class LocalMatchHistoryRepository {
       playerCount: Object.keys(data.players).length,
       outboxCount: Object.keys(data.uploadOutbox).length,
       pendingWriteCount: this.pendingWriteCount,
+      compaction,
     })
     if (serializeDurationMs >= 50) {
       logger.warn('[match-history] local repository serialization was slow', {
@@ -412,6 +443,7 @@ class LocalMatchHistoryRepository {
         const data = {
           schemaVersion: LOCAL_MATCH_HISTORY_SCHEMA_VERSION,
           updatedAt: asFiniteNumber(parsed.updatedAt),
+          installationId: normalizeInstallationId(parsed.installationId),
           activePlatformId: typeof parsed.activePlatformId === 'string'
             ? normalizePlatformId(parsed.activePlatformId)
             : null,
@@ -419,6 +451,7 @@ class LocalMatchHistoryRepository {
           players: parsed.players as Record<string, StoredMatchHistoryPlayer>,
           games: parsed.games as Record<string, StoredMatchHistoryGame>,
           uploadOutbox: parsed.uploadOutbox as Record<string, MatchHistoryUploadOutboxEntry>,
+          uploadedGameTombstones: normalizeUploadedGameTombstones(parsed.uploadedGameTombstones),
         } satisfies LocalMatchHistoryData
         Object.values(data.uploadOutbox).forEach((entry) => {
           if (entry.status === 'uploading') {
@@ -470,6 +503,18 @@ export class LocalMatchHistoryService {
     return this.enqueue('upload-next-platform', async () => (
       getNextPendingMatchHistoryUploadPlatform(await this.repository.getData(), now)
     ))
+  }
+
+  getUploadTelemetry(): Promise<MatchHistoryUploadTelemetry> {
+    return this.enqueue('upload-telemetry', async () => {
+      const data = await this.repository.getData()
+      return {
+        installationId: data.installationId,
+        pendingUploadCount: Object.values(data.uploadOutbox).filter(
+          (entry) => entry.status === 'pending' || entry.status === 'uploading',
+        ).length,
+      }
+    })
   }
 
   claimUploadBatch(

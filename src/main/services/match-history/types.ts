@@ -100,12 +100,24 @@ export interface MatchHistoryUploadOutboxEntry {
   uploadedAt: number | null
 }
 
+export interface UploadedMatchHistoryTombstone {
+  payloadHash: string
+  uploadedAt: number
+}
+
+export interface MatchHistoryUploadTelemetry {
+  installationId: string
+  pendingUploadCount: number
+}
+
 export interface LocalMatchHistoryData {
   schemaVersion: typeof LOCAL_MATCH_HISTORY_SCHEMA_VERSION
   updatedAt: number
+  installationId: string
   activePlatformId: string | null
   currentPlayerKey: string | null
   players: Record<string, StoredMatchHistoryPlayer>
   games: Record<string, StoredMatchHistoryGame>
   uploadOutbox: Record<string, MatchHistoryUploadOutboxEntry>
+  uploadedGameTombstones: Record<string, UploadedMatchHistoryTombstone>
 }
