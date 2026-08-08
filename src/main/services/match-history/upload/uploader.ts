@@ -16,6 +16,11 @@ import {
   type UploadResponse,
   type UploadSession,
 } from './protocol.ts'
+import {
+  getMatchHistoryUploadEligibility,
+  MATCH_HISTORY_DISTRIBUTION_CHANNEL,
+  type MatchHistoryUploadRuntime,
+} from './runtime-policy.ts'
 
 export const DEFAULT_MAX_BATCHES = 5
 
@@ -33,6 +38,7 @@ export type MatchHistoryUploadResult = {
 
 export type MatchHistoryUploaderOptions = {
   clientVersion: string
+  runtime?: MatchHistoryUploadRuntime
   loadConfig?: () => Promise<ClientConfig>
   fetch?: MatchHistoryUploadFetch
   now?: () => number
@@ -57,6 +63,20 @@ export async function drainMatchHistoryUploads(
   options: MatchHistoryUploaderOptions,
 ): Promise<MatchHistoryUploadResult> {
   const result: MatchHistoryUploadResult = { batches: 0, uploaded: 0, retried: 0, rejected: 0 }
+  const runtime = options.runtime ?? {
+    isPackaged: false,
+    distributionChannel: MATCH_HISTORY_DISTRIBUTION_CHANNEL,
+  }
+  const eligibility = getMatchHistoryUploadEligibility(runtime)
+  if (!eligibility.allowed) {
+    logger.debug('[match-history] upload disabled for runtime', {
+      reason: eligibility.reason,
+      packaged: runtime.isPackaged,
+      distributionChannel: runtime.distributionChannel,
+    })
+    return result
+  }
+
   let settings
   try {
     settings = getUploadSettings(await (options.loadConfig ?? loadDefaultConfig)())

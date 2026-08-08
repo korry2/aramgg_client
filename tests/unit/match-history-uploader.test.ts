@@ -16,6 +16,10 @@ import {
 
 const NOW = Date.parse('2026-08-05T14:00:00.000Z')
 const INSTALLATION_ID = '11111111-1111-4111-8111-111111111111'
+const OFFICIAL_PACKAGED_RUNTIME = {
+  isPackaged: true,
+  distributionChannel: 'official',
+} as const
 
 function config(enabled = true): ClientConfig {
   return {
@@ -133,7 +137,28 @@ describe('match-history uploader', () => {
 
     const result = await drainMatchHistoryUploads(service, {
       clientVersion: '0.2.9',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
       loadConfig: async () => config(false),
+      fetch: fetcher as unknown as MatchHistoryUploadFetch,
+      now: () => NOW,
+    })
+
+    expect(result).toEqual({ batches: 0, uploaded: 0, retried: 0, rejected: 0 })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { runtime: undefined, label: 'missing runtime evidence' },
+    { runtime: { isPackaged: false, distributionChannel: 'official' }, label: 'development runtime' },
+    { runtime: { isPackaged: true, distributionChannel: 'local' }, label: 'unofficial package' },
+  ])('does not contact upload endpoints for $label', async ({ runtime }) => {
+    const { service } = fakeService([claimed()])
+    const fetcher = vi.fn()
+
+    const result = await drainMatchHistoryUploads(service, {
+      clientVersion: '0.2.9',
+      ...(runtime ? { runtime } : {}),
+      loadConfig: async () => config(),
       fetch: fetcher as unknown as MatchHistoryUploadFetch,
       now: () => NOW,
     })
@@ -148,6 +173,7 @@ describe('match-history uploader', () => {
 
     const result = await drainMatchHistoryUploads(service, {
       clientVersion: '0.2.9',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
       loadConfig: async () => ({
         matchHistoryUpload: {
           ...config().matchHistoryUpload,
@@ -181,6 +207,7 @@ describe('match-history uploader', () => {
 
     const result = await drainMatchHistoryUploads(service, {
       clientVersion: '0.2.9',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
       loadConfig: async () => config(),
       fetch: fetcher,
       now: () => NOW,
@@ -190,6 +217,7 @@ describe('match-history uploader', () => {
       '/api/client/v1/match-history/upload-session',
       '/api/client/v1/match-history/batches',
     ])
+    expect(new URL(requests[0].url).origin).toBe('http://127.0.0.1:8787')
     expect(requests[0].body).toEqual({
       schemaVersion: 2,
       clientVersion: '0.2.9',
@@ -231,6 +259,7 @@ describe('match-history uploader', () => {
 
     await drainMatchHistoryUploads(service, {
       clientVersion: '0.2.9',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
       loadConfig: async () => config(),
       fetch: fetcher,
       now: () => NOW,
@@ -270,6 +299,7 @@ describe('match-history uploader', () => {
 
     const result = await drainMatchHistoryUploads(service, {
       clientVersion: '0.2.9',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
       loadConfig: async () => config(),
       fetch: fetcher,
       now: () => NOW,

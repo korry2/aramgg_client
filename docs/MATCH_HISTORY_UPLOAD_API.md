@@ -128,4 +128,13 @@ UNIQUE (idempotency_key)
 }
 ```
 
+远端开关之外，客户端还执行本地发布门禁：只有 `app.isPackaged=true` 且编译期
+`ARAMGG_DISTRIBUTION_CHANNEL=official` 时才会申请上传会话。源码、开发模式和普通本地打包均默认关闭上传；
+写接口使用独立的 `ARAMGG_MATCH_HISTORY_UPLOAD_ORIGIN`，源码默认值为
+`http://127.0.0.1:8787`，不继承公开数据下载使用的 `ARAMGG_DATA_API_ORIGIN`。
+
+官方 Windows 发布流水线同时注入 `ARAMGG_DISTRIBUTION_CHANNEL=official` 和生产写接口 origin。
+如果非官方通道尝试把写接口设置为生产 origin，构建会直接失败。发布通道标记不是 Secret，也不能抵抗有意修改源码的攻击者；
+它用于阻止开发运行、普通 fork 和非官方打包意外写入生产服务，服务端仍必须保留鉴权、限流和数据完整性校验。
+
 远端配置只能启用内置受信任 HTTPS origin，并且 pathname 必须精确等于以上两个 cf-api 路径，不能注入任意上传域名或写接口。

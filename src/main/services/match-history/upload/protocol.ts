@@ -4,6 +4,7 @@ import type {
   ClaimedMatchHistoryUploadSample,
   MatchHistoryUploadResolution,
 } from '../types.ts'
+import { MATCH_HISTORY_UPLOAD_ORIGIN } from './runtime-policy.ts'
 
 const SESSION_PATH = '/api/client/v1/match-history/upload-session'
 const BATCH_PATH = '/api/client/v1/match-history/batches'
@@ -13,8 +14,6 @@ const MAX_BODY_BYTES = 1024 * 1024
 const REQUEST_TIMEOUT_MS = 15 * 1000
 const BASE_RETRY_DELAY_MS = 30 * 1000
 const MAX_RETRY_DELAY_MS = 6 * 60 * 60 * 1000
-const DATA_API_ORIGIN = process.env.ARAMGG_DATA_API_ORIGIN || 'https://data.dtodo.cn'
-const DATA_ALLOWED_ORIGINS = process.env.ARAMGG_DATA_ALLOWED_ORIGINS || ''
 
 export type JsonRecord = Record<string, unknown>
 
@@ -58,8 +57,7 @@ function getTrustedEndpoint(value: unknown, expectedPath: string): string {
   }
   const url = new URL(resolveTrustedClientDataUrl(
     configuredPath,
-    DATA_API_ORIGIN,
-    DATA_ALLOWED_ORIGINS,
+    MATCH_HISTORY_UPLOAD_ORIGIN,
   ))
   if (url.pathname !== expectedPath || url.search || url.hash) {
     throw new Error(`上传接口路径不受信任：${url.pathname}`)

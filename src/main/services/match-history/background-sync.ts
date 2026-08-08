@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import logger from '../../modules/logger.ts'
 import { getLCUServiceInstance } from '../lcu/lcu-service.ts'
 import {
@@ -8,6 +9,7 @@ import {
 import { logMatchHistoryDev } from './dev-diagnostics.ts'
 import { getLocalMatchHistoryService } from './local-match-history-service.ts'
 import { drainMatchHistoryUploads } from './upload/uploader.ts'
+import { MATCH_HISTORY_DISTRIBUTION_CHANNEL } from './upload/runtime-policy.ts'
 
 const BACKGROUND_SYNC_START_DELAY_MS = 15 * 1000
 
@@ -50,6 +52,10 @@ async function runBackgroundSync(reason: string): Promise<void> {
     await service.runBackgroundBatch()
     const uploadResult = await drainMatchHistoryUploads(service, {
       clientVersion: backgroundSyncClientVersion,
+      runtime: {
+        isPackaged: app.isPackaged,
+        distributionChannel: MATCH_HISTORY_DISTRIBUTION_CHANNEL,
+      },
     })
     const summary = await service.getLocalSummary()
     lastBackgroundSyncCompletedAt = Date.now()
