@@ -15,7 +15,7 @@ describe('overlay formatters', () => {
     expect(formatPercent(null)).toBe('--')
   })
 
-  it('formats augment tiers as T labels', () => {
+  it('formats augment tiers as compact T labels', () => {
     expect(formatAugmentTier(1)).toBe('T1')
     expect(formatAugmentTier('2')).toBe('T2')
     expect(formatAugmentTier(0)).toBe('--')

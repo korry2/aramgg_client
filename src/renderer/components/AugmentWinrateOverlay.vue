@@ -184,11 +184,19 @@
                     <span v-else>{{ index + 1 }}</span>
                   </div>
                   <div class="augment-main">
-                    <div class="augment-name">{{ augment.name }}</div>
+                    <div class="augment-name-row">
+                      <div class="augment-name">{{ augment.name }}</div>
+                      <span
+                        v-if="formatAugmentTier(augment.tier) !== '--'"
+                        class="augment-tier"
+                      >
+                        {{ formatAugmentTier(augment.tier) }}
+                      </span>
+                    </div>
                   </div>
                   <div class="augment-rate">
-                    <small>{{ t('augment.tierLabel') }}</small>
-                    <strong>{{ formatAugmentTier(augment.tier) }}</strong>
+                    <small>{{ t('augment.winRate') }}</small>
+                    <strong>{{ formatPercent(augment.winRate) }}</strong>
                   </div>
                 </div>
               </div>
@@ -484,7 +492,6 @@ import {
 } from '../service/cdn'
 import { electronAPI } from '../native/electron-api.js'
 import { sortAugmentsByDetectedOrder } from '../service/augment-order.js'
-import { rankAugmentRecommendations } from '../../shared/augment-ranking.ts'
 import {
   createBuildRoutes,
   getSkillKey,
@@ -832,25 +839,17 @@ const mapIncomingAugmentsForFallback = (augments = []) => augments.map(aug => ({
   rarityName: aug.rarityName || null,
   rarityDisplayName: aug.rarityDisplayName || null,
   tier: aug.tier ?? null,
-  rank: aug.rank ?? null,
-  total: aug.total ?? null,
   winRate: aug.winRate ?? null,
   pickRate: aug.pickRate ?? null,
-  playCount: aug.playCount ?? null,
+  playCount: aug.playCount ?? 0,
   recommendScore: aug.recommendScore ?? null,
   iconPath: aug.iconPath || aug.iconUrl || null,
   description: aug.description || null,
   tooltip: aug.tooltip || null,
 }))
 
-const toNullableNumber = (value) => {
-  if (value == null || value === '') return null
-  const number = Number(value)
-  return Number.isFinite(number) ? number : null
-}
-
 const mapChampionAugmentRows = (augments = [], statsById = {}) => {
-  const rows = augments
+  return augments
     .map(augment => {
       const augmentId = augment.id || augment.augmentId
       const stats = statsById[String(augmentId)]
@@ -858,26 +857,28 @@ const mapChampionAugmentRows = (augments = [], statsById = {}) => {
         return null
       }
 
+      const winRate = Number(stats.win_rate) || 0
+      const pickRate = Number(stats.pick_rate) || 0
+      const games = Number(stats.num_games) || 0
+      const tier = Number(stats.tier)
+
       return {
         ...augment,
         id: augmentId,
         augmentId,
-        tier: toNullableNumber(stats.tier),
-        rank: toNullableNumber(stats.rank),
-        total: toNullableNumber(stats.total),
-        winRate: toNullableNumber(stats.win_rate),
-        pickRate: toNullableNumber(stats.pick_rate),
-        playCount: toNullableNumber(stats.num_games),
-        winCount: toNullableNumber(stats.num_win_games),
-        recommendScore: toNullableNumber(stats.recommendScore),
+        tier: Number.isInteger(tier) && tier > 0 ? tier : null,
+        winRate,
+        pickRate,
+        playCount: games,
+        winCount: Number(stats.num_win_games) || 0,
+        recommendScore: winRate * 0.6 + pickRate * 0.2 + Math.min(games / 1000, 1) * 0.2,
         iconPath: augment.iconPath || augment.iconUrl || null,
         description: augment.description || null,
         tooltip: augment.tooltip || null,
       }
     })
     .filter(Boolean)
-
-  return rankAugmentRecommendations(rows)
+    .sort((a, b) => b.recommendScore - a.recommendScore)
 }
 
 const applyFallbackChampionData = (data) => {
@@ -2677,22 +2678,55 @@ defineExpose({
   justify-content: center;
 }
 
+.augment-name-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.augment-name-row .augment-name {
+  min-width: 0;
+}
+
+.augment-tier {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: #b8c7c3;
+  background: rgba(134, 155, 150, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(184, 199, 195, 0.14);
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
 .augment-rate {
+  display: flex;
+  min-width: 62px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   text-align: right;
 }
 
 .augment-rate small {
-  display: block;
   color: #869b96;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .augment-rate strong {
   display: block;
   color: #e2c08f;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .build-content {
