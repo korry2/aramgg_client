@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { gunzipSync } from 'node:zlib'
 import type { ClientConfig } from '../../src/main/data-loader.ts'
 import type {
   ClaimedMatchHistoryUploadSample,
@@ -21,15 +22,21 @@ const OFFICIAL_PACKAGED_RUNTIME = {
   distributionChannel: 'official',
 } as const
 
-function config(enabled = true): ClientConfig {
+function config(cloudflareEnabled = true): ClientConfig {
   return {
     matchHistoryUpload: {
-      enabled,
+      enabled: false,
+      cloudflareEnabled,
       sessionPath: '/api/client/v1/match-history/upload-session',
       batchPath: '/api/client/v1/match-history/batches',
       maxBatchSize: 20,
     },
   }
+}
+
+function parseRequestBody(init: Parameters<MatchHistoryUploadFetch>[1]): unknown {
+  if (typeof init.body === 'string') return JSON.parse(init.body)
+  return JSON.parse(gunzipSync(init.body).toString('utf8'))
 }
 
 function response(status: number, payload: unknown, headers: Record<string, string> = {}): UploadResponse {
@@ -131,7 +138,7 @@ describe('match-history uploader', () => {
     expect(DEFAULT_MAX_BATCHES).toBe(5)
   })
 
-  it('does nothing while the cf-api config switch is disabled', async () => {
+  it('does nothing while the Cloudflare config switch is disabled', async () => {
     const { service } = fakeService([claimed()])
     const fetcher = vi.fn()
 
@@ -167,6 +174,24 @@ describe('match-history uploader', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('does not reuse the legacy EdgeOne enabled switch', async () => {
+    const { service } = fakeService([claimed()])
+    const fetcher = vi.fn()
+    const legacyConfig = config(false)
+    legacyConfig.matchHistoryUpload!.enabled = true
+
+    const result = await drainMatchHistoryUploads(service, {
+      clientVersion: '0.2.11',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
+      loadConfig: async () => legacyConfig,
+      fetch: fetcher as unknown as MatchHistoryUploadFetch,
+      now: () => NOW,
+    })
+
+    expect(result).toEqual({ batches: 0, uploaded: 0, retried: 0, rejected: 0 })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('rejects a config that redirects uploads to another same-origin write path', async () => {
     const { service } = fakeService([claimed()])
     const fetcher = vi.fn()
@@ -191,9 +216,19 @@ describe('match-history uploader', () => {
   it('uses the short session and uploads PUUID plus Riot ID to the trusted batch path', async () => {
     const item = claimed()
     const { service, resolutions } = fakeService([item])
-    const requests: Array<{ url: string; authorization?: string; body: unknown }> = []
+    const requests: Array<{
+      url: string
+      authorization?: string
+      contentEncoding?: string
+      body: unknown
+    }> = []
     const fetcher: MatchHistoryUploadFetch = async (url, init) => {
-      requests.push({ url, authorization: init.headers.authorization, body: JSON.parse(init.body) })
+      requests.push({
+        url,
+        authorization: init.headers.authorization,
+        contentEncoding: init.headers['content-encoding'],
+        body: parseRequestBody(init),
+      })
       if (url.endsWith('/upload-session')) return session()
       return response(200, {
         serverTime: new Date(NOW).toISOString(),
@@ -217,7 +252,10 @@ describe('match-history uploader', () => {
       '/api/client/v1/match-history/upload-session',
       '/api/client/v1/match-history/batches',
     ])
-    expect(new URL(requests[0].url).origin).toBe('http://127.0.0.1:8787')
+    expect(requests.map((request) => new URL(request.url).origin)).toEqual([
+      'http://127.0.0.1:8787',
+      'http://127.0.0.1:8787',
+    ])
     expect(requests[0].body).toEqual({
       schemaVersion: 2,
       clientVersion: '0.2.9',
@@ -225,6 +263,8 @@ describe('match-history uploader', () => {
       installationId: INSTALLATION_ID,
     })
     expect(requests[1].authorization).toBe('Bearer session-token-1234567890')
+    expect(requests[0].contentEncoding).toBeUndefined()
+    expect(requests[1].contentEncoding).toBe('gzip')
     expect(requests[1].body).toMatchObject({ schemaVersion: 2, pendingUploadCount: 1 })
     expect((requests[1].body as any).samples[0].game.participants[0]).toMatchObject({
       puuid: 'test-puuid-12345678',
@@ -309,6 +349,37 @@ describe('match-history uploader', () => {
     expect(resolutions).toEqual([
       expect.objectContaining({ outcome: 'retry', code: 'storage_unavailable' }),
       expect.objectContaining({ outcome: 'rejected', code: 'unsupported_game' }),
+    ])
+  })
+
+  it('keeps legacy game_archived acknowledgements retryable during server rollout', async () => {
+    const item = claimed()
+    const { service, resolutions } = fakeService([item])
+    const fetcher: MatchHistoryUploadFetch = async (url) => {
+      if (url.endsWith('/upload-session')) return session()
+      return response(200, {
+        serverTime: new Date(NOW).toISOString(),
+        acknowledgements: [{
+          sourceKey: item.sample.sourceKey,
+          idempotencyKey: item.sample.idempotencyKey,
+          status: 'rejected',
+          code: 'game_archived',
+          retryable: false,
+        }],
+      })
+    }
+
+    const result = await drainMatchHistoryUploads(service, {
+      clientVersion: '0.2.10',
+      runtime: OFFICIAL_PACKAGED_RUNTIME,
+      loadConfig: async () => config(),
+      fetch: fetcher,
+      now: () => NOW,
+    })
+
+    expect(result).toMatchObject({ retried: 1, rejected: 0 })
+    expect(resolutions).toEqual([
+      expect.objectContaining({ outcome: 'retry', code: 'game_archived' }),
     ])
   })
 })

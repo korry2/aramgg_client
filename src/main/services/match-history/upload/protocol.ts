@@ -1,5 +1,6 @@
 import type { ClientConfig } from '../../../data-loader.ts'
 import { resolveTrustedClientDataUrl } from '../../../../shared/client-data-security.ts'
+import { gzipSync } from 'node:zlib'
 import type {
   ClaimedMatchHistoryUploadSample,
   MatchHistoryUploadResolution,
@@ -28,7 +29,7 @@ export type MatchHistoryUploadFetch = (
   init: {
     method: 'POST'
     headers: Record<string, string>
-    body: string
+    body: string | Uint8Array
     signal: AbortSignal
   },
 ) => Promise<UploadResponse>
@@ -67,7 +68,7 @@ function getTrustedEndpoint(value: unknown, expectedPath: string): string {
 
 export function getUploadSettings(config: ClientConfig): UploadSettings | null {
   const raw = config.matchHistoryUpload as unknown
-  if (!isRecord(raw) || raw.enabled !== true) {
+  if (!isRecord(raw) || raw.cloudflareEnabled !== true) {
     return null
   }
   const configuredMax = raw.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE
@@ -95,7 +96,7 @@ export async function getDefaultFetch(): Promise<MatchHistoryUploadFetch> {
 export async function postJson(
   fetcher: MatchHistoryUploadFetch,
   url: string,
-  body: string,
+  body: string | Uint8Array,
   authorization?: string,
 ): Promise<UploadResponse> {
   const controller = new AbortController()
@@ -105,6 +106,7 @@ export async function postJson(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        ...(typeof body === 'string' ? {} : { 'content-encoding': 'gzip' }),
         ...(authorization ? { authorization: `Bearer ${authorization}` } : {}),
       },
       body,
@@ -113,6 +115,10 @@ export async function postJson(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export function gzipJson(body: string): Uint8Array {
+  return gzipSync(Buffer.from(body, 'utf8'))
 }
 
 export async function readJson(response: UploadResponse): Promise<unknown> {
@@ -214,6 +220,15 @@ export function resolveAcknowledgements(
     const code = typeof acknowledgement?.code === 'string' ? acknowledgement.code : 'invalid_acknowledgement'
     if (status === 'inserted' || status === 'duplicate' || status === 'updated') {
       return { sourceKey: sample.sourceKey, idempotencyKey: sample.idempotencyKey, outcome: 'uploaded' }
+    }
+    if (status === 'rejected' && code === 'game_archived') {
+      return {
+        sourceKey: sample.sourceKey,
+        idempotencyKey: sample.idempotencyKey,
+        outcome: 'retry',
+        code,
+        nextAttemptAt: getRetryAt(attempts, now),
+      }
     }
     if (status === 'rejected' && acknowledgement?.retryable === false) {
       return { sourceKey: sample.sourceKey, idempotencyKey: sample.idempotencyKey, outcome: 'rejected', code }

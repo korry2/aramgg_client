@@ -53,13 +53,14 @@ export function queueGameForUpload(data: LocalMatchHistoryData, game: StoredMatc
     delete data.uploadedGameTombstones[sourceKey]
   }
   if (existing?.payloadHash === payloadHash) {
+    const shouldRequeueArchived = existing.status === 'rejected' && existing.lastErrorCode === 'game_archived'
     data.uploadOutbox[sourceKey] = {
       ...existing,
       sourceKey,
       idempotencyKey: getIdempotencyKey(sourceKey, payloadHash),
-      status: existing.status === 'uploading' ? 'pending' : existing.status,
-      nextAttemptAt: existing.nextAttemptAt ?? null,
-      lastErrorCode: existing.lastErrorCode ?? null,
+      status: existing.status === 'uploading' || shouldRequeueArchived ? 'pending' : existing.status,
+      nextAttemptAt: shouldRequeueArchived ? null : existing.nextAttemptAt ?? null,
+      lastErrorCode: shouldRequeueArchived ? null : existing.lastErrorCode ?? null,
     }
     return
   }

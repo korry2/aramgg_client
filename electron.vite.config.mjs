@@ -4,7 +4,7 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 const OFFICIAL_DISTRIBUTION_CHANNEL = 'official'
-const PRODUCTION_MATCH_HISTORY_UPLOAD_ORIGIN = 'https://data.dtodo.cn'
+const PRODUCTION_MATCH_HISTORY_UPLOAD_ORIGIN = 'https://aramgg.com'
 const DEFAULT_MATCH_HISTORY_UPLOAD_ORIGIN = 'http://127.0.0.1:8787'
 
 function resolveMatchHistoryBuildConfig() {

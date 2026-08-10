@@ -6,6 +6,7 @@ import {
   createSession,
   getDefaultFetch,
   getUploadSettings,
+  gzipJson,
   isRecord,
   postJson,
   readJson,
@@ -125,15 +126,16 @@ export async function drainMatchHistoryUploads(
     const claimed = await service.claimUploadBatch(platformId, limit, attemptAt)
     if (!claimed.length) continue
     result.batches += 1
-    const requestBody = JSON.stringify({
+    const requestBodyJson = JSON.stringify({
       schemaVersion: 2,
       clientVersion: options.clientVersion,
       sentAt: new Date(attemptAt).toISOString(),
       pendingUploadCount: telemetry.pendingUploadCount,
       samples: claimed.map((item) => item.sample),
     })
+    const requestBody = gzipJson(requestBodyJson)
 
-    if (Buffer.byteLength(requestBody) > session.maxBodyBytes) {
+    if (Buffer.byteLength(requestBodyJson) > session.maxBodyBytes || requestBody.byteLength > session.maxBodyBytes) {
       const outcome = claimed.length === 1 ? 'rejected' : 'retry'
       const resolutions = resolveWholeBatch(claimed, outcome, 'payload_too_large', attemptAt, 0)
       await service.resolveUploadBatch(resolutions, attemptAt)

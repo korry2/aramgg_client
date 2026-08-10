@@ -28,6 +28,7 @@ type SupportedDataLocale = 'zh-CN' | 'en-US' | 'zh-TW'
 
 export type MatchHistoryUploadConfig = {
   enabled?: boolean
+  cloudflareEnabled?: boolean
   sessionPath?: string
   batchPath?: string
   maxBatchSize?: number

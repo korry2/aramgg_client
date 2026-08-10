@@ -146,6 +146,24 @@ describe('match-history upload outbox', () => {
     })
   })
 
+  it('requeues game_archived when the game is read again', () => {
+    const data = createData()
+    const game = createGame()
+    data.games[game.gameKey] = game
+    queueGameForUpload(data, game)
+    const entry = data.uploadOutbox['match-history:v1:HN10:123']
+    entry.status = 'rejected'
+    entry.lastErrorCode = 'game_archived'
+    entry.nextAttemptAt = 999
+
+    queueGameForUpload(data, { ...game, collectedAt: 200 })
+    expect(data.uploadOutbox['match-history:v1:HN10:123']).toMatchObject({
+      status: 'pending',
+      lastErrorCode: null,
+      nextAttemptAt: null,
+    })
+  })
+
   it('claims due entries and applies retry, acknowledgement, and permanent rejection states', () => {
     const data = createData()
     const firstGame = createGame()
