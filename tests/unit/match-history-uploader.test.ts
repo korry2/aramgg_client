@@ -14,6 +14,7 @@ import {
   drainMatchHistoryUploads,
   type MatchHistoryUploadService,
 } from '../../src/main/services/match-history/upload/uploader.ts'
+import { MATCH_HISTORY_UPLOAD_ORIGIN } from '../../src/main/services/match-history/upload/runtime-policy.ts'
 
 const NOW = Date.parse('2026-08-05T14:00:00.000Z')
 const INSTALLATION_ID = '11111111-1111-4111-8111-111111111111'
@@ -253,8 +254,8 @@ describe('match-history uploader', () => {
       '/api/client/v1/match-history/batches',
     ])
     expect(requests.map((request) => new URL(request.url).origin)).toEqual([
-      'http://127.0.0.1:8787',
-      'http://127.0.0.1:8787',
+      MATCH_HISTORY_UPLOAD_ORIGIN,
+      MATCH_HISTORY_UPLOAD_ORIGIN,
     ])
     expect(requests[0].body).toEqual({
       schemaVersion: 2,
