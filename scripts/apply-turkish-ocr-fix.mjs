@@ -3,7 +3,8 @@ import path from 'node:path'
 
 const root = process.cwd()
 const target = path.join(root, 'src', 'main', 'image-analyzer.ts')
-const source = await fs.readFile(target, 'utf8')
+const rawSource = await fs.readFile(target, 'utf8')
+const source = rawSource.replace(/\r\n/g, '\n')
 
 const replacements = [
   {
